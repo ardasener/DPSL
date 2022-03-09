@@ -14,6 +14,9 @@ int main(int argc, char* argv[]){
 	tie(order, csr.row_ptr, csr.col, csr.n, csr.m) 
 		= gen_order(csr.row_ptr, csr.col, csr.n, csr.m, "degree");
 
+	cout << "N: " << csr.n << endl;
+	cout << "M: " << csr.m << endl;
+
 	cout << "Ranking vertices..." << endl;
 	vector<int> ranks(csr.n);
 	for(int i=0; i<csr.n; i++){

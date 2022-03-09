@@ -11,15 +11,14 @@
 #include <stdio.h>
 
 #define N_ROOTS 16
-#define MAX_BP_THREADS 8
-
-#define USEBP false
+#define MAX_BP_THREADS 6
+#define USEBP true
 
 using namespace std;
 
 using IDType = int;
 
-using PigoCOO = pigo::COO<IDType, IDType, IDType *, true, true, true, false,
+using PigoCOO = pigo::COO<IDType, IDType, IDType *, true, false, true, false,
                           float, float *>;
 
 const char MAX_DIST = CHAR_MAX;
@@ -130,7 +129,7 @@ private:
   void ConstructBPLabel();
   int BPQuery(int u, int v);
   bool BPPrune(int u, int v, int d);
-  bool Prune(int u, int v, int d, vector<char> &cache);
+  bool Prune(int u, int v, int d, const vector<char> &cache);
   bool Pull(int u, int d);
 
 public:
@@ -204,7 +203,7 @@ vector<int>* PSL::Query(int u) {
 
   auto &labels_u = labels[u];
 
-  vector<char> cache(csr.n, MAX_DIST);
+  vector<char> cache(csr.n, -1);
 
   for (int i = 0; i < last_dist; i++) {
     int dist_start = labels_u.dist_ptrs[i];
@@ -212,7 +211,7 @@ vector<int>* PSL::Query(int u) {
 
     for (int j = dist_start; j < dist_end; j++) {
       int w = labels_u.vertices[j];
-      cache[w] = i;
+      cache[w] = (char) i;
     }
   }
 
@@ -227,22 +226,26 @@ vector<int>* PSL::Query(int u) {
 
       for (int j = dist_start; j < dist_end; j++) {
         int w = labels_v.vertices[j];
-          
-        int dist = i + cache[w];
-        if(dist > min){
+        
+        if(cache[w] == -1){
+          continue;
+        }
+
+        int dist = i + (int) cache[w];
+        if(dist < min){
           min = dist;
         }
       }
     }
     
-    results->push_back(min);
+    (*results)[v] = min;
 
   }
   
   return results;
 }
 
-bool PSL::Prune(int u, int v, int d, vector<char> &cache) {
+bool PSL::Prune(int u, int v, int d, const vector<char> &cache) {
 
   auto &labels_v = labels[v];
 
@@ -253,7 +256,7 @@ bool PSL::Prune(int u, int v, int d, vector<char> &cache) {
     for (int j = dist_start; j < dist_end; j++) {
       int w = labels_v.vertices[j];
 
-      if (cache[w] != -1 && i + cache[w] <= d) {
+      if (cache[w] != -1 && (i + cache[w]) <= d) {
         return true;
       }
     }
@@ -264,30 +267,30 @@ bool PSL::Prune(int u, int v, int d, vector<char> &cache) {
 
 bool PSL::Pull(int u, int d) {
 
-  bool updated = false;
-
-  int start = csr.row_ptr[u];
-  int end = csr.row_ptr[u + 1];
-
-  vector<char> cache(csr.n, -1);
-
   auto &labels_u = labels[u];
+  
+  vector<char> cache(csr.n, -1);
   for (int i = 0; i < d; i++) {
     int dist_start = labels_u.dist_ptrs[i];
     int dist_end = labels_u.dist_ptrs[i + 1];
 
     for (int j = dist_start; j < dist_end; j++) {
       int w = labels_u.vertices[j];
-      cache[w] = i;
+      cache[w] = (char) i;
     }
   }
 
 
+  bool updated = false;
+  int start = csr.row_ptr[u];
+  int end = csr.row_ptr[u + 1];
   for (int i = start; i < end; i++) {
     int v = csr.col[i];
     auto &labels_v = labels[v];
 
-    for (int j = labels_v.dist_ptrs[d - 1]; j < labels_v.dist_ptrs[d]; j++) {
+    int labels_start = labels_v.dist_ptrs[d-1];
+    int labels_end = labels_v.dist_ptrs[d];
+    for (int j = labels_start; j < labels_end; j++) {
       int w = labels_v.vertices[j];
 
       if (ranks[u] > ranks[w]) {
