@@ -16,49 +16,60 @@
 
 using namespace std;
 
-using IDType = int;
 
-using PigoCOO = pigo::COO<IDType, IDType, IDType *, true, false, true, false,
+using PigoCOO = pigo::COO<int, int, int *, true, false, true, false,
                           float, float *>;
 
 const char MAX_DIST = CHAR_MAX;
 
 
 struct CSR {
-  IDType *row_ptr;
-  IDType *col;
-  IDType n;
-  IDType m;
+  int *row_ptr;
+  int *col;
+  int n;
+  int m;
 
   CSR(string filename) {
     PigoCOO pigo_coo(filename);
 
-    IDType *coo_row = pigo_coo.x();
-    IDType *coo_col = pigo_coo.y();
+    int *coo_row = pigo_coo.x();
+    int *coo_col = pigo_coo.y();
     m = pigo_coo.m();
     n = pigo_coo.n();
 
-    vector<pair<IDType, IDType>> edges(m);
+    int min1 = *min_element(coo_row, coo_row+m, less<int>());
+    int min2 = *min_element(coo_col, coo_col+m, less<int>());
+    int min = (min1 < min2) ? min1 : min2;
 
-    for (size_t i = 0; i < m; i++) {
-      edges[i] = pair<IDType, IDType>(coo_row[i], coo_col[i]);
+    if(min != 0){
+      cout << "Fixing indices with minimum=" << min << endl;
+      for(int i=0; i<m; i++){
+        coo_row[i] -= min;
+        coo_col[i] -= min;
+      }
     }
 
-    sort(edges.begin(), edges.end(), less<pair<IDType, IDType>>());
+    vector<pair<int, int>> edges(m);
 
-    row_ptr = new IDType[n + 1];
-    col = new IDType[m];
+    for (size_t i = 0; i < m; i++) {
+      edges[i] = pair<int, int>(coo_row[i], coo_col[i]);
+    }
 
-    for (IDType i = 0; i < m; i++) {
+    sort(edges.begin(), edges.end(), less<pair<int, int>>());
+
+    row_ptr = new int[n + 1];
+    col = new int[m];
+
+    for (int i = 0; i < m; i++) {
       col[i] = edges[i].second;
       row_ptr[edges[i].first]++;
     }
 
-    for (IDType i = 1; i <= n; i++) {
+    for (int i = 1; i <= n; i++) {
       row_ptr[i] += row_ptr[i - 1];
     }
 
-    for (IDType i = n; i > 0; i--) {
+    for (int i = n; i > 0; i--) {
       row_ptr[i] = row_ptr[i - 1];
     }
     row_ptr[0] = 0;
@@ -83,7 +94,7 @@ struct LabelSet {
 
 vector<int>* BFSQuery(CSR& csr, int u){
 
-  vector<int>* dists = new vector<int>(csr.n, MAX_DIST);
+  vector<int>* dists = new vector<int>(csr.n, -1);
   auto& dist = *dists;
 
 	int q[csr.n];
@@ -102,7 +113,7 @@ vector<int>* BFSQuery(CSR& csr, int u){
 		for(int i=start; i<end; i++){
 			int v = csr.col[i];
 
-			if(dist[v] == MAX_DIST){
+			if(dist[v] == -1){
 				dist[v] = dist[curr]+1;
 
 				q[q_end++] = v;
@@ -144,7 +155,7 @@ public:
 };
 
 
-void PSL::WriteLabelCounts(string filename){
+inline void PSL::WriteLabelCounts(string filename){
   ofstream ofs(filename);
   ofs << "L:\t";
   for(int i=0; i<last_dist; i++){
@@ -176,7 +187,7 @@ void PSL::WriteLabelCounts(string filename){
   ofs.close();
 }
 
-void PSL::Query(int u, string filename){
+inline void PSL::Query(int u, string filename){
   auto results = Query(u);
   auto bfs_results = BFSQuery(csr, u);
   
@@ -196,7 +207,7 @@ void PSL::Query(int u, string filename){
   delete bfs_results;
 }
 
-vector<int>* PSL::Query(int u) {
+inline vector<int>* PSL::Query(int u) {
 
 
   vector<int>* results = new vector<int>(csr.n, MAX_DIST);
@@ -218,7 +229,7 @@ vector<int>* PSL::Query(int u) {
   for (int v = 0; v < csr.n; v++) {
 
     auto& labels_v = labels[v];
-    int min = MAX_DIST;
+    int min = -1;
 
     for (int i = 0; i < min && i < last_dist; i++) {
       int dist_start = labels_v.dist_ptrs[i];
@@ -232,7 +243,7 @@ vector<int>* PSL::Query(int u) {
         }
 
         int dist = i + (int) cache[w];
-        if(dist < min){
+        if(dist < min || min == -1){
           min = dist;
         }
       }
@@ -245,7 +256,7 @@ vector<int>* PSL::Query(int u) {
   return results;
 }
 
-bool PSL::Prune(int u, int v, int d, const vector<char> &cache) {
+inline bool PSL::Prune(int u, int v, int d, const vector<char> &cache) {
 
   auto &labels_v = labels[v];
 
@@ -265,7 +276,7 @@ bool PSL::Prune(int u, int v, int d, const vector<char> &cache) {
   return false;
 }
 
-bool PSL::Pull(int u, int d) {
+inline bool PSL::Pull(int u, int d) {
 
   auto &labels_u = labels[u];
   
@@ -318,7 +329,7 @@ bool PSL::Pull(int u, int d) {
   return updated;
 }
 
-void PSL::Index() {
+inline void PSL::Index() {
 
   double start_time, end_time, all_start_time, all_end_time;
   all_start_time = omp_get_wtime();
@@ -369,7 +380,7 @@ void PSL::Index() {
   cout << "Indexing: " << all_end_time-all_start_time << " seconds" << endl;
 }
 
-int PSL::BPQuery(int u, int v) {
+inline int PSL::BPQuery(int u, int v) {
   BPLabel &idx_u = label_bp[u], &idx_v = label_bp[v];
   int d = MAX_DIST;
   for (int i = 0; i < N_ROOTS; ++i) {
@@ -386,7 +397,7 @@ int PSL::BPQuery(int u, int v) {
   return d;
 }
 
-bool PSL::BPPrune(int u, int v, int d) {
+inline bool PSL::BPPrune(int u, int v, int d) {
   BPLabel &idx_u = label_bp[u], &idx_v = label_bp[v];
   for (int i = 0; i < N_ROOTS; ++i) {
     int td = idx_u.bpspt_d[i] + idx_v.bpspt_d[i];
@@ -402,7 +413,7 @@ bool PSL::BPPrune(int u, int v, int d) {
   return false;
 }
 
-void PSL::ConstructBPLabel() {
+inline void PSL::ConstructBPLabel() {
   int nown = csr.n;
   int n = csr.n;
   int m = csr.m;
