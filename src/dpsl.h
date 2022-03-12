@@ -11,7 +11,7 @@ public:
   vector<CSR*> csrs;
   int* partition;
   vector<int> ranks;
-  vector<unordered_map<int, int>> aliasses;
+  vector<vector<int>> aliasses;
 
   VertexCut(CSR& csr, string order_method, int np);
 };
@@ -83,7 +83,7 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
 
   cout << "Constructing csrs..." << endl;
   csrs.resize(np, nullptr);
-  aliasses.resize(np, unordered_map<int, int>());
+  aliasses.resize(np, vector<int>(csr.n, -1));
   for(int i=0; i<np; i++){
     int n = nodes[i].size();
     int m = edges[i].size();
@@ -127,12 +127,13 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
 
 
 class DPSL{
-private:
+
+public:
     void SendData(int* data, int size, int vertex, int to);
     int RecvData(int*& data,int vertex, int from);
     void Barrier();
-    int pid;
-    CSR& whole_csr;
+    int pid, np;
+    CSR* whole_csr;
     CSR* part_csr;
     vector<int> cut;
     const toml::Value& config;
@@ -140,8 +141,7 @@ private:
     void Init();
     void IndexP0();
     void Index();
-public:
-    DPSL(int pid, CSR& csr, const toml::Value& config);
+    DPSL(int pid, CSR* csr, const toml::Value& config, int np);
 };
 
 inline void DPSL::Barrier(){
@@ -169,9 +169,8 @@ inline int DPSL::RecvData(int *& data, int vertex, int from){
 
 inline void DPSL::InitP0(){
 	string order_method = config.find("order_method")->as<string>();
-    int np = config.find("num_processes")->as<int>();
     
-    CSR& csr = whole_csr;
+    CSR& csr = *whole_csr;
 
     VertexCut vc(csr, order_method, np);
 
@@ -195,7 +194,13 @@ inline void DPSL::InitP0(){
     }
     Barrier();
     for(int i=1; i<np; i++){
-        SendData(cut.data(), cut.size(), 0, i);
+      vector<int> cut_alias(cut.size());
+      for(int j=0; j<cut.size(); j++){
+        int u = cut[j];
+        int u_alias = vc.aliasses[i][u];
+        cut_alias[j] = u_alias;
+      }
+      SendData(cut_alias.data(), cut.size(), 0, i);
     }
     Barrier();
 
@@ -217,20 +222,52 @@ inline void DPSL::Init(){
 
     part_csr = new CSR(row_ptr, col, size_row_ptr-1, size_col);
 
+    delete[] cut_ptr;
+
 }
 
 inline void DPSL::Index(){
-    CSR& csr = *part_csr;
+  CSR& csr = *part_csr;
 
 	string order_method = config.find("order_method")->as<string>();
     PSL psl(*part_csr, order_method, &cut);
 
-    psl.Init();
+    vector<vector<int>*> init_labels(csr.n, nullptr);
+    for(int u=0; u<csr.n; u++){
+      init_labels[u] = psl.Init(u);
+    }
+    
+    for(int u=0; u<csr.n; u++){
+      if(psl.ranks[u] < psl.min_cut_rank && init_labels[u] != nullptr && !init_labels[u]->empty()){
+        auto& labels = psl.labels[u].vertices;
+        labels.insert(labels.end(), init_labels[u]->begin(), init_labels[u]->end());
+      }
+    }
+
     for(int i=0; i<cut.size(); i++){
         int u = cut[i];
-        auto& labels = psl.labels[u].vertices;
+        auto& labels = *(init_labels[u]);
         SendData(labels.data(), labels.size(), i, 0);
+        int* merged_labels;
+        int size = RecvData(merged_labels, i, 0);
+        psl.labels[u].vertices.insert(psl.labels[u].vertices.begin(), merged_labels, merged_labels+size);
     }
+
+    for(int i=0; i<cut.size(); i++){
+      int* merged_labels;
+      int size = RecvData(merged_labels,i,0);
+      int u = cut[i];
+      auto& labels = psl.labels[u];
+    }
+
+    for (int u = 0; u < csr.n; u++) {
+      auto& labels = psl.labels[u];
+      labels.dist_ptrs.push_back(0);
+      labels.dist_ptrs.push_back(1);
+      labels.dist_ptrs.push_back(labels.vertices.size());
+      delete init_labels[u];
+    }
+
     Barrier();
 
     for(int d=2; d < MAX_DIST; d++){    
@@ -240,14 +277,41 @@ inline void DPSL::Index(){
             new_labels[u] = psl.Pull(u,d);
         }
 
+        for(int u=0; u<csr.n; u++){
+          if(psl.ranks[u] < psl.min_cut_rank && new_labels[u] != nullptr && !new_labels[u]->empty()){
+            auto& labels = psl.labels[u].vertices;
+            labels.insert(labels.end(), new_labels[u]->begin(), new_labels[u]->end());
+          }
+        }
+
+
         for(int i=0; i<cut.size(); i++){
             int u = cut[i];
-            SendData(new_labels[], int size, int vertex, int to)
+            SendData(new_labels[u]->data(), new_labels[u]->size(), i, 0);
         }
+        
+        
+        for(int i=0; i<cut.size(); i++){
+          int u = cut[i];
+          auto& labels = psl.labels[u].vertices;
+          int* merged_labels;
+          int size = RecvData(merged_labels, i, 0);
+          labels.insert(labels.begin(),merged_labels, merged_labels+size);
+          delete[] merged_labels;
+        }
+
+
+        for(int u=0; u<csr.n; u++){
+          auto& labels_u = psl.labels[u];
+          labels_u.dist_ptrs.push_back(labels_u.vertices.size());
+        }
+
+        Barrier();
+
     }
 }
 
-inline DPSL::DPSL(int pid, CSR& csr, const toml::Value& config): whole_csr(csr), pid(pid), config(config){
+inline DPSL::DPSL(int pid, CSR* csr, const toml::Value& config, int np): whole_csr(csr), pid(pid), config(config), np(np){
     if(pid == 0){
         InitP0();
     } else {

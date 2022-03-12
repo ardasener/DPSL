@@ -1,5 +1,6 @@
 #pragma once
 
+#include "dpsl.h"
 #include "external/order/order.hpp"
 #include "external/pigo/pigo.hpp"
 #include <algorithm>
@@ -136,7 +137,7 @@ vector<int>* BFSQuery(CSR& csr, int u){
 
 class PSL {
 
-private:
+public:
   
   CSR &csr;
   vector<int> ranks;
@@ -144,18 +145,17 @@ private:
   bool* usd_bp;
   vector<int> v_vs[N_ROOTS];
   int last_dist = 2;
+  int min_cut_rank = 0;
 
   void ConstructBPLabel();
   int BPQuery(int u, int v);
   bool BPPrune(int u, int v, int d);
   bool Prune(int u, int v, int d, const vector<char> &cache);
 
-public:
   vector<LabelSet> labels;
   PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr);
   vector<int>* Pull(int u, int d);
-  void Init();
-  void Init(int u);
+  vector<int>* Init(int u);
   void Index();
   void WriteLabelCounts(string filename);
   vector<int>* Query(int u);
@@ -172,11 +172,12 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut) : csr(csr_),  
 		ranks[order[i]] = i;
 	}
 
-  if(cut != nullptr){
+  if(cut != nullptr && !cut->empty()){
     int high_rank = INT_MAX;
     for(int u : *cut){
       ranks[u] = high_rank--;
     }
+    min_cut_rank = high_rank;
   }
   
   
@@ -365,32 +366,27 @@ inline vector<int>* PSL::Pull(int u, int d) {
   return new_labels;
 }
 
-inline void PSL::Init(int u){
-    auto &labels_u = labels[u];
-    labels_u.vertices.push_back(u);
-    labels_u.dist_ptrs.push_back(0);
-    labels_u.dist_ptrs.push_back(1);
+inline vector<int>* PSL::Init(int u){
+  
+  vector<int>* init_labels = new vector<int>;
 
-    int start = csr.row_ptr[u];
-    int end = csr.row_ptr[u + 1];
+  init_labels->push_back(u);
 
-    for (int j = start; j < end; j++) {
-      int v = csr.col[j];
+  int start = csr.row_ptr[u];
+  int end = csr.row_ptr[u + 1];
 
-      if (ranks[v] > ranks[u]) {
-        labels_u.vertices.push_back(v);
-      }
+  for (int j = start; j < end; j++) {
+    int v = csr.col[j];
+
+    if (ranks[v] > ranks[u]) {
+      init_labels->push_back(v);
     }
-
-    labels_u.dist_ptrs.push_back(labels_u.vertices.size());
-}
-
-inline void PSL::Init(){
-  #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
-  for (int u = 0; u < csr.n; u++) {
-    Init(u);
   }
+
+  return init_labels;
+
 }
+
 
 inline void PSL::Index() {
 
@@ -401,7 +397,15 @@ inline void PSL::Index() {
   // Level 0: vertex to itself
   // Level 1: vertex to neighbors
   start_time = omp_get_wtime();
-  Init();
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+  for (int u = 0; u < csr.n; u++) {
+    auto init_labels = Init(u);
+    labels[u].vertices.insert(labels[u].vertices.end(), init_labels->begin(), init_labels->end());
+    delete init_labels;
+    labels[u].dist_ptrs.push_back(0);
+    labels[u].dist_ptrs.push_back(1);
+    labels[u].dist_ptrs.push_back(labels[u].vertices.size());
+  }
   end_time = omp_get_wtime();
   cout << "Level 0 & 1: " << end_time-start_time << " seconds" << endl;
 
