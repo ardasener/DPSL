@@ -1,570 +1,256 @@
-#include "external/order/order.hpp"
-#include "external/pigo/pigo.hpp"
-#include <algorithm>
-#include <climits>
-#include <cstdint>
-#include <fstream>
-#include <omp.h>
-#include <string>
-#include <utility>
-#include <vector>
-#include <stdio.h>
+#pragma once
 
-#define N_ROOTS 16
-#define MAX_BP_THREADS 6
-#define USEBP false
-#define NUM_THREADS 6
-
-using namespace std;
+#include "external/toml/toml.h"
+#include "psl.h"
+#include "mpi.h"
 
 
-using PigoCOO = pigo::COO<int, int, int *, true, false, true, false,
-                          float, float *>;
+class VertexCut{
+public:
+  unordered_set<int> cut;
+  vector<CSR*> csrs;
+  int* partition;
+  vector<int> ranks;
+  vector<unordered_map<int, int>> aliasses;
 
-const char MAX_DIST = CHAR_MAX;
+  VertexCut(CSR& csr, string order_method, int np);
+};
 
+inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
 
-struct CSR {
-  int *row_ptr;
-  int *col;
-  int n;
-  int m;
+  vector<int> order;
+  tie(order, csr.row_ptr, csr.col, csr.n, csr.m) = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
 
-  CSR(string filename) {
-    PigoCOO pigo_coo(filename);
+  ranks.resize(csr.n);
+	for(int i=0; i<csr.n; i++){
+		ranks[order[i]] = i;
+	}
 
-    int *coo_row = pigo_coo.x();
-    int *coo_col = pigo_coo.y();
-    m = pigo_coo.m();
-    n = pigo_coo.n();
+  int objval;
+  partition = new int[csr.n];
 
-    int min1 = *min_element(coo_row, coo_row+m, less<int>());
-    int min2 = *min_element(coo_col, coo_col+m, less<int>());
-    int min = (min1 < min2) ? min1 : min2;
+  cout << "Partitioning..." << endl;
+  METIS_PartGraphKway(&csr.n, &csr.m, csr.row_ptr, csr.col,
+				       NULL, NULL, NULL, &np, NULL,
+				       NULL, NULL, &objval, partition);
 
-    if(min != 0){
-      cout << "Fixing indices with minimum=" << min << endl;
-      for(int i=0; i<m; i++){
-        coo_row[i] -= min;
-        coo_col[i] -= min;
+  
+  cout << "Calculating cut..." << endl;
+  for(int u=0; u<csr.n; u++){
+    int start = csr.row_ptr[u];
+    int end = csr.col[u];
+
+    for(int j=start; j<end; j++){
+      int v = csr.col[j];
+
+      if(partition[u] != partition[v]){
+        if (ranks[u] > ranks[v]){
+          cut.insert(u);
+        } else {
+          cut.insert(v);
+        }
       }
     }
+  }
 
-    vector<pair<int, int>> edges(m);
+  cout << "Calculating edges and nodes..." << endl;
+  vector<vector<pair<int,int>>> edges(np);
+  vector<unordered_set<int>> nodes(np);
+  for(int u=0; u<csr.n; u++){
+    int start = csr.row_ptr[u];
+    int end = csr.col[u];
 
-    for (size_t i = 0; i < m; i++) {
-      edges[i] = pair<int, int>(coo_row[i], coo_col[i]);
+    for(int j=start; j<end; j++){
+      int v = csr.col[j];
+
+      bool u_in_cut = (cut.find(u) != cut.end());
+      bool v_in_cut = (cut.find(v) != cut.end());
+
+      if(partition[u] == partition[v] || v_in_cut){
+        edges[partition[u]].emplace_back(u,v);
+        nodes[partition[u]].insert({u,v});
+      } else if(u_in_cut && v_in_cut){
+        for(int i=0; i<edges.size(); i++){
+          edges[i].emplace_back(u,v);
+          nodes[i].insert({u,v});
+        }
+      } else if(u_in_cut){
+        edges[partition[v]].emplace_back(u,v);
+        nodes[partition[v]].insert({u,v});
+      }
+    }
+  }
+
+  cout << "Constructing csrs..." << endl;
+  csrs.resize(np, nullptr);
+  aliasses.resize(np, unordered_map<int, int>());
+  for(int i=0; i<np; i++){
+    int n = nodes[i].size();
+    int m = edges[i].size();
+    int *row_ptr = new int[n+1];
+    int *col = new int[m];
+
+    fill(row_ptr, row_ptr+n+1, 0);
+
+    sort(edges[i].begin(), edges[i].end(), less<pair<int,int>>());
+    sort(nodes[i].begin(), nodes[i].end());
+
+    int new_index = 0;
+    for(int node: nodes[i]){
+      aliasses[i][node] = new_index;
     }
 
-    sort(edges.begin(), edges.end(), less<pair<int, int>>());
-
-    row_ptr = new int[n + 1];
-    col = new int[m];
-
-    for (int i = 0; i < m; i++) {
-      col[i] = edges[i].second;
-      row_ptr[edges[i].first]++;
+    int mt = 0;
+    for (auto &e : edges[i]) {
+      row_ptr[e.first + 1]++;
+      col[mt++] = e.second;
     }
 
     for (int i = 1; i <= n; i++) {
       row_ptr[i] += row_ptr[i - 1];
     }
 
+    
     for (int i = n; i > 0; i--) {
       row_ptr[i] = row_ptr[i - 1];
     }
-    row_ptr[0] = 0;
 
-    delete[] coo_row;
-    delete[] coo_col;
+    row_ptr[0] = 0; 
+
+
+    csrs[i] = new CSR(row_ptr, col, n, m);
+
   }
-};
-
-// Bit-Parallel Labels
-struct BPLabel {
-  uint8_t bpspt_d[N_ROOTS];
-  uint64_t bpspt_s[N_ROOTS][2];
-};
-
-// Stores the labels for each vertex
-struct LabelSet {
-  vector<int> vertices;
-  vector<int> dist_ptrs;
-};
-
-
-vector<int>* BFSQuery(CSR& csr, int u){
-
-  vector<int>* dists = new vector<int>(csr.n, -1);
-  auto& dist = *dists;
-
-	int q[csr.n];
-
-	int q_start = 0;
-	int q_end = 1;
-	q[q_start] = u;
-
-	dist[u] = 0;
-	while(q_start < q_end){
-		int curr = q[q_start++];
-
-		int start = csr.row_ptr[curr];
-		int end = csr.row_ptr[curr+1];
-
-		for(int i=start; i<end; i++){
-			int v = csr.col[i];
-
-			if(dist[v] == -1){
-				dist[v] = dist[curr]+1;
-
-				q[q_end++] = v;
-			}
-		}
-
-	}
-
-  return dists;
+  
 }
 
 
-class PSL {
 
+class DPSL{
 private:
-  CSR &csr;
-  vector<LabelSet> labels;
-  vector<int> &ranks;
-  BPLabel* label_bp;
-  bool* usd_bp;
-  vector<int> v_vs[N_ROOTS];
-  int last_dist = 2;
-
-  void ConstructBPLabel();
-  int BPQuery(int u, int v);
-  bool BPPrune(int u, int v, int d);
-  bool Prune(int u, int v, int d, const vector<char> &cache);
-  vector<int>* Pull(int u, int d);
-
+    void SendData(int* data, int size, int vertex, int to);
+    int RecvData(int*& data,int vertex, int from);
+    void Barrier();
+    int pid;
+    CSR& whole_csr;
+    CSR* part_csr;
+    vector<int> cut;
+    const toml::Value& config;
+    void InitP0();
+    void Init();
+    void IndexP0();
+    void Index();
 public:
-  PSL(CSR &csr_, vector<int> &ranks_) : csr(csr_), ranks(ranks_), labels(csr.n) {
-    ConstructBPLabel();
-  }
-
-  void Index();
-  void WriteLabelCounts(string filename);
-  vector<int>* Query(int u);
-  void Query(int u, string filename);
+    DPSL(int pid, CSR& csr, const toml::Value& config);
 };
 
-
-inline void PSL::WriteLabelCounts(string filename){
-  ofstream ofs(filename);
-  ofs << "L:\t";
-  for(int i=0; i<last_dist; i++){
-    ofs << i << "\t";
-  }
-  ofs << endl;
-
-  long long total;
-  for(int u=0; u<csr.n; u++){
-    ofs << u << ":\t";
-    auto& labels_u = labels[u];
-
-    for(int d=0; d<last_dist; d++){
-      int dist_start = labels_u.dist_ptrs[d];
-      int dist_end = labels_u.dist_ptrs[d+1];
-
-      ofs << dist_end - dist_start << "\t";
-      total += dist_end - dist_start;
-    }
-    ofs << endl;
-  }
-  ofs << endl;
-
-  ofs << "Total Label Count: " << total << endl;
-  ofs << "Avg. Label Count: " << total/(double) csr.n << endl;
-  
-  ofs << endl;
-
-  ofs.close();
+inline void DPSL::Barrier(){
+    MPI_Barrier(MPI_COMM_WORLD);
 }
 
-inline void PSL::Query(int u, string filename){
-  auto results = Query(u);
-  auto bfs_results = BFSQuery(csr, u);
-  
-  ofstream ofs(filename);
-
-  ofs << "Source: " << u << endl;
-  ofs << "Target\tPSL_Distance\tBFS_Distance\tCorrectness" << endl;
-  for(int i=0; i<csr.n; i++){
-    int psl_res = results->at(i);
-    int bfs_res = bfs_results->at(i);
-    string correctness = (bfs_res == psl_res) ? "correct" : "wrong";
-    ofs << i << "\t" << psl_res << "\t" << bfs_res << "\t" << correctness << endl;
-  }
-
-  ofs.close();
-  delete results;
-  delete bfs_results;
+inline void DPSL::SendData(int* data, int size, int vertex, int to){
+  int tag = (vertex << 1);
+  int size_tag = tag | 1;
+  MPI_Send(&size, 1, MPI_INT32_T, to, size_tag, MPI_COMM_WORLD);
+	MPI_Send(data, size, MPI_INT32_T, to, tag, MPI_COMM_WORLD);
 }
 
-inline vector<int>* PSL::Query(int u) {
+inline int DPSL::RecvData(int *& data, int vertex, int from){
+    int tag = (vertex << 1);
+    int size_tag = tag | 1;
+    int size = 0;
+    MPI_Recv(&size, 1, MPI_INT32_T, from, size_tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    data = new int[size];
+    MPI_Recv(data, size, MPI_INT32_T, from, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+    return size;
+}
 
 
-  vector<int>* results = new vector<int>(csr.n, MAX_DIST);
-
-  auto &labels_u = labels[u];
-
-  vector<char> cache(csr.n, -1);
-
-  for (int i = 0; i < last_dist; i++) {
-    int dist_start = labels_u.dist_ptrs[i];
-    int dist_end = labels_u.dist_ptrs[i + 1];
-
-    for (int j = dist_start; j < dist_end; j++) {
-      int w = labels_u.vertices[j];
-      cache[w] = (char) i;
-    }
-  }
-
-  for (int v = 0; v < csr.n; v++) {
-
-    auto& labels_v = labels[v];
-    int min = MAX_DIST;
-
-    for (int i = 0; i < min && i < last_dist; i++) {
-      int dist_start = labels_v.dist_ptrs[i];
-      int dist_end = labels_v.dist_ptrs[i + 1];
-
-      for (int j = dist_start; j < dist_end; j++) {
-        int w = labels_v.vertices[j];
-        
-        if(cache[w] == -1){
-          continue;
-        }
-
-        int dist = i + (int) cache[w];
-        if(dist < min){
-          min = dist;
-        }
-      }
-    }
+inline void DPSL::InitP0(){
+	string order_method = config.find("order_method")->as<string>();
+    int np = config.find("num_processes")->as<int>();
     
-    (*results)[v] = (min == MAX_DIST) ? -1 : min;
+    CSR& csr = whole_csr;
 
-  }
-  
-  return results;
+    VertexCut vc(csr, order_method, np);
+
+    cut.insert(cut.begin(),vc.cut.begin(), vc.cut.end());
+    auto& ranks = vc.ranks;
+
+    sort(cut.begin(), cut.end(), [ranks](int u, int v){
+        return ranks[u] > ranks[v];
+    });
+
+    auto& csrs = vc.csrs;
+    part_csr = csrs[0];
+
+    for(int i=1; i<np; i++){
+        SendData(csrs[i]->row_ptr, (csrs[i]->n)+1, 0, i);
+    }
+    Barrier();
+
+    for(int i=1; i<np; i++){
+        SendData(csrs[i]->col, csrs[i]->m, 0, i);
+    }
+    Barrier();
+    for(int i=1; i<np; i++){
+        SendData(cut.data(), cut.size(), 0, i);
+    }
+    Barrier();
+
 }
 
-inline bool PSL::Prune(int u, int v, int d, const vector<char> &cache) {
+inline void DPSL::Init(){
+    int *row_ptr;
+    int *col;
+    int *cut_ptr;
 
-  auto &labels_v = labels[v];
+    int size_row_ptr = RecvData(row_ptr, 0, 0);
+    Barrier();
+    int size_col = RecvData(col, 0, 0);
+    Barrier();
+    int size_cut = RecvData(cut_ptr, 0, 0);
+    Barrier();
 
-  for (int i = 0; i < d; i++) {
-    int dist_start = labels_v.dist_ptrs[i];
-    int dist_end = labels_v.dist_ptrs[i + 1];
+    cut.insert(cut.end(), cut_ptr, cut_ptr+size_cut);
 
-    for (int j = dist_start; j < dist_end; j++) {
-      int w = labels_v.vertices[j];
+    part_csr = new CSR(row_ptr, col, size_row_ptr-1, size_col);
 
-      if (cache[w] != -1 && (i + cache[w]) <= d) {
-        return true;
-      }
-    }
-  }
-
-  return false;
 }
 
-inline vector<int>* PSL::Pull(int u, int d) {
+inline void DPSL::Index(){
+    CSR& csr = *part_csr;
 
-  auto &labels_u = labels[u];
-  
-  vector<char> cache(csr.n, -1);
-  for (int i = 0; i < d; i++) {
-    int dist_start = labels_u.dist_ptrs[i];
-    int dist_end = labels_u.dist_ptrs[i + 1];
+	string order_method = config.find("order_method")->as<string>();
+    PSL psl(*part_csr, order_method, &cut);
 
-    for (int j = dist_start; j < dist_end; j++) {
-      int w = labels_u.vertices[j];
-      cache[w] = (char) i;
+    psl.Init();
+    for(int i=0; i<cut.size(); i++){
+        int u = cut[i];
+        auto& labels = psl.labels[u].vertices;
+        SendData(labels.data(), labels.size(), i, 0);
     }
-  }
+    Barrier();
 
-  vector<int>* new_labels = new vector<int>;
-  bool updated = false;
-  int start = csr.row_ptr[u];
-  int end = csr.row_ptr[u + 1];
-  for (int i = start; i < end; i++) {
-    int v = csr.col[i];
-    auto &labels_v = labels[v];
+    for(int d=2; d < MAX_DIST; d++){    
+        vector<vector<int>*> new_labels(csr.n, nullptr);
 
-    int labels_start = labels_v.dist_ptrs[d-1];
-    int labels_end = labels_v.dist_ptrs[d];
-    
-
-    for (int j = labels_start; j < labels_end; j++) {
-      int w = labels_v.vertices[j];
-
-      if (ranks[u] > ranks[w]) {
-        continue;
-      }
-
-      if constexpr(USEBP){
-        if(BPPrune(u, w, d)){
-          continue;
-        }
-      }
-
-      if(Prune(u, w, d, cache)){
-        continue;
-      }
-
-      (*new_labels).push_back(w);
-      cache[w] = d;
-    }
-  }
-
-  return new_labels;
-}
-
-inline void PSL::Index() {
-
-  double start_time, end_time, all_start_time, all_end_time;
-  all_start_time = omp_get_wtime();
-
-  // Adds the first two level of vertices
-  // Level 0: vertex to itself
-  // Level 1: vertex to neighbors
-  start_time = omp_get_wtime();
-  #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
-  for (int u = 0; u < csr.n; u++) {
-    auto &labels_u = labels[u];
-    labels_u.vertices.push_back(u);
-    labels_u.dist_ptrs.push_back(0);
-    labels_u.dist_ptrs.push_back(1);
-
-    int start = csr.row_ptr[u];
-    int end = csr.row_ptr[u + 1];
-
-    for (int j = start; j < end; j++) {
-      int v = csr.col[j];
-
-      if (ranks[v] > ranks[u]) {
-        labels_u.vertices.push_back(v);
-      }
-    }
-
-    labels_u.dist_ptrs.push_back(labels_u.vertices.size());
-  }
-  end_time = omp_get_wtime();
-
-  cout << "Level 0 & 1: " << end_time-start_time << " seconds" << endl;
-
-
-  bool updated = true;
-  for (int d = 2; d < MAX_DIST && updated; d++) {
-    
-    start_time = omp_get_wtime();
-    updated = false;
-
-    vector<vector<int>*> new_labels(csr.n);
-    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated)
-    for (int u = 0; u < csr.n; u++) {
-      new_labels[u] =  Pull(u, d);
-      updated = updated || (!new_labels[u]->empty());
-    }
-
-    last_dist++;
-
-    
-    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated)
-    for (int u = 0; u < csr.n; u++) {
-      auto& labels_u = labels[u];
-      labels_u.vertices.insert(labels_u.vertices.end(), new_labels[u]->begin(), new_labels[u]->end());
-      labels_u.dist_ptrs.push_back(labels_u.vertices.size());
-      delete new_labels[u];
-    }
-
-    end_time = omp_get_wtime();
-    cout << "Level " << d << ": " << end_time-start_time << " seconds" << endl;
-  }
-
-  all_end_time = omp_get_wtime();
-  cout << "Indexing: " << all_end_time-all_start_time << " seconds" << endl;
-}
-
-inline int PSL::BPQuery(int u, int v) {
-  BPLabel &idx_u = label_bp[u], &idx_v = label_bp[v];
-  int d = MAX_DIST;
-  for (int i = 0; i < N_ROOTS; ++i) {
-    int td = idx_u.bpspt_d[i] + idx_v.bpspt_d[i];
-    if (td - 2 <= d)
-      td += (idx_u.bpspt_s[i][0] & idx_v.bpspt_s[i][0]) ? -2
-            : ((idx_u.bpspt_s[i][0] & idx_v.bpspt_s[i][1]) |
-               (idx_u.bpspt_s[i][1] & idx_v.bpspt_s[i][0]))
-                ? -1
-                : 0;
-    if (td < d)
-      d = td;
-  }
-  return d;
-}
-
-inline bool PSL::BPPrune(int u, int v, int d) {
-  BPLabel &idx_u = label_bp[u], &idx_v = label_bp[v];
-  for (int i = 0; i < N_ROOTS; ++i) {
-    int td = idx_u.bpspt_d[i] + idx_v.bpspt_d[i];
-    if (td - 2 <= d)
-      td += (idx_u.bpspt_s[i][0] & idx_v.bpspt_s[i][0]) ? -2
-            : ((idx_u.bpspt_s[i][0] & idx_v.bpspt_s[i][1]) |
-               (idx_u.bpspt_s[i][1] & idx_v.bpspt_s[i][0]))
-                ? -1
-                : 0;
-    if (td <= d)
-      return true;
-  }
-  return false;
-}
-
-inline void PSL::ConstructBPLabel() {
-  int nown = csr.n;
-  int n = csr.n;
-  int m = csr.m;
-
-  printf("Constructing BP Label...\n");
-  double tt = omp_get_wtime();
-  label_bp = new BPLabel[nown];
-  usd_bp = new bool[n];
-  memset(usd_bp, 0, sizeof(bool) * n);
-  vector<int> v_vs[N_ROOTS];
-
-  int r = 0;
-  for (int i_bpspt = 0; i_bpspt < N_ROOTS; ++i_bpspt) {
-    while (r < nown && usd_bp[r])
-      ++r;
-    if (r == nown) {
-      for (int v = 0; v < nown; ++v)
-        label_bp[v].bpspt_d[i_bpspt] = MAX_DIST;
-      continue;
-    }
-    usd_bp[r] = true;
-    v_vs[i_bpspt].push_back(r);
-    int ns = 0;
-
-    int start = csr.row_ptr[r];
-    int end = csr.row_ptr[r];
-    for (int i = start; i < end; ++i) {
-      int v = csr.col[i];
-      if (!usd_bp[v]) {
-        usd_bp[v] = true;
-        v_vs[i_bpspt].push_back(v);
-        if (++ns == 64)
-          break;
-      }
-    }
-  }
-
-  int n_threads = 1;
-#pragma omp parallel
-  {
-    if (omp_get_thread_num() == 0)
-      n_threads = omp_get_num_threads();
-  }
-  if (n_threads > MAX_BP_THREADS)
-    omp_set_num_threads(MAX_BP_THREADS);
-#pragma omp parallel
-  {
-    int pid = omp_get_thread_num(), np = omp_get_num_threads();
-    if (pid == 0)
-      printf("n_threads_bp = %d\n", np);
-    vector<uint8_t> tmp_d(nown);
-    vector<pair<uint64_t, uint64_t>> tmp_s(nown);
-    vector<int> que(nown);
-    // vector<pair<int, int> > sibling_es(m/2);
-    vector<pair<int, int>> child_es(m / 2);
-
-    for (int i_bpspt = pid; i_bpspt < N_ROOTS; i_bpspt += np) {
-      printf("[%d]", i_bpspt);
-
-      if (v_vs[i_bpspt].size() == 0)
-        continue;
-      fill(tmp_d.begin(), tmp_d.end(), MAX_DIST);
-      fill(tmp_s.begin(), tmp_s.end(), make_pair(0, 0));
-
-      r = v_vs[i_bpspt][0];
-      int que_t0 = 0, que_t1 = 0, que_h = 0;
-      que[que_h++] = r;
-      tmp_d[r] = 0;
-      que_t1 = que_h;
-
-      for (size_t i = 1; i < v_vs[i_bpspt].size(); ++i) {
-        int v = v_vs[i_bpspt][i];
-        que[que_h++] = v;
-        tmp_d[v] = 1;
-        tmp_s[v].first = 1ULL << (i - 1);
-      }
-
-      for (int d = 0; que_t0 < que_h; ++d) {
-        // int num_sibling_es = 0;
-        int num_child_es = 0;
-
-        for (int que_i = que_t0; que_i < que_t1; ++que_i) {
-          int v = que[que_i];
-  
-          int start = csr.row_ptr[v];
-          int end = csr.row_ptr[v+1];
-          for (int i = start; i < end; ++i) {
-            int tv = csr.col[i];
-            int td = d + 1;
-
-            if (d == tmp_d[tv]) {
-              if (v < tv) {
-                // sibling_es[num_sibling_es].first  = v;
-                // sibling_es[num_sibling_es].second = tv;
-                //++num_sibling_es;
-                tmp_s[v].second |= tmp_s[tv].first;
-                tmp_s[tv].second |= tmp_s[v].first;
-              }
-            } else if (d < tmp_d[tv]) {
-              if (tmp_d[tv] == MAX_DIST) {
-                que[que_h++] = tv;
-                tmp_d[tv] = td;
-              }
-              child_es[num_child_es].first = v;
-              child_es[num_child_es].second = tv;
-              ++num_child_es;
-              // tmp_s[tv].first  |= tmp_s[v].first;
-              // tmp_s[tv].second |= tmp_s[v].second;
-            }
-          }
+        for(int u=0; u<csr.n; u++){
+            new_labels[u] = psl.Pull(u,d);
         }
 
-        /*for (int i = 0; i < num_sibling_es; ++i) {
-                int v = sibling_es[i].first, w = sibling_es[i].second;
-                tmp_s[v].second |= tmp_s[w].first;
-                tmp_s[w].second |= tmp_s[v].first;
-        }*/
-
-        for (int i = 0; i < num_child_es; ++i) {
-          int v = child_es[i].first, c = child_es[i].second;
-          tmp_s[c].first |= tmp_s[v].first;
-          tmp_s[c].second |= tmp_s[v].second;
+        for(int i=0; i<cut.size(); i++){
+            int u = cut[i];
+            SendData(new_labels[], int size, int vertex, int to)
         }
-
-        que_t0 = que_t1;
-        que_t1 = que_h;
-      }
-
-      for (int v = 0; v < nown; ++v) {
-        label_bp[v].bpspt_d[i_bpspt] = tmp_d[v];
-        label_bp[v].bpspt_s[i_bpspt][0] = tmp_s[v].first;
-        label_bp[v].bpspt_s[i_bpspt][1] = tmp_s[v].second & ~tmp_s[v].first;
-      }
     }
-  }
-  omp_set_num_threads(n_threads);
-  printf("\nBP Label Constructed, bp_size=%0.3lfMB, time = %0.3lf sec\n",
-         sizeof(BPLabel) * nown / (1024.0 * 1024.0), omp_get_wtime() - tt);
+}
+
+inline DPSL::DPSL(int pid, CSR& csr, const toml::Value& config): whole_csr(csr), pid(pid), config(config){
+    if(pid == 0){
+        InitP0();
+    } else {
+        Init();
+    }
 }

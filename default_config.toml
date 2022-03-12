@@ -1,0 +1,4 @@
+mpi = true
+filename = "small_graphs/p2p-Gnutella04.mtx"
+order_method = "degree"
+num_processes = 2
