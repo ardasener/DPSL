@@ -1,9 +1,12 @@
-#pragma once
+#ifndef DPSL_H
+#define DPSL_H
 
 #include "external/toml/toml.h"
 #include "psl.h"
 #include "mpi.h"
+#include <algorithm>
 
+using namespace std;
 
 class VertexCut{
 public:
@@ -30,7 +33,8 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
   partition = new int[csr.n];
 
   cout << "Partitioning..." << endl;
-  METIS_PartGraphKway(&csr.n, &csr.m, csr.row_ptr, csr.col,
+  int nw = 1;
+  METIS_PartGraphKway(&csr.n, &nw, csr.row_ptr, csr.col,
 				       NULL, NULL, NULL, &np, NULL,
 				       NULL, NULL, &objval, partition);
 
@@ -93,11 +97,19 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
     fill(row_ptr, row_ptr+n+1, 0);
 
     sort(edges[i].begin(), edges[i].end(), less<pair<int,int>>());
-    sort(nodes[i].begin(), nodes[i].end());
+
+    vector<int> nodes_i;
+    nodes_i.insert(nodes_i.end() ,nodes[i].begin(), nodes[i].end());
+    sort(nodes_i.begin(), nodes_i.end(), less<int>());
 
     int new_index = 0;
-    for(int node: nodes[i]){
+    for(int node: nodes_i){
       aliasses[i][node] = new_index;
+    }
+
+    for(auto& edge: edges[i]){
+        edge.first = aliasses[i][edge.first];
+        edge.second = aliasses[i][edge.second];
     }
 
     int mt = 0;
@@ -130,7 +142,9 @@ class DPSL{
 
 public:
     void SendData(int* data, int size, int vertex, int to);
+    void BroadcastData(int* data, int size, int vertex);
     int RecvData(int*& data,int vertex, int from);
+    void MergeCut(vector<vector<int>*> new_labels, PSL& psl);
     void Barrier();
     int pid, np;
     CSR* whole_csr;
@@ -144,6 +158,44 @@ public:
     DPSL(int pid, CSR* csr, const toml::Value& config, int np);
 };
 
+inline void DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl){
+  if(pid == 0){
+    for(int i=0; i<cut.size(); i++){
+      int u = cut[i];
+      auto& labels_u = psl.labels[u].vertices;
+      int start = labels_u.size();
+      vector<int> merged_labels;
+
+      for(int p=1; p<np; p++){
+        int* recv_labels;
+        int size = RecvData(recv_labels, i, p);
+        merged_labels.insert(merged_labels.end(), recv_labels, recv_labels+size);
+        delete[] recv_labels;
+      }
+
+      merged_labels.insert(merged_labels.end(), new_labels[u]->begin(), new_labels[u]->end());
+
+      labels_u.insert(labels_u.begin(), unique(merged_labels.begin(), merged_labels.end()), merged_labels.end());
+
+      BroadcastData(labels_u.data() + start, labels_u.size()-start, i);
+
+    }
+  } else {
+
+    for(int i=0; i<cut.size(); i++){
+      int u = cut[i];
+      auto& labels_u = psl.labels[u].vertices;
+      SendData(new_labels[u]->data(), new_labels[u]->size(), i, 0);
+      int* merged_labels;
+      int size = RecvData(merged_labels, i, 0);
+      
+      if(size > 0){
+        labels_u.insert(labels_u.end(), merged_labels, merged_labels + size);
+      }
+    }
+  }
+}
+
 inline void DPSL::Barrier(){
     MPI_Barrier(MPI_COMM_WORLD);
 }
@@ -155,13 +207,25 @@ inline void DPSL::SendData(int* data, int size, int vertex, int to){
 	MPI_Send(data, size, MPI_INT32_T, to, tag, MPI_COMM_WORLD);
 }
 
+// TODO: Replace this with MPI_Bcast
+inline void DPSL::BroadcastData(int *data, int size, int vertex){
+  for(int p=1; p<np; p++){
+    SendData(data, size, vertex, p);
+  }
+}
+
 inline int DPSL::RecvData(int *& data, int vertex, int from){
     int tag = (vertex << 1);
     int size_tag = tag | 1;
     int size = 0;
     MPI_Recv(&size, 1, MPI_INT32_T, from, size_tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    data = new int[size];
-    MPI_Recv(data, size, MPI_INT32_T, from, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+    if(size != 0){
+      data = new int[size];
+      MPI_Recv(data, size, MPI_INT32_T, from, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    } else {
+      data = nullptr;
+    }
 
     return size;
 }
@@ -244,22 +308,8 @@ inline void DPSL::Index(){
       }
     }
 
-    for(int i=0; i<cut.size(); i++){
-        int u = cut[i];
-        auto& labels = *(init_labels[u]);
-        SendData(labels.data(), labels.size(), i, 0);
-        int* merged_labels;
-        int size = RecvData(merged_labels, i, 0);
-        psl.labels[u].vertices.insert(psl.labels[u].vertices.begin(), merged_labels, merged_labels+size);
-    }
-
-    for(int i=0; i<cut.size(); i++){
-      int* merged_labels;
-      int size = RecvData(merged_labels,i,0);
-      int u = cut[i];
-      auto& labels = psl.labels[u];
-    }
-
+    MergeCut(init_labels, psl);
+    
     for (int u = 0; u < csr.n; u++) {
       auto& labels = psl.labels[u];
       labels.dist_ptrs.push_back(0);
@@ -284,21 +334,7 @@ inline void DPSL::Index(){
           }
         }
 
-
-        for(int i=0; i<cut.size(); i++){
-            int u = cut[i];
-            SendData(new_labels[u]->data(), new_labels[u]->size(), i, 0);
-        }
-        
-        
-        for(int i=0; i<cut.size(); i++){
-          int u = cut[i];
-          auto& labels = psl.labels[u].vertices;
-          int* merged_labels;
-          int size = RecvData(merged_labels, i, 0);
-          labels.insert(labels.begin(),merged_labels, merged_labels+size);
-          delete[] merged_labels;
-        }
+        MergeCut(new_labels, psl);
 
 
         for(int u=0; u<csr.n; u++){
@@ -318,3 +354,5 @@ inline DPSL::DPSL(int pid, CSR* csr, const toml::Value& config, int np): whole_c
         Init();
     }
 }
+
+#endif

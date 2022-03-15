@@ -1,6 +1,6 @@
-#pragma once
+#ifndef PSL_H
+#define PSL_H
 
-#include "dpsl.h"
 #include "external/order/order.hpp"
 #include "external/pigo/pigo.hpp"
 #include <algorithm>
@@ -631,3 +631,4 @@ inline void PSL::ConstructBPLabel() {
          sizeof(BPLabel) * nown / (1024.0 * 1024.0), omp_get_wtime() - tt);
 }
 
+#endif

@@ -12,7 +12,6 @@
 using namespace std;
 
 
-
 void RunPSL(const toml::Value& config){
 	cout << "Reading graph..." << endl;
 	string filename = config.find("filename")->as<string>();
@@ -34,13 +33,13 @@ void RunPSL(const toml::Value& config){
 
 void RunDPSL(const toml::Value& config, int pid, int np){
 	
-	string filename = config.find("general.filename")->as<string>();
-	string order_method = config.find("general.order_method")->as<string>();
+	string filename = config.find("filename")->as<string>();
+	string order_method = config.find("order_method")->as<string>();
 	
 	if(pid == 0){
 		CSR csr(filename);
 		DPSL dpsl(pid, &csr, config ,np);
-		dpsl.IndexP0();
+		dpsl.Index();
 	} else {
 		DPSL dpsl(pid, nullptr, config, np);
 		dpsl.Index();
@@ -59,7 +58,7 @@ int main(int argc, char* argv[]){
 	const toml::Value& config = pr.value;
 
 
-	if(config.find("general.mpi")->as<bool>()){
+	if(!(config.find("mpi")->as<bool>())){
 		RunPSL(config);
 	} else {
 		MPI_Init(&argc, &argv);
