@@ -44,6 +44,22 @@ struct CSR {
   int n;
   int m;
 
+  CSR(CSR& csr){
+    row_ptr = new int[csr.n+1];
+    col = new int[csr.m];
+
+    for(int i=0; i<csr.n+1; i++){
+      row_ptr[i] = csr.row_ptr[i];
+    }
+
+    for(int i=0; i<csr.m; i++){
+      col[i] = csr.col[i];
+    }
+
+    n = csr.n;
+    m = csr.m;
+  }
+
   CSR(int * row_ptr_, int *col_, int n, int m): row_ptr(row_ptr_), col(col_), n(n), m(m) {}
 
   CSR(string filename) {

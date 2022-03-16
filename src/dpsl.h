@@ -207,6 +207,7 @@ public:
     CSR* whole_csr;
     CSR* part_csr;
     vector<int> cut;
+    vector<int> names;
     const toml::Value& config;
     void InitP0();
     void Init();
@@ -228,26 +229,33 @@ inline void DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl){
       int u = cut[i];
       auto& labels_u = psl.labels[u].vertices;
       int start = labels_u.size();
-      vector<int> merged_labels;
+      unordered_set<int> merged_labels;
 
       Log("Recieving Labels for " + to_string(i));
       for(int p=1; p<np; p++){
         int* recv_labels;
         int size = RecvData(recv_labels, i, p);
         if(size != 0 && recv_labels != nullptr){
-          merged_labels.insert(merged_labels.end(), recv_labels, recv_labels+size);
+          merged_labels.insert(recv_labels, recv_labels+size);
           delete[] recv_labels;
         }
       }
 
-      if(new_labels[u] != nullptr)
-        merged_labels.insert(merged_labels.end(), new_labels[u]->begin(), new_labels[u]->end());
+      Log("Adding Self Labels for " + to_string(i));
+      cout << new_labels[u] << endl;
+      if(new_labels[u] != nullptr && !new_labels[u]->empty()){
+        merged_labels.insert(new_labels[u]->begin(), new_labels[u]->end());
+      }
       
       Log("Merging Labels for " + to_string(i));
-      labels_u.insert(labels_u.begin(), unique(merged_labels.begin(), merged_labels.end()), merged_labels.end());
+      labels_u.insert(labels_u.end(), merged_labels.begin(), merged_labels.end());
 
       Log("Broadcasting Labels for " + to_string(i));
-      BroadcastData(labels_u.data() + start, labels_u.size()-start, i);
+      if(labels_u.size() > start){
+        BroadcastData(labels_u.data() + start, labels_u.size()-start, i);
+      } else {
+        BroadcastData(nullptr, 0, i);
+      }
 
     }
   } else {
@@ -305,7 +313,7 @@ inline int DPSL::RecvData(int *& data, int vertex, int from){
     if(size != 0){
       data = new int[size];
       error_code2 = MPI_Recv(data, size, MPI_INT32_T, from, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      Log("Recieved Data with codes= " + to_string(error_code1) + "," + to_string(error_code2));
+      Log("Recieved Data with codes= " + to_string(error_code1) + "," + to_string(error_code2) + " and with size=" + to_string(size));
     } else {
       data = nullptr;
       Log("Recieved Size 0 Data");
@@ -321,16 +329,16 @@ inline void DPSL::InitP0(){
     CSR& csr = *whole_csr;
 
     VertexCut vc(csr, order_method, np);
-    
-    cut.insert(cut.end(),vc.cut.begin(), vc.cut.end());
+
+    vector<int> all_cut(vc.cut.begin(), vc.cut.end());
     auto& ranks = vc.ranks;
 
-    sort(cut.begin(), cut.end(), [ranks](int u, int v){
+    sort(all_cut.begin(), all_cut.end(), [ranks](int u, int v){
         return ranks[u] > ranks[v];
     });
 
     auto& csrs = vc.csrs;
-    part_csr = csrs[0];
+    part_csr = new CSR(*csrs[0]);
 
     Log("Initial Barrier Region");
     Barrier();
@@ -344,32 +352,41 @@ inline void DPSL::InitP0(){
     }
     Barrier();
     for(int i=1; i<np; i++){
-      vector<int> cut_alias(cut.size());
-      for(int j=0; j<cut.size(); j++){
-        int u = cut[j];
+      vector<int> cut_alias(all_cut.size());
+      for(int j=0; j<all_cut.size(); j++){
+        int u = all_cut[j];
         int u_alias = vc.aliasses[i][u];
         cut_alias[j] = u_alias;
       }
-      SendData(cut_alias.data(), cut.size(), 0, i);
+      SendData(cut_alias.data(), cut_alias.size(), 0, i);
     }
+    
+    cut.resize(all_cut.size());
+    for(int j=0; j<all_cut.size(); j++){
+        int u = all_cut[j];
+        int u_alias = vc.aliasses[0][u];
+        cut[j] = u_alias;
+    }
+
+
     Barrier();
     Log("Initial Barrier Region End");
 
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
     Log("Cut Size: " + to_string(cut.size()));
 
-    cout << "row_ptr0:";
-    for(int i=0; i<part_csr->n+1; i++){
-      cout << part_csr->row_ptr[i] << ",";
-    }
-    cout << endl;
+    // cout << "row_ptr0:";
+    // for(int i=0; i<part_csr->n+1; i++){
+    //   cout << part_csr->row_ptr[i] << ",";
+    // }
+    // cout << endl;
 
 
-    cout << "col0:";
-    for(int i=0; i<part_csr->m; i++){
-      cout << part_csr->col[i] << ",";
-    }
-    cout << endl;
+    // cout << "col0:";
+    // for(int i=0; i<part_csr->m; i++){
+    //   cout << part_csr->col[i] << ",";
+    // }
+    // cout << endl;
 
 
 }
@@ -467,6 +484,7 @@ inline void DPSL::Index(){
         for(int u=0; u<csr.n; u++){
           auto& labels_u = psl.labels[u];
           labels_u.dist_ptrs.push_back(labels_u.vertices.size());
+          delete new_labels[u];
         }
 
         Barrier();
