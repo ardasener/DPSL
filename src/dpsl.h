@@ -26,7 +26,7 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
 
   cout << "Ordering..." << endl;
   vector<int> order;
-  tie(order, csr.row_ptr, csr.col, csr.n, csr.m) = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
+  order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
 
   cout << "Ranking..." << endl;
   ranks.resize(csr.n);
@@ -54,7 +54,7 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
   options[METIS_OPTION_NITER] = 10;
   options[METIS_OPTION_UFACTOR] = 30;
   options[METIS_OPTION_MINCONN] = 0;
-  options[METIS_OPTION_CONTIG] = 1;
+  options[METIS_OPTION_CONTIG] = 0;
   options[METIS_OPTION_SEED] = 42;
   options[METIS_OPTION_NUMBERING] = 0;
   options[METIS_OPTION_DBGLVL] = METIS_DBG_INFO;

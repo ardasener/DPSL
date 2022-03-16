@@ -16,7 +16,7 @@
 
 using namespace std;
 
-tuple<vector<int>,int*,int*,int,int> gen_order(int *xadj, int *adj, int n, int m, string method); 
+vector<int> gen_order(int *xadj, int *adj, int n, int m, string method); 
 
 
 // Makes it header only

@@ -187,7 +187,7 @@ public:
 inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut) : csr(csr_),  labels(csr.n) {
 
   vector<int> order;
-  tie(order, ignore, ignore, ignore, ignore) = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
+  order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
 
   ranks.resize(csr.n);
 	for(int i=0; i<csr.n; i++){
@@ -445,7 +445,7 @@ inline void PSL::Index() {
     for (int u = 0; u < csr.n; u++) {
 
       new_labels[u] =  Pull(u, d);
-      updated = updated || (!new_labels[u]->empty());
+      updated = updated || (new_labels[u] != nullptr && !new_labels[u]->empty());
     }
 
     last_dist++;
