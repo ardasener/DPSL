@@ -179,9 +179,11 @@ float pearson(float* x, float* y, int n) {
 
 
 tuple<vector<int>,int*,int*,int,int> gen_order(int *xadj, int *adj, int n, int m, string method) {
-  
+
+  cout << "Generating order..." << endl;
   int max_deg = 0, min_deg = n, deg, degs[n]; 
   memset(degs, 0, sizeof(int) * n);
+
 
   for(int u = 0; u < n; u++) {
     deg = (xadj[u + 1] - xadj[u]);

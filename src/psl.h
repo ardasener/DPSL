@@ -29,6 +29,14 @@ using PigoCOO = pigo::COO<int, int, int *, true, false, true, false,
 
 const char MAX_DIST = CHAR_MAX;
 
+struct pair_hash
+{
+    template <class T1, class T2>
+    std::size_t operator() (const std::pair<T1, T2> &pair) const {
+        return std::hash<T1>()(pair.first) ^ std::hash<T2>()(pair.second);
+    }
+};
+
 
 struct CSR {
   int *row_ptr;
@@ -58,16 +66,25 @@ struct CSR {
       }
     }
 
-    vector<pair<int, int>> edges(m);
+    unordered_set<pair<int, int>, pair_hash> edge_set;
 
     for (size_t i = 0; i < m; i++) {
-      edges[i] = pair<int, int>(coo_row[i], coo_col[i]);
+      edge_set.insert(pair<int, int>(coo_row[i], coo_col[i]));
+      edge_set.insert(pair<int, int>(coo_col[i], coo_row[i]));
     }
+
+    m = edge_set.size();
+    cout << "N:" << n << endl;
+    cout << "M:" << m << endl;
+
+    vector<pair<int,int>> edges(edge_set.begin(), edge_set.end());
 
     sort(edges.begin(), edges.end(), less<pair<int, int>>());
 
     row_ptr = new int[n + 1];
     col = new int[m];
+
+    fill(row_ptr, row_ptr+n+1, 0);
 
     for (int i = 0; i < m; i++) {
       col[i] = edges[i].second;
@@ -82,6 +99,11 @@ struct CSR {
       row_ptr[i] = row_ptr[i - 1];
     }
     row_ptr[0] = 0;
+
+    // for(int i=0; i<n+1; i++){
+    //   cout << row_ptr[i] << ",";
+    // }
+    // cout << endl;
 
     delete[] coo_row;
     delete[] coo_col;
@@ -165,7 +187,7 @@ public:
 inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut) : csr(csr_),  labels(csr.n) {
 
   vector<int> order;
-  tie(order, csr.row_ptr, csr.col, csr.n, csr.m) = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
+  tie(order, ignore, ignore, ignore, ignore) = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
 
   ranks.resize(csr.n);
 	for(int i=0; i<csr.n; i++){

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ORDER_HPP
+#define ORDER_HPP
 
 #include <iostream>
 #include <vector>
@@ -20,3 +21,5 @@ tuple<vector<int>,int*,int*,int,int> gen_order(int *xadj, int *adj, int n, int m
 
 // Makes it header only
 #include "order.cpp"
+
+#endif

@@ -37,7 +37,9 @@ void RunDPSL(const toml::Value& config, int pid, int np){
 	string order_method = config.find("order_method")->as<string>();
 	
 	if(pid == 0){
+		cout << "Reading " << filename << "..." << endl;
 		CSR csr(filename);
+		cout << "Number of Processes:" << np << endl;
 		DPSL dpsl(pid, &csr, config ,np);
 		dpsl.Index();
 	} else {
