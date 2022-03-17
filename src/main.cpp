@@ -42,9 +42,11 @@ void RunDPSL(const toml::Value& config, int pid, int np){
 		cout << "Number of Processes:" << np << endl;
 		DPSL dpsl(pid, &csr, config ,np);
 		dpsl.Index();
+		dpsl.WriteLabelCounts("output_dpsl_label_counts.txt");
 	} else {
 		DPSL dpsl(pid, nullptr, config, np);
 		dpsl.Index();
+		dpsl.WriteLabelCounts("");
 	}
 	
 }

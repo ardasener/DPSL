@@ -14,6 +14,7 @@ enum MPI_CONSTS{
   MPI_CSR_COL,
   MPI_CSR_NODES,
   MPI_CUT,
+  MPI_PARTITION,
 };
 
 
@@ -43,7 +44,7 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
 	}
 
   int objval;
-  int partition[csr.n];
+  partition = new int[csr.n];
 
   /*
   METIS_OPTION_OBJTYPE, METIS_OPTION_CTYPE, METIS_OPTION_IPTYPE,
@@ -216,19 +217,84 @@ public:
     int pid, np;
     CSR* whole_csr;
     CSR* part_csr;
+    int* partition;
     vector<int> cut;
     vector<int> names;
+    VertexCut* vc_ptr;
     const toml::Value& config;
     void InitP0();
     void Init();
     void IndexP0();
     void Index();
+    void WriteLabelCounts(string filename);
     void Log(string msg);
+    PSL * psl_ptr;
     DPSL(int pid, CSR* csr, const toml::Value& config, int np);
 };
 
 inline void DPSL::Log(string msg){
   cout << "P" << pid << ": " << msg << endl;
+}
+
+inline void DPSL::WriteLabelCounts(string filename){
+  
+  Barrier();
+  CSR& csr = *part_csr;
+  int max_global_id = *max_element(csr.nodes, csr.nodes+csr.n);
+
+  int counts[max_global_id+1];
+  fill(counts, counts + max_global_id+1, 0);
+
+  for(int i=0; i<part_csr->n; i++){
+    int global_node_id = csr.nodes[i];
+    counts[global_node_id] = psl_ptr->labels[i].vertices.size();
+  }
+
+  if(pid != 0)
+    SendData(counts, max_global_id+1, 0, 0);
+
+  
+  if(pid == 0){
+    
+    int all_counts[whole_csr->n];
+    fill(all_counts, all_counts+whole_csr->n, 0);
+
+    for(int i=0; i<max_global_id+1; i++){
+      all_counts[i] = counts[i];
+    }
+
+    for(int p=1; p<np; p++){
+      int* recv_counts;
+      int size = RecvData(recv_counts, 0, p);
+      for(int i=0; i<size; i++){
+        if(vc_ptr->cut.find(i) == vc_ptr->cut.end())
+          all_counts[i] += recv_counts[i];
+      }
+    }
+
+    ofstream ofs(filename);
+    ofs << "L:\t";
+    for(int i=0; i<MAX_DIST; i++){
+      ofs << i << "\t";
+    }
+    ofs << endl;
+
+    long long total = 0;
+    for(int u=0; u<whole_csr->n; u++){
+      ofs << u << ":\t";
+      ofs << all_counts[u] << endl;
+      ofs << endl;
+      total += all_counts[u];
+    }
+    ofs << endl;
+
+    ofs << "Total Label Count: " << total << endl;
+    ofs << "Avg. Label Count: " << total/(double) whole_csr->n << endl;
+    
+    ofs << endl;
+
+    ofs.close();
+  }
 }
 
 inline void DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl){
@@ -306,8 +372,9 @@ inline void DPSL::SendData(int* data, int size, int vertex, int to){
 
 // TODO: Replace this with MPI_Bcast
 inline void DPSL::BroadcastData(int *data, int size, int vertex){
-  for(int p=1; p<np; p++){
-    SendData(data, size, vertex, p);
+  for(int p=0; p<np; p++){
+    if(p != pid)
+      SendData(data, size, vertex, p);
   }
 }
 
@@ -338,7 +405,8 @@ inline void DPSL::InitP0(){
 	string order_method = config.find("order_method")->as<string>();
     CSR& csr = *whole_csr;
 
-    VertexCut vc(csr, order_method, np);
+    vc_ptr = new VertexCut(csr, order_method, np);
+    VertexCut& vc = *vc_ptr;
 
     vector<int> all_cut(vc.cut.begin(), vc.cut.end());
     auto& ranks = vc.ranks;
@@ -356,8 +424,10 @@ inline void DPSL::InitP0(){
         SendData(csrs[i]->row_ptr, (csrs[i]->n)+1, MPI_CSR_ROW_PTR, i);
         SendData(csrs[i]->col, csrs[i]->m, MPI_CSR_COL, i);
         SendData(csrs[i]->nodes, csrs[i]->n, MPI_CSR_NODES, i);
+        SendData(vc.partition, csr.n, MPI_PARTITION, i);
     }
 
+    partition = vc.partition;
 
     for(int i=1; i<np; i++){
       vector<int> cut_alias(all_cut.size());
@@ -410,6 +480,7 @@ inline void DPSL::Init(){
     int size_row_ptr = RecvData(row_ptr, MPI_CSR_ROW_PTR, 0);
     int size_col = RecvData(col, MPI_CSR_COL, 0);
     int size_nodes = RecvData(nodes, MPI_CSR_NODES, 0);
+    int size_partition = RecvData(partition, MPI_PARTITION, 0);
     int size_cut = RecvData(cut_ptr, MPI_CUT, 0);
     Barrier();
     Log("Initial Barrier Region End");
@@ -441,7 +512,8 @@ inline void DPSL::Index(){
   CSR& csr = *part_csr;
 
 	string order_method = config.find("order_method")->as<string>();
-    PSL psl(*part_csr, order_method, &cut);
+    psl_ptr = new PSL(*part_csr, order_method, &cut);
+    PSL& psl = *psl_ptr;
 
     vector<vector<int>*> init_labels(csr.n, nullptr);
     for(int u=0; u<csr.n; u++){
