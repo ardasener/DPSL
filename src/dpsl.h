@@ -289,9 +289,9 @@ inline void DPSL::Query(int u, string filename){
     auto& vertices_v = psl_ptr->labels[v].vertices;
     auto& dist_ptrs_v = psl_ptr->labels[v].dist_ptrs;
    
-    for(int d=0; d<dist_ptrs_v.size()-1; d++){
-      int start = dist_ptrs_u[d];
-      int end = dist_ptrs_u[d+1];
+    for(int d=0; d<dist_ptrs_v.size()-1 && d < min; d++){
+      int start = dist_ptrs_v[d];
+      int end = dist_ptrs_v[d+1];
 
       for(int i= start; i<end; i++){
         int w = vertices_v[i];
@@ -328,7 +328,9 @@ inline void DPSL::Query(int u, string filename){
 
     for(int i=0; i<mins.size(); i++){
       int global_id = part_csr->nodes[i];
-      all_dists[global_id] = mins[i];
+      if(all_dists[global_id] > mins[i]){
+        all_dists[global_id] = mins[i];
+      }
     }
 
     vector<int>* bfs_results = BFSQuery(*whole_csr, u);
