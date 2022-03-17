@@ -5,6 +5,7 @@
 #include "psl.h"
 #include "mpi.h"
 #include <algorithm>
+#include <fstream>
 #include <ostream>
 #include <string>
 #include <unordered_set>
@@ -227,6 +228,7 @@ public:
     void IndexP0();
     void Index();
     void WriteLabelCounts(string filename);
+    void Query(int u, string filename);
     void Log(string msg);
     PSL * psl_ptr;
     DPSL(int pid, CSR* csr, const toml::Value& config, int np);
@@ -234,6 +236,116 @@ public:
 
 inline void DPSL::Log(string msg){
   cout << "P" << pid << ": " << msg << endl;
+}
+
+inline void DPSL::Query(int u, string filename){
+  
+  Log("Starting Query");
+  Barrier();
+    
+  int* vertices_u;
+  int* dist_ptrs_u;
+  int dist_ptrs_u_size;
+  int vertices_u_size;
+
+  if(partition[u] == pid){
+    Log("Broadcasting u's labels");
+    int local_u = part_csr->nodes_inv[u];
+    auto& labels_u = psl_ptr->labels[u];
+    BroadcastData(labels_u.vertices.data(), labels_u.vertices.size(), 0);
+    BroadcastData(labels_u.dist_ptrs.data(), labels_u.dist_ptrs.size(), 1);
+    vertices_u = labels_u.vertices.data();
+    vertices_u_size = labels_u.vertices.size();
+    dist_ptrs_u = labels_u.dist_ptrs.data();
+    dist_ptrs_u_size = labels_u.dist_ptrs.size();
+  } else {
+    Log("Recieving u's labels");
+    vertices_u_size = RecvData(vertices_u, 0, MPI_ANY_SOURCE);
+    dist_ptrs_u_size = RecvData(dist_ptrs_u, 1, MPI_ANY_SOURCE);
+  }
+
+  //TODO: Remove this
+  int max = *max_element(vertices_u, vertices_u+vertices_u_size);
+
+  Log("Constructing cache");
+  int cache[max+1];
+  fill(cache, cache+max+1, MAX_DIST);
+
+  for(int d=0; d<dist_ptrs_u_size-1; d++){
+    int start = dist_ptrs_u[d];
+    int end = dist_ptrs_u[d+1];
+
+    for(int i= start; i<end; i++){
+      int v = vertices_u[i];
+      cache[v] = d;
+    }
+  }
+
+  Log("Querying locally");
+  vector<int> mins;
+  mins.reserve(part_csr->n);
+  for(int v=0; v<part_csr->n; v++){
+    int min = MAX_DIST;
+    auto& vertices_v = psl_ptr->labels[v].vertices;
+    auto& dist_ptrs_v = psl_ptr->labels[v].dist_ptrs;
+   
+    for(int d=0; d<dist_ptrs_v.size()-1; d++){
+      int start = dist_ptrs_u[d];
+      int end = dist_ptrs_u[d+1];
+
+      for(int i= start; i<end; i++){
+        int w = vertices_v[i];
+        
+        if(w < vertices_u_size){
+          int dist = cache[w] + d;
+          if(dist < min){
+            min = dist;
+          }
+        }
+
+      }
+    }
+    mins.push_back(min);     
+  }
+
+  Barrier();
+  
+  Log("Synchronizing query results");
+  if(pid == 0){
+    int all_dists[whole_csr->n];
+    fill(all_dists, all_dists+whole_csr->n, MAX_DIST);
+    for(int p=1; p<np; p++){
+      int* dists;
+      int size = RecvData(dists, 0, p);
+      for(int i=0; i<size; i++){
+        int global_id = vc_ptr->csrs[p]->nodes[i];
+        if(all_dists[global_id] > dists[i]){
+          all_dists[global_id] = dists[i];
+        }
+      }
+      delete [] dists;
+    }
+
+    for(int i=0; i<mins.size(); i++){
+      int global_id = part_csr->nodes[i];
+      all_dists[global_id] = mins[i];
+    }
+
+    vector<int>* bfs_results = BFSQuery(*whole_csr, u);
+
+    ofstream ofs(filename);
+    for(int i=0; i<whole_csr->n; i++){
+      int psl_res = all_dists[i];
+      int bfs_res = (*bfs_results)[i];
+      string correctness = (bfs_res == psl_res) ? "correct" : "wrong";
+      ofs << i << "\t" << psl_res << "\t" << bfs_res << "\t" << correctness << endl;
+    }
+    delete bfs_results;
+    ofs.close();
+
+  } else {
+    SendData(mins.data(), mins.size(), 0, 0);
+  }
 }
 
 inline void DPSL::WriteLabelCounts(string filename){

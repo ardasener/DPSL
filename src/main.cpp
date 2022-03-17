@@ -43,10 +43,12 @@ void RunDPSL(const toml::Value& config, int pid, int np){
 		DPSL dpsl(pid, &csr, config ,np);
 		dpsl.Index();
 		dpsl.WriteLabelCounts("output_dpsl_label_counts.txt");
+		dpsl.Query(11, "output_dpsl_query.txt");
 	} else {
 		DPSL dpsl(pid, nullptr, config, np);
 		dpsl.Index();
 		dpsl.WriteLabelCounts("");
+		dpsl.Query(11, "");
 	}
 	
 }
