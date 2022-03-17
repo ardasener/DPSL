@@ -9,6 +9,14 @@
 #include <string>
 #include <unordered_set>
 
+enum MPI_CONSTS{
+  MPI_CSR_ROW_PTR,
+  MPI_CSR_COL,
+  MPI_CSR_NODES,
+  MPI_CUT,
+};
+
+
 using namespace std;
 
 class VertexCut{
@@ -149,6 +157,7 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
     int m = edges[i].size();
     int *row_ptr = new int[n+1];
     int *col = new int[m];
+    int *csr_nodes = new int[n];
 
     fill(row_ptr, row_ptr+n+1, 0);
 
@@ -161,6 +170,7 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
     int new_index = 0;
     for(int node: nodes_i){
       aliasses[i][node] = new_index;
+      csr_nodes[new_index] = node;
       new_index++;
     }
 
@@ -187,7 +197,7 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
     row_ptr[0] = 0; 
 
 
-    csrs[i] = new CSR(row_ptr, col, n, m);
+    csrs[i] = new CSR(row_ptr, col, csr_nodes, n, m);
 
   }
   
@@ -343,14 +353,12 @@ inline void DPSL::InitP0(){
     Log("Initial Barrier Region");
     Barrier();
     for(int i=1; i<np; i++){
-        SendData(csrs[i]->row_ptr, (csrs[i]->n)+1, 0, i);
+        SendData(csrs[i]->row_ptr, (csrs[i]->n)+1, MPI_CSR_ROW_PTR, i);
+        SendData(csrs[i]->col, csrs[i]->m, MPI_CSR_COL, i);
+        SendData(csrs[i]->nodes, csrs[i]->n, MPI_CSR_NODES, i);
     }
-    Barrier();
 
-    for(int i=1; i<np; i++){
-        SendData(csrs[i]->col, csrs[i]->m, 0, i);
-    }
-    Barrier();
+
     for(int i=1; i<np; i++){
       vector<int> cut_alias(all_cut.size());
       for(int j=0; j<all_cut.size(); j++){
@@ -358,7 +366,7 @@ inline void DPSL::InitP0(){
         int u_alias = vc.aliasses[i][u];
         cut_alias[j] = u_alias;
       }
-      SendData(cut_alias.data(), cut_alias.size(), 0, i);
+      SendData(cut_alias.data(), cut_alias.size(), MPI_CUT, i);
     }
     
     cut.resize(all_cut.size());
@@ -367,7 +375,6 @@ inline void DPSL::InitP0(){
         int u_alias = vc.aliasses[0][u];
         cut[j] = u_alias;
     }
-
 
     Barrier();
     Log("Initial Barrier Region End");
@@ -395,20 +402,21 @@ inline void DPSL::Init(){
     int *row_ptr;
     int *col;
     int *cut_ptr;
+    int * nodes;
+    int * nodes_inv;
 
     Log("Initial Barrier Region");
     Barrier();
-    int size_row_ptr = RecvData(row_ptr, 0, 0);
-    Barrier();
-    int size_col = RecvData(col, 0, 0);
-    Barrier();
-    int size_cut = RecvData(cut_ptr, 0, 0);
+    int size_row_ptr = RecvData(row_ptr, MPI_CSR_ROW_PTR, 0);
+    int size_col = RecvData(col, MPI_CSR_COL, 0);
+    int size_nodes = RecvData(nodes, MPI_CSR_NODES, 0);
+    int size_cut = RecvData(cut_ptr, MPI_CUT, 0);
     Barrier();
     Log("Initial Barrier Region End");
 
     cut.insert(cut.end(), cut_ptr, cut_ptr+size_cut);
 
-    part_csr = new CSR(row_ptr, col, size_row_ptr-1, size_col);
+    part_csr = new CSR(row_ptr, col, nodes, size_row_ptr-1, size_col);
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
 
     cout << "row_ptr1:";

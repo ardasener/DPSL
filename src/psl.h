@@ -41,12 +41,15 @@ struct pair_hash
 struct CSR {
   int *row_ptr;
   int *col;
+  int *nodes;
+  unordered_map<int, int> nodes_inv;
   int n;
   int m;
 
   CSR(CSR& csr){
     row_ptr = new int[csr.n+1];
     col = new int[csr.m];
+    nodes = new int[csr.n];
 
     for(int i=0; i<csr.n+1; i++){
       row_ptr[i] = csr.row_ptr[i];
@@ -56,11 +59,23 @@ struct CSR {
       col[i] = csr.col[i];
     }
 
+    for(int i=0; i<csr.n; i++){
+      nodes[i] = csr.nodes[i];
+    }
+
+    for(int i=0; i<csr.n; i++){
+      nodes_inv[i] = csr.nodes_inv[i];
+    }
+
     n = csr.n;
     m = csr.m;
   }
 
-  CSR(int * row_ptr_, int *col_, int n, int m): row_ptr(row_ptr_), col(col_), n(n), m(m) {}
+  CSR(int * row_ptr_, int *col_, int * nodes_, int n, int m): row_ptr(row_ptr_), col(col_), nodes(nodes_), n(n), m(m) {
+    for(int i=0; i<n; i++){
+      nodes_inv[nodes[i]] = i;
+    }
+  }
 
   CSR(string filename) {
     PigoCOO pigo_coo(filename);
@@ -116,10 +131,14 @@ struct CSR {
     }
     row_ptr[0] = 0;
 
-    // for(int i=0; i<n+1; i++){
-    //   cout << row_ptr[i] << ",";
-    // }
-    // cout << endl;
+
+
+    nodes = new int[n];
+  
+    for(int i=0; i<n; i++){
+      nodes[i] = i;
+      nodes_inv[nodes[i]] = i;
+    }
 
     delete[] coo_row;
     delete[] coo_col;
@@ -198,7 +217,17 @@ public:
   void WriteLabelCounts(string filename);
   vector<int>* Query(int u);
   void Query(int u, string filename);
+  void AddLabel(vector<int>* target_labels, int w);
+  int GetLabel(int u, int i);
 };
+
+inline void PSL::AddLabel(vector<int>* target_labels, int w){
+  target_labels->push_back(csr.nodes[w]);
+}
+
+inline int PSL::GetLabel(int u, int i){
+  return csr.nodes_inv[labels[u].vertices[i]];
+}
 
 inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut) : csr(csr_),  labels(csr.n) {
 
@@ -290,8 +319,8 @@ inline vector<int>* PSL::Query(int u) {
     int dist_start = labels_u.dist_ptrs[i];
     int dist_end = labels_u.dist_ptrs[i + 1];
 
-    for (int j = dist_start; j < dist_end; j++) {
-      int w = labels_u.vertices[j];
+    for (int d = dist_start; d < dist_end; d++) {
+      int w = GetLabel(u, d); 
       cache[w] = (char) i;
     }
   }
@@ -305,8 +334,8 @@ inline vector<int>* PSL::Query(int u) {
       int dist_start = labels_v.dist_ptrs[i];
       int dist_end = labels_v.dist_ptrs[i + 1];
 
-      for (int j = dist_start; j < dist_end; j++) {
-        int w = labels_v.vertices[j];
+      for (int d = dist_start; d < dist_end; d++) {
+        int w = GetLabel(v, d);
         
         if(cache[w] == -1){
           continue;
@@ -335,7 +364,7 @@ inline bool PSL::Prune(int u, int v, int d, const vector<char> &cache) {
     int dist_end = labels_v.dist_ptrs[i + 1];
 
     for (int j = dist_start; j < dist_end; j++) {
-      int w = labels_v.vertices[j];
+      int w = GetLabel(v, j); 
 
       if (cache[w] != -1 && (i + cache[w]) <= d) {
         return true;
@@ -363,7 +392,7 @@ inline vector<int>* PSL::Pull(int u, int d) {
     int dist_end = labels_u.dist_ptrs[i + 1];
 
     for (int j = dist_start; j < dist_end; j++) {
-      int w = labels_u.vertices[j];
+      int w = GetLabel(u, j);
       cache[w] = (char) i;
     }
   }
@@ -380,7 +409,7 @@ inline vector<int>* PSL::Pull(int u, int d) {
     
 
     for (int j = labels_start; j < labels_end; j++) {
-      int w = labels_v.vertices[j];
+      int w = GetLabel(v, j);
 
       if (ranks[u] > ranks[w]) {
         continue;
@@ -396,7 +425,7 @@ inline vector<int>* PSL::Pull(int u, int d) {
         continue;
       }
 
-      new_labels->push_back(w);
+      AddLabel(new_labels, w);
       cache[w] = d;
     }
   }
@@ -408,7 +437,7 @@ inline vector<int>* PSL::Init(int u){
   
   vector<int>* init_labels = new vector<int>;
 
-  init_labels->push_back(u);
+  AddLabel(init_labels, u);
 
   int start = csr.row_ptr[u];
   int end = csr.row_ptr[u + 1];
@@ -417,7 +446,7 @@ inline vector<int>* PSL::Init(int u){
     int v = csr.col[j];
 
     if (ranks[v] > ranks[u]) {
-      init_labels->push_back(v);
+      AddLabel(init_labels, v);
     }
   }
 
