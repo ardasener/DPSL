@@ -1,3 +1,0 @@
-mpi = true
-filename = "small_graphs/Erdos971.mtx"
-order_method = "degree"

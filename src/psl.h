@@ -12,7 +12,6 @@
 #include <utility>
 #include <vector>
 #include <stdio.h>
-#include <metis.h>
 #include <unordered_set>
 #include <unordered_map>
 
@@ -262,17 +261,17 @@ inline void PSL::WriteLabelCounts(string filename){
   }
   ofs << endl;
 
-  long long total;
+  long long total = 0;
   for(int u=0; u<csr.n; u++){
     ofs << u << ":\t";
     auto& labels_u = labels[u];
+    total += labels_u.vertices.size();
 
     for(int d=0; d<last_dist; d++){
       int dist_start = labels_u.dist_ptrs[d];
       int dist_end = labels_u.dist_ptrs[d+1];
 
       ofs << dist_end - dist_start << "\t";
-      total += dist_end - dist_start;
     }
     ofs << endl;
   }

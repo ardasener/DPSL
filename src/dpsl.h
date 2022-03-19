@@ -9,6 +9,7 @@
 #include <ostream>
 #include <string>
 #include <unordered_set>
+#include "metis.h"
 
 enum MPI_CONSTS{
   MPI_CSR_ROW_PTR,
@@ -76,10 +77,12 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
 				       NULL, options, &objval, partition);
 
 
+  ofstream ofs("output_vertex_cut.txt");
+  ofs << "__Partition__" << endl;
   for(int i=0; i<csr.n; i++){
-    cout << partition[i] << ",";
+    ofs << partition[i] << ",";
   }
-  cout << endl;
+  ofs << endl;
 
   cout << "Calculating cut..." << endl;
   for(int u=0; u<csr.n; u++){
@@ -99,11 +102,11 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
     }
   }
 
-  cout << "Cut: ";
+  ofs << "__Cut__" << endl;
   for(int vertex: cut){
-    cout << vertex << ",";
+    ofs << vertex << ",";
   }
-  cout << endl;
+  ofs << endl;
 
   cout << "Calculating edges and nodes..." << endl;
   vector<unordered_set<pair<int,int>, pair_hash>> edge_sets(np);
@@ -111,6 +114,8 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
   for(int u=0; u<csr.n; u++){
     int start = csr.row_ptr[u];
     int end = csr.row_ptr[u+1];
+
+    nodes[partition[u]].insert(u);
 
     bool u_in_cut = (cut.find(u) != cut.end());
 
@@ -201,7 +206,15 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
 
     csrs[i] = new CSR(row_ptr, col, csr_nodes, n, m);
 
+    ofs << "__P" << i << "__" << endl;
+    for(int j=0; j<n; j++){
+      ofs << csr_nodes[j] << ",";
+    }
+    ofs << endl;
+
   }
+
+  ofs.close();
   
 }
 
@@ -235,7 +248,9 @@ public:
 };
 
 inline void DPSL::Log(string msg){
+#ifdef DEBUG
   cout << "P" << pid << ": " << msg << endl;
+#endif
 }
 
 inline void DPSL::Query(int u, string filename){
@@ -357,7 +372,7 @@ inline void DPSL::WriteLabelCounts(string filename){
   int max_global_id = *max_element(csr.nodes, csr.nodes+csr.n);
 
   int counts[max_global_id+1];
-  fill(counts, counts + max_global_id+1, 0);
+  fill(counts, counts + max_global_id+1, -1);
 
   for(int i=0; i<part_csr->n; i++){
     int global_node_id = csr.nodes[i];
@@ -370,33 +385,39 @@ inline void DPSL::WriteLabelCounts(string filename){
   
   if(pid == 0){
     
+    int source[whole_csr->n]; 
     int all_counts[whole_csr->n];
-    fill(all_counts, all_counts+whole_csr->n, 0);
+    fill(all_counts, all_counts + whole_csr->n, 0);
+    fill(source, source + whole_csr->n, -1); // -1 indicates free floating vertex
 
     for(int i=0; i<max_global_id+1; i++){
       all_counts[i] = counts[i];
+      
+      if(counts[i] != -1)
+        source[i] = 0;  // 0 indicates cut vertex as well as partition 0
     }
 
     for(int p=1; p<np; p++){
       int* recv_counts;
       int size = RecvData(recv_counts, 0, p);
       for(int i=0; i<size; i++){
-        if(vc_ptr->cut.find(i) == vc_ptr->cut.end())
-          all_counts[i] += recv_counts[i];
+        if(recv_counts[i] != -1 && vc_ptr->cut.find(i) == vc_ptr->cut.end()){  // Count recieved and vertex not in cut
+          all_counts[i] = recv_counts[i]; // Update count
+
+          if(source[i] != -1)
+            source[i] = -2; // -2 indicates overwrite to non-cut vertex
+          else
+            source[i] = p; // Process id denotes partition
+        }
       }
     }
 
     ofstream ofs(filename);
-    ofs << "L:\t";
-    for(int i=0; i<MAX_DIST; i++){
-      ofs << i << "\t";
-    }
-    ofs << endl;
-
+    ofs << "Vertex\tLabelCount\tSource" << endl;
     long long total = 0;
     for(int u=0; u<whole_csr->n; u++){
       ofs << u << ":\t";
-      ofs << all_counts[u] << endl;
+      ofs << all_counts[u] << "\t" << source[u];
       ofs << endl;
       total += all_counts[u];
     }
@@ -413,8 +434,6 @@ inline void DPSL::WriteLabelCounts(string filename){
 
 inline void DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl){
   if(pid == 0){
-    cout << "P0 Here" << endl;
-    cout << "Cut Size:" << cut.size() << endl;
     for(int i=0; i<cut.size(); i++){
       int u = cut[i];
       auto& labels_u = psl.labels[u].vertices;
@@ -432,7 +451,6 @@ inline void DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl){
       }
 
       Log("Adding Self Labels for " + to_string(i));
-      cout << new_labels[u] << endl;
       if(new_labels[u] != nullptr && !new_labels[u]->empty()){
         merged_labels.insert(new_labels[u]->begin(), new_labels[u]->end());
       }
@@ -604,18 +622,18 @@ inline void DPSL::Init(){
     part_csr = new CSR(row_ptr, col, nodes, size_row_ptr-1, size_col);
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
 
-    cout << "row_ptr1:";
-    for(int i=0; i<part_csr->n+1; i++){
-      cout << part_csr->row_ptr[i] << ",";
-    }
-    cout << endl;
+/*     cout << "row_ptr1:"; */
+/*     for(int i=0; i<part_csr->n+1; i++){ */
+/*       cout << part_csr->row_ptr[i] << ","; */
+/*     } */
+/*     cout << endl; */
 
 
-    cout << "col1:";
-    for(int i=0; i<part_csr->m; i++){
-      cout << part_csr->col[i] << ",";
-    }
-    cout << endl;
+/*     cout << "col1:"; */
+/*     for(int i=0; i<part_csr->m; i++){ */
+/*       cout << part_csr->col[i] << ","; */
+/*     } */
+/*     cout << endl; */
 
     delete[] cut_ptr;
 
@@ -625,7 +643,7 @@ inline void DPSL::Index(){
   Log("Indexing Start");
   CSR& csr = *part_csr;
 
-	string order_method = config.find("order_method")->as<string>();
+    string order_method = config.find("order_method")->as<string>();
     psl_ptr = new PSL(*part_csr, order_method, &cut);
     PSL& psl = *psl_ptr;
 

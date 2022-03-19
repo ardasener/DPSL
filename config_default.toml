@@ -1,0 +1,3 @@
+mpi = true
+filename = "small_graphs/ibm32.mtx"
+order_method = "degree"
