@@ -149,11 +149,6 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
 
   for(int i=0; i<np; i++) {
     edges[i].insert(edges[i].end(), edge_sets[i].begin(), edge_sets[i].end());
-    cout << "Edges of part " << i << endl;
-    for(auto& edge : edges[i]){
-      cout << "(" << edge.first << "," << edge.second << ")" << ", ";
-    }
-    cout << endl;
   }
 
   cout << "Constructing csrs..." << endl;
@@ -168,8 +163,6 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
 
     fill(row_ptr, row_ptr+n+1, 0);
 
-    sort(edges[i].begin(), edges[i].end(), less<pair<int,int>>());
-
     vector<int> nodes_i;
     nodes_i.insert(nodes_i.end() ,nodes[i].begin(), nodes[i].end());
     sort(nodes_i.begin(), nodes_i.end(), less<int>());
@@ -181,27 +174,41 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
       new_index++;
     }
 
-    for(auto& edge: edges[i]){
-        edge.first = aliasses[i][edge.first];
-        edge.second = aliasses[i][edge.second];
+    for(int j=0; j<edges[i].size(); j++){
+        edges[i][j] = make_pair(aliasses[i][edges[i][j].first], aliasses[i][edges[i][j].second]);
+    }
+    sort(edges[i].begin(), edges[i].end(), less<pair<int,int>>());
+
+    row_ptr[0] = 0;
+
+    int edge_index = 0;
+    for(int j=0; j<n; j++){
+      int count = 0;
+      while(edge_index < m && edges[i][edge_index].first == j){
+        auto& edge = edges[i][edge_index];
+        col[edge_index] = edge.second;
+        count++;
+        edge_index++;
+      }
+      row_ptr[j+1] = count + row_ptr[j];
     }
 
-    int mt = 0;
-    for (auto &e : edges[i]) {
-      row_ptr[e.first + 1]++;
-      col[mt++] = e.second;
-    }
+/*     int mt = 0; */
+/*     for (auto &e : edges[i]) { */
+/*       row_ptr[e.first + 1]++; */
+/*       col[mt++] = e.second; */
+/*     } */
 
-    for (int i = 1; i <= n; i++) {
-      row_ptr[i] += row_ptr[i - 1];
-    }
+/*     for (int i = 1; i <= n; i++) { */
+/*       row_ptr[i] += row_ptr[i - 1]; */
+/*     } */
 
     
-    for (int i = n; i > 0; i--) {
-      row_ptr[i] = row_ptr[i - 1];
-    }
+/*     for (int i = n; i > 0; i--) { */
+/*       row_ptr[i] = row_ptr[i - 1]; */
+/*     } */
 
-    row_ptr[0] = 0; 
+/*     row_ptr[0] = 0; */ 
 
 
     csrs[i] = new CSR(row_ptr, col, csr_nodes, n, m);
@@ -212,6 +219,29 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
     }
     ofs << endl;
 
+    ofs << "__Inv P" << i << "__" << endl;
+    for(int j=0; j<n; j++){
+      ofs << csrs[i]->nodes_inv[csr_nodes[j]] << ",";
+    }
+    ofs << endl;
+
+    ofs << "__Edges P" << i << "__" << endl;
+    for(int j=0; j<m; j++){
+      ofs << "(" << edges[i][j].first << "," << edges[i][j].second << ")" << ",";
+    }
+    ofs << endl;
+
+    ofs << "__Row Ptr P" << i << "__" << endl;
+    for(int i=0; i<n+1; i++){
+      ofs << row_ptr[i] << ",";
+    }
+    ofs << endl;
+
+    ofs << "__Col P" << i << "__" << endl;
+    for(int i=0; i<m; i++){
+      ofs << col[i] << ",";
+    }
+    ofs << endl;
   }
 
   ofs.close();
@@ -266,25 +296,29 @@ inline void DPSL::Query(int u, string filename){
   if(partition[u] == pid){
     Log("Broadcasting u's labels");
     int local_u = part_csr->nodes_inv[u];
-    auto& labels_u = psl_ptr->labels[u];
+    auto& labels_u = psl_ptr->labels[local_u];
     BroadcastData(labels_u.vertices.data(), labels_u.vertices.size(), 0);
     BroadcastData(labels_u.dist_ptrs.data(), labels_u.dist_ptrs.size(), 1);
     vertices_u = labels_u.vertices.data();
     vertices_u_size = labels_u.vertices.size();
     dist_ptrs_u = labels_u.dist_ptrs.data();
     dist_ptrs_u_size = labels_u.dist_ptrs.size();
+
+    cout << "U Labels: ";
+    for(int i=0; i<vertices_u_size; i++){
+      cout << vertices_u[i] << ",";
+    }
+    cout << endl;
+
   } else {
     Log("Recieving u's labels");
     vertices_u_size = RecvData(vertices_u, 0, MPI_ANY_SOURCE);
     dist_ptrs_u_size = RecvData(dist_ptrs_u, 1, MPI_ANY_SOURCE);
   }
 
-  //TODO: Remove this
-  int max = *max_element(vertices_u, vertices_u+vertices_u_size);
-
   Log("Constructing cache");
-  int cache[max+1];
-  fill(cache, cache+max+1, MAX_DIST);
+  int cache[part_csr->n];
+  fill(cache, cache+part_csr->n, -1);
 
   for(int d=0; d<dist_ptrs_u_size-1; d++){
     int start = dist_ptrs_u[d];
@@ -292,13 +326,28 @@ inline void DPSL::Query(int u, string filename){
 
     for(int i= start; i<end; i++){
       int v = vertices_u[i];
-      cache[v] = d;
+      auto it = part_csr->nodes_inv.find(v);
+      if(it != part_csr->nodes_inv.end()){
+        int local_v = it->second;
+        cache[local_v] = d;
+      }
     }
   }
 
+  cout << "Cache" << pid << ": ";
+  int cache_count = 0;
+  for(int i= 0; i<part_csr->n; i++){
+    cout << cache[i]  << ",";
+
+    if(cache[i] != -1){
+      cache_count++;
+    }
+  }
+  cout << " (" << cache_count << ")" << endl;
+  
+
   Log("Querying locally");
-  vector<int> mins;
-  mins.reserve(part_csr->n);
+  vector<int> local_dist(part_csr->n);
   for(int v=0; v<part_csr->n; v++){
     int min = MAX_DIST;
     auto& vertices_v = psl_ptr->labels[v].vertices;
@@ -309,18 +358,19 @@ inline void DPSL::Query(int u, string filename){
       int end = dist_ptrs_v[d+1];
 
       for(int i= start; i<end; i++){
-        int w = vertices_v[i];
-        
-        if(w < vertices_u_size){
-          int dist = cache[w] + d;
-          if(dist < min){
-            min = dist;
-          }
+        int w = psl_ptr->GetLabel(v,i);
+       
+        if(cache[w] == -1){
+          continue;
         }
 
+        int dist = cache[w] + d;
+        if(dist < min){
+          min = dist;
+        }
       }
     }
-    mins.push_back(min);     
+    local_dist[v] = min;     
   }
 
   Barrier();
@@ -328,40 +378,47 @@ inline void DPSL::Query(int u, string filename){
   Log("Synchronizing query results");
   if(pid == 0){
     int all_dists[whole_csr->n];
-    fill(all_dists, all_dists+whole_csr->n, MAX_DIST);
+    int source[whole_csr->n];
+    fill(all_dists, all_dists+whole_csr->n, -1);
+    fill(source, source+whole_csr->n, -1);
+
+    for(int i=0; i<local_dist.size(); i++){
+      int global_id = part_csr->nodes[i];
+      all_dists[global_id] = local_dist[i];
+      source[global_id] = 0;
+    }
+
     for(int p=1; p<np; p++){
       int* dists;
       int size = RecvData(dists, 0, p);
       for(int i=0; i<size; i++){
         int global_id = vc_ptr->csrs[p]->nodes[i];
-        if(all_dists[global_id] > dists[i]){
+        if(all_dists[global_id] == -1 || all_dists[global_id] > dists[i]){
           all_dists[global_id] = dists[i];
+          source[global_id] = p;
         }
       }
       delete [] dists;
     }
 
-    for(int i=0; i<mins.size(); i++){
-      int global_id = part_csr->nodes[i];
-      if(all_dists[global_id] > mins[i]){
-        all_dists[global_id] = mins[i];
-      }
-    }
-
     vector<int>* bfs_results = BFSQuery(*whole_csr, u);
 
     ofstream ofs(filename);
+    ofs << "Vertex\tDPSL(source)\tBFS\tCorrectness" << endl;
     for(int i=0; i<whole_csr->n; i++){
       int psl_res = all_dists[i];
+      if(psl_res == MAX_DIST){
+        psl_res = -1;
+      }
       int bfs_res = (*bfs_results)[i];
       string correctness = (bfs_res == psl_res) ? "correct" : "wrong";
-      ofs << i << "\t" << psl_res << "\t" << bfs_res << "\t" << correctness << endl;
+      ofs << i << "\t" << psl_res << "(" << source[i] << ")" << "\t" << bfs_res << "\t" << correctness << endl;
     }
     delete bfs_results;
     ofs.close();
 
   } else {
-    SendData(mins.data(), mins.size(), 0, 0);
+    SendData(local_dist.data(), local_dist.size(), 0, 0);
   }
 }
 
@@ -369,18 +426,16 @@ inline void DPSL::WriteLabelCounts(string filename){
   
   Barrier();
   CSR& csr = *part_csr;
-  int max_global_id = *max_element(csr.nodes, csr.nodes+csr.n);
 
-  int counts[max_global_id+1];
-  fill(counts, counts + max_global_id+1, -1);
+  int counts[part_csr->n];
+  fill(counts, counts + part_csr->n, -1);
 
   for(int i=0; i<part_csr->n; i++){
-    int global_node_id = csr.nodes[i];
-    counts[global_node_id] = psl_ptr->labels[i].vertices.size();
+    counts[i] = psl_ptr->labels[i].vertices.size();
   }
 
   if(pid != 0)
-    SendData(counts, max_global_id+1, 0, 0);
+    SendData(counts, part_csr->n, 0, 0);
 
   
   if(pid == 0){
@@ -390,24 +445,27 @@ inline void DPSL::WriteLabelCounts(string filename){
     fill(all_counts, all_counts + whole_csr->n, 0);
     fill(source, source + whole_csr->n, -1); // -1 indicates free floating vertex
 
-    for(int i=0; i<max_global_id+1; i++){
-      all_counts[i] = counts[i];
+    for(int i=0; i<part_csr->n; i++){
+      int global_id = part_csr->nodes[i];
+      all_counts[global_id] = counts[i];
       
       if(counts[i] != -1)
-        source[i] = 0;  // 0 indicates cut vertex as well as partition 0
+        source[global_id] = 0;  // 0 indicates cut vertex as well as partition 0
     }
 
     for(int p=1; p<np; p++){
       int* recv_counts;
       int size = RecvData(recv_counts, 0, p);
       for(int i=0; i<size; i++){
-        if(recv_counts[i] != -1 && vc_ptr->cut.find(i) == vc_ptr->cut.end()){  // Count recieved and vertex not in cut
-          all_counts[i] = recv_counts[i]; // Update count
+        int global_id = vc_ptr->csrs[p]->nodes[i];
+        if(recv_counts[i] != -1 && vc_ptr->cut.find(global_id) == vc_ptr->cut.end()){  // Count recieved and vertex not in cut
+          
+          all_counts[global_id] = recv_counts[i]; // Update count
 
-          if(source[i] != -1)
-            source[i] = -2; // -2 indicates overwrite to non-cut vertex
+          if(source[global_id] != -1)
+            source[global_id] = -2; // -2 indicates overwrite to non-cut vertex
           else
-            source[i] = p; // Process id denotes partition
+            source[global_id] = p; // Process id denotes partition
         }
       }
     }
@@ -548,7 +606,7 @@ inline void DPSL::InitP0(){
     });
 
     auto& csrs = vc.csrs;
-    part_csr = new CSR(*csrs[0]);
+    part_csr = csrs[0];
 
     Log("Initial Barrier Region");
     Barrier();
@@ -584,20 +642,6 @@ inline void DPSL::InitP0(){
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
     Log("Cut Size: " + to_string(cut.size()));
 
-    // cout << "row_ptr0:";
-    // for(int i=0; i<part_csr->n+1; i++){
-    //   cout << part_csr->row_ptr[i] << ",";
-    // }
-    // cout << endl;
-
-
-    // cout << "col0:";
-    // for(int i=0; i<part_csr->m; i++){
-    //   cout << part_csr->col[i] << ",";
-    // }
-    // cout << endl;
-
-
 }
 
 inline void DPSL::Init(){
@@ -621,20 +665,6 @@ inline void DPSL::Init(){
 
     part_csr = new CSR(row_ptr, col, nodes, size_row_ptr-1, size_col);
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
-
-/*     cout << "row_ptr1:"; */
-/*     for(int i=0; i<part_csr->n+1; i++){ */
-/*       cout << part_csr->row_ptr[i] << ","; */
-/*     } */
-/*     cout << endl; */
-
-
-/*     cout << "col1:"; */
-/*     for(int i=0; i<part_csr->m; i++){ */
-/*       cout << part_csr->col[i] << ","; */
-/*     } */
-/*     cout << endl; */
-
     delete[] cut_ptr;
 
 }
@@ -665,6 +695,7 @@ inline void DPSL::Index(){
     
     for (int u = 0; u < csr.n; u++) {
       auto& labels = psl.labels[u];
+      labels.dist_ptrs.reserve(3);
       labels.dist_ptrs.push_back(0);
       labels.dist_ptrs.push_back(1);
       labels.dist_ptrs.push_back(labels.vertices.size());

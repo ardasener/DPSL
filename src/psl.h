@@ -61,13 +61,14 @@ struct CSR {
     for(int i=0; i<csr.n; i++){
       nodes[i] = csr.nodes[i];
     }
-
+    
     for(int i=0; i<csr.n; i++){
-      nodes_inv[i] = csr.nodes_inv[i];
+      nodes_inv[nodes[i]] = i;
     }
 
     n = csr.n;
     m = csr.m;
+
   }
 
   CSR(int * row_ptr_, int *col_, int * nodes_, int n, int m): row_ptr(row_ptr_), col(col_), nodes(nodes_), n(n), m(m) {
@@ -130,8 +131,6 @@ struct CSR {
     }
     row_ptr[0] = 0;
 
-
-
     nodes = new int[n];
   
     for(int i=0; i<n; i++){
@@ -152,8 +151,10 @@ struct BPLabel {
 
 // Stores the labels for each vertex
 struct LabelSet {
-  vector<int> vertices; // log(n) 
-  vector<int> dist_ptrs; // max_dist
+  vector<int> vertices; // global vertex ids in order of distances - log(n) 
+  vector<int> dist_ptrs; // indices for the vertices vector denoting distance starts - max_dist
+  /* char bp_dist[N_ROOTS]; */
+  /* uint64_t bp_sets[N_ROOTS][2]; */
 };
 
 
@@ -176,14 +177,14 @@ vector<int>* BFSQuery(CSR& csr, int u){
 		int end = csr.row_ptr[curr+1];
 
 		for(int i=start; i<end; i++){
-			int v = csr.col[i];
+		      int v = csr.col[i];
 
-			if(dist[v] == -1){
-				dist[v] = dist[curr]+1;
+		      if(dist[v] == -1){
+			      dist[v] = dist[curr]+1;
 
-				q[q_end++] = v;
-			}
-		}
+			      q[q_end++] = v;
+		      }
+	      }
 
 	}
 
@@ -314,6 +315,8 @@ inline vector<int>* PSL::Query(int u) {
 
   vector<char> cache(csr.n, -1);
 
+  
+
   for (int i = 0; i < last_dist; i++) {
     int dist_start = labels_u.dist_ptrs[i];
     int dist_end = labels_u.dist_ptrs[i + 1];
@@ -324,23 +327,29 @@ inline vector<int>* PSL::Query(int u) {
     }
   }
 
+  cout << "Cache:";
+  for(int i=0; i<csr.n; i++){
+    cout << (int) cache[i] << ",";
+  }
+  cout << endl;
+
   for (int v = 0; v < csr.n; v++) {
 
     auto& labels_v = labels[v];
     int min = MAX_DIST;
 
-    for (int i = 0; i < min && i < last_dist; i++) {
-      int dist_start = labels_v.dist_ptrs[i];
-      int dist_end = labels_v.dist_ptrs[i + 1];
+    for (int d = 0; d < min && d < last_dist; d++) {
+      int dist_start = labels_v.dist_ptrs[d];
+      int dist_end = labels_v.dist_ptrs[d + 1];
 
-      for (int d = dist_start; d < dist_end; d++) {
-        int w = GetLabel(v, d);
+      for (int i = dist_start; i < dist_end; i++) {
+        int w = GetLabel(v, i);
         
         if(cache[w] == -1){
           continue;
         }
 
-        int dist = i + (int) cache[w];
+        int dist = d + (int) cache[w];
         if(dist < min){
           min = dist;
         }
