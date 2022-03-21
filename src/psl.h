@@ -91,6 +91,7 @@ struct CSR {
 
     if(min != 0){
       cout << "Fixing indices with minimum=" << min << endl;
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
       for(int i=0; i<m; i++){
         coo_row[i] -= min;
         coo_col[i] -= min;

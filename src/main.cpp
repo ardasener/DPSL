@@ -12,9 +12,8 @@
 using namespace std;
 
 
-void RunPSL(const toml::Value& config){
+void RunPSL(const toml::Value& config, string filename){
 	cout << "Reading graph..." << endl;
-	string filename = config.find("filename")->as<string>();
 	CSR csr(filename);
 
 	cout << "__PSL__" << endl;
@@ -31,9 +30,8 @@ void RunPSL(const toml::Value& config){
 	psl.Query(11, "output_psl_query.txt");
 }
 
-void RunDPSL(const toml::Value& config, int pid, int np){
+void RunDPSL(const toml::Value& config, int pid, int np, string filename){
 	
-	string filename = config.find("filename")->as<string>();
 	string order_method = config.find("order_method")->as<string>();
 	
 	if(pid == 0){
@@ -55,23 +53,29 @@ void RunDPSL(const toml::Value& config, int pid, int np){
 
 int main(int argc, char* argv[]){
 
+	if(argc < 2){
+		cerr << "Usage: <exe> config_file graph_file" << endl;
+		return 1;
+	}
+
 	std::ifstream ifs(argv[1]);
 	toml::ParseResult pr = toml::parse(ifs);
 	if (!pr.valid()) {
 		cout << pr.errorReason << endl;
 		return 1;
 	}
+	
 	const toml::Value& config = pr.value;
-
+	string filename(argv[2]);
 
 	if(!(config.find("mpi")->as<bool>())){
-		RunPSL(config);
+		RunPSL(config, filename);
 	} else {
 		MPI_Init(&argc, &argv);
 		int pid, np;
 		MPI_Comm_rank(MPI_COMM_WORLD,&pid);
 		MPI_Comm_size(MPI_COMM_WORLD,&np);
-		RunDPSL(config, pid, np);
+		RunDPSL(config, pid, np, filename);
 		MPI_Finalize();
 	}
 

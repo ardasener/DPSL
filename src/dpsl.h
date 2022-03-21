@@ -251,7 +251,6 @@ public:
     const toml::Value& config;
     void InitP0();
     void Init();
-    void IndexP0();
     void Index();
     void WriteLabelCounts(string filename);
     void Query(int u, string filename);
@@ -727,18 +726,13 @@ inline void DPSL::Index(){
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated) 
           for(int u=0; u<csr.n; u++){
               new_labels[u] = psl.Pull(u,d);
-              updated = updated || (new_labels[u] != nullptr && !new_labels[u]->empty());
+              if(psl.ranks[u] < psl.min_cut_rank && new_labels[u] != nullptr && !new_labels[u]->empty()){
+                updated = updated || true;
+              auto& labels = psl.labels[u].vertices;
+              labels.insert(labels.end(), new_labels[u]->begin(), new_labels[u]->end());
+   
+              }
           }       
-
-
-        Log("Adding non-cut vertices");
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
-        for(int u=0; u<csr.n; u++){
-          if(psl.ranks[u] < psl.min_cut_rank && new_labels[u] != nullptr && !new_labels[u]->empty()){
-            auto& labels = psl.labels[u].vertices;
-            labels.insert(labels.end(), new_labels[u]->begin(), new_labels[u]->end());
-          }
-        }
       }
         end = omp_get_wtime();
         PrintTime("Level " + to_string(d), end-start);
