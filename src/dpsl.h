@@ -238,7 +238,7 @@ public:
     void SendData(int* data, int size, int vertex, int to);
     void BroadcastData(int* data, int size, int vertex);
     int RecvData(int*& data,int vertex, int from);
-    void MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init=false);
+    bool MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init=false);
     void Barrier();
     int pid, np;
     CSR* whole_csr;
@@ -247,6 +247,7 @@ public:
     vector<int> cut;
     vector<int> names;
     VertexCut* vc_ptr;
+    int last_dist;
     const toml::Value& config;
     void InitP0();
     void Init();
@@ -255,6 +256,7 @@ public:
     void WriteLabelCounts(string filename);
     void Query(int u, string filename);
     void Log(string msg);
+    void PrintTime(string tag, double time);
     PSL * psl_ptr;
     DPSL(int pid, CSR* csr, const toml::Value& config, int np);
 };
@@ -263,6 +265,10 @@ inline void DPSL::Log(string msg){
 #ifdef DEBUG
   cout << "P" << pid << ": " << msg << endl;
 #endif
+}
+
+inline void DPSL::PrintTime(string tag, double time){
+  cout << "P" << pid << ": " << tag << ", " << time << " seconds" << endl;
 }
 
 inline void DPSL::Query(int u, string filename){
@@ -320,7 +326,7 @@ inline void DPSL::Query(int u, string filename){
     auto& vertices_v = psl_ptr->labels[v].vertices;
     auto& dist_ptrs_v = psl_ptr->labels[v].dist_ptrs;
    
-    for(int d=0; d<dist_ptrs_v.size()-1 && d < min; d++){
+    for(int d=0; d<last_dist && d < min; d++){
       int start = dist_ptrs_v[d];
       int end = dist_ptrs_v[d+1];
 
@@ -465,7 +471,10 @@ inline void DPSL::WriteLabelCounts(string filename){
   }
 }
 
-inline void DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init){
+inline bool DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init){
+  
+  bool updated = false;
+
   if(pid == 0){
     for(int i=0; i<cut.size(); i++){
       int u = cut[i];
@@ -502,6 +511,7 @@ inline void DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init)
       
       Log("Broadcasting Labels for " + to_string(i));
       if(labels_u.size() > start){
+        updated = true;
         BroadcastData(labels_u.data() + start, labels_u.size()-start, i);
       } else {
         BroadcastData(nullptr, 0, i);
@@ -523,11 +533,14 @@ inline void DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init)
       Log("Recieving Labels for " + to_string(i) + " End");
       
       if(size > 0){
+        updated = true;
         labels_u.insert(labels_u.end(), merged_labels, merged_labels + size);
         delete[] merged_labels;
       }
     }
   }
+
+  return updated;
 }
 
 inline void DPSL::Barrier(){
@@ -654,6 +667,8 @@ inline void DPSL::Init(){
 }
 
 inline void DPSL::Index(){
+ 
+  double start, end, alg_start, alg_end;
   Log("Indexing Start");
   CSR& csr = *part_csr;
 
@@ -661,8 +676,9 @@ inline void DPSL::Index(){
     psl_ptr = new PSL(*part_csr, order_method, &cut);
     PSL& psl = *psl_ptr;
 
+    start = omp_get_wtime();
+    alg_start = omp_get_wtime();
     vector<vector<int>*> init_labels(csr.n, nullptr);
-
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
     for(int u=0; u<csr.n; u++){
       init_labels[u] = psl.Init(u);
@@ -675,9 +691,14 @@ inline void DPSL::Index(){
         labels.insert(labels.end(), init_labels[u]->begin(), init_labels[u]->end());
       }
     }
+    end = omp_get_wtime();
+    PrintTime("Level 0&1", end-start);
 
     Log("Merging Initial Labels");
+    start = omp_get_wtime();
     MergeCut(init_labels, psl, true);
+    end = omp_get_wtime();
+    PrintTime("Merge 0&1", end-start);
     Log("Merging Initial Labels End");
     
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
@@ -693,14 +714,22 @@ inline void DPSL::Index(){
     Barrier();
 
     Log("Starting DN Loop");
+    bool updated = true;
+    last_dist = 1;
     for(int d=2; d < MAX_DIST; d++){    
         vector<vector<int>*> new_labels(csr.n, nullptr);
 
-        Log("Pulling...");
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
-        for(int u=0; u<csr.n; u++){
-            new_labels[u] = psl.Pull(u,d);
-        }
+        start = omp_get_wtime();
+        if(updated){
+          last_dist = d;
+          updated = false;
+          Log("Pulling...");
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated) 
+          for(int u=0; u<csr.n; u++){
+              new_labels[u] = psl.Pull(u,d);
+              updated = updated || (new_labels[u] != nullptr && !new_labels[u]->empty());
+          }       
+
 
         Log("Adding non-cut vertices");
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
@@ -710,9 +739,19 @@ inline void DPSL::Index(){
             labels.insert(labels.end(), new_labels[u]->begin(), new_labels[u]->end());
           }
         }
+      }
+        end = omp_get_wtime();
+        PrintTime("Level " + to_string(d), end-start);
+
+        
+        Barrier();
         
         Log("Merging Labels for d=" + to_string(d));
-        MergeCut(new_labels, psl);
+        start = omp_get_wtime();
+        bool merge_res = MergeCut(new_labels, psl);
+        updated = updated || merge_res;
+        end = omp_get_wtime();
+        PrintTime("Merge " + to_string(d), end-start);
         Log("Merging Labels for d=" + to_string(d) + " End");
 
 
@@ -720,12 +759,17 @@ inline void DPSL::Index(){
         for(int u=0; u<csr.n; u++){
           auto& labels_u = psl.labels[u];
           labels_u.dist_ptrs.push_back(labels_u.vertices.size());
-          delete new_labels[u];
+
+          if(new_labels[u] != nullptr)
+            delete new_labels[u];
         }
 
         Barrier();
 
     }
+
+    alg_end = omp_get_wtime();
+    PrintTime("Total", alg_end-alg_start);
 }
 
 inline DPSL::DPSL(int pid, CSR* csr, const toml::Value& config, int np): whole_csr(csr), pid(pid), config(config), np(np){

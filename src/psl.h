@@ -327,12 +327,6 @@ inline vector<int>* PSL::Query(int u) {
     }
   }
 
-  cout << "Cache:";
-  for(int i=0; i<csr.n; i++){
-    cout << (int) cache[i] << ",";
-  }
-  cout << endl;
-
   for (int v = 0; v < csr.n; v++) {
 
     auto& labels_v = labels[v];
