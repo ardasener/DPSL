@@ -375,7 +375,7 @@ inline void DPSL::Query(int u, string filename){
       int size = RecvData(dists, 0, p);
       for(int i=0; i<size; i++){
         int global_id = vc_ptr->csrs[p]->nodes[i];
-        if(all_dists[global_id] == -1 || all_dists[global_id] > dists[i]){
+        if(all_dists[global_id] == -1){
           all_dists[global_id] = dists[i];
           source[global_id] = p;
         }
@@ -507,8 +507,8 @@ inline void DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init)
 
         if(init){
           int global_u = part_csr->nodes[u];
-          merged_labels.erase(u);
-          labels_u.push_back(u);
+          merged_labels.erase(global_u);
+          labels_u.push_back(global_u);
         }
 
         labels_u.insert(labels_u.end(), merged_labels.begin(), merged_labels.end()); 
