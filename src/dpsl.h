@@ -193,24 +193,6 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
       row_ptr[j+1] = count + row_ptr[j];
     }
 
-/*     int mt = 0; */
-/*     for (auto &e : edges[i]) { */
-/*       row_ptr[e.first + 1]++; */
-/*       col[mt++] = e.second; */
-/*     } */
-
-/*     for (int i = 1; i <= n; i++) { */
-/*       row_ptr[i] += row_ptr[i - 1]; */
-/*     } */
-
-    
-/*     for (int i = n; i > 0; i--) { */
-/*       row_ptr[i] = row_ptr[i - 1]; */
-/*     } */
-
-/*     row_ptr[0] = 0; */ 
-
-
     csrs[i] = new CSR(row_ptr, col, csr_nodes, n, m);
 
     ofs << "__P" << i << "__" << endl;
@@ -256,7 +238,7 @@ public:
     void SendData(int* data, int size, int vertex, int to);
     void BroadcastData(int* data, int size, int vertex);
     int RecvData(int*& data,int vertex, int from);
-    void MergeCut(vector<vector<int>*> new_labels, PSL& psl);
+    void MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init=false);
     void Barrier();
     int pid, np;
     CSR* whole_csr;
@@ -440,9 +422,10 @@ inline void DPSL::WriteLabelCounts(string filename){
   
   if(pid == 0){
     
+    bool cut_mistake = false;
     int source[whole_csr->n]; 
     int all_counts[whole_csr->n];
-    fill(all_counts, all_counts + whole_csr->n, 0);
+    fill(all_counts, all_counts + whole_csr->n, -1);
     fill(source, source + whole_csr->n, -1); // -1 indicates free floating vertex
 
     for(int i=0; i<part_csr->n; i++){
@@ -458,16 +441,21 @@ inline void DPSL::WriteLabelCounts(string filename){
       int size = RecvData(recv_counts, 0, p);
       for(int i=0; i<size; i++){
         int global_id = vc_ptr->csrs[p]->nodes[i];
-        if(recv_counts[i] != -1 && vc_ptr->cut.find(global_id) == vc_ptr->cut.end()){  // Count recieved and vertex not in cut
-          
-          all_counts[global_id] = recv_counts[i]; // Update count
+        if(recv_counts[i] != -1){ // Count recieved
+          if(vc_ptr->cut.find(global_id) == vc_ptr->cut.end()){  // vertex not in cut
+            
+            all_counts[global_id] = recv_counts[i]; // Update count
 
-          if(source[global_id] != -1)
-            source[global_id] = -2; // -2 indicates overwrite to non-cut vertex
-          else
-            source[global_id] = p; // Process id denotes partition
+            if(source[global_id] != -1)
+              source[global_id] = -2; // -2 indicates overwrite to non-cut vertex
+            else
+              source[global_id] = p; // Process id denotes partition
+          } else if(all_counts[global_id] != recv_counts[i]){ // vertex in cut and counts don't match
+            cut_mistake = true;
+            cout << "Cut mistake at " << global_id << " with counts: " << all_counts[global_id] << "," << recv_counts[i] << endl;
+          }
         }
-      }
+      } 
     }
 
     ofstream ofs(filename);
@@ -483,6 +471,7 @@ inline void DPSL::WriteLabelCounts(string filename){
 
     ofs << "Total Label Count: " << total << endl;
     ofs << "Avg. Label Count: " << total/(double) whole_csr->n << endl;
+    ofs << "Cut Mistake: " << cut_mistake << endl; 
     
     ofs << endl;
 
@@ -490,7 +479,7 @@ inline void DPSL::WriteLabelCounts(string filename){
   }
 }
 
-inline void DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl){
+inline void DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init){
   if(pid == 0){
     for(int i=0; i<cut.size(); i++){
       int u = cut[i];
@@ -512,10 +501,19 @@ inline void DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl){
       if(new_labels[u] != nullptr && !new_labels[u]->empty()){
         merged_labels.insert(new_labels[u]->begin(), new_labels[u]->end());
       }
-      
-      Log("Merging Labels for " + to_string(i));
-      labels_u.insert(labels_u.end(), merged_labels.begin(), merged_labels.end());
 
+      if(merged_labels.size() > 0){
+        Log("Merging Labels for " + to_string(i));
+
+        if(init){
+          int global_u = part_csr->nodes[u];
+          merged_labels.erase(u);
+          labels_u.push_back(u);
+        }
+
+        labels_u.insert(labels_u.end(), merged_labels.begin(), merged_labels.end()); 
+      }
+      
       Log("Broadcasting Labels for " + to_string(i));
       if(labels_u.size() > start){
         BroadcastData(labels_u.data() + start, labels_u.size()-start, i);
@@ -690,7 +688,7 @@ inline void DPSL::Index(){
     }
 
     Log("Merging Initial Labels");
-    MergeCut(init_labels, psl);
+    MergeCut(init_labels, psl, true);
     Log("Merging Initial Labels End");
     
     for (int u = 0; u < csr.n; u++) {
@@ -708,10 +706,12 @@ inline void DPSL::Index(){
     for(int d=2; d < MAX_DIST; d++){    
         vector<vector<int>*> new_labels(csr.n, nullptr);
 
+        Log("Pulling...");
         for(int u=0; u<csr.n; u++){
             new_labels[u] = psl.Pull(u,d);
         }
 
+        Log("Adding non-cut vertices");
         for(int u=0; u<csr.n; u++){
           if(psl.ranks[u] < psl.min_cut_rank && new_labels[u] != nullptr && !new_labels[u]->empty()){
             auto& labels = psl.labels[u].vertices;
