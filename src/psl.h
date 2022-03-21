@@ -18,7 +18,7 @@
 #define N_ROOTS 16
 #define MAX_BP_THREADS 6
 #define USEBP false
-#define NUM_THREADS 6
+#define NUM_THREADS 8
 
 using namespace std;
 

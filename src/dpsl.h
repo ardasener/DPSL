@@ -286,12 +286,6 @@ inline void DPSL::Query(int u, string filename){
     dist_ptrs_u = labels_u.dist_ptrs.data();
     dist_ptrs_u_size = labels_u.dist_ptrs.size();
 
-    cout << "U Labels: ";
-    for(int i=0; i<vertices_u_size; i++){
-      cout << vertices_u[i] << ",";
-    }
-    cout << endl;
-
   } else {
     Log("Recieving u's labels");
     vertices_u_size = RecvData(vertices_u, 0, MPI_ANY_SOURCE);
@@ -302,6 +296,7 @@ inline void DPSL::Query(int u, string filename){
   int cache[part_csr->n];
   fill(cache, cache+part_csr->n, -1);
 
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for(int d=0; d<dist_ptrs_u_size-1; d++){
     int start = dist_ptrs_u[d];
     int end = dist_ptrs_u[d+1];
@@ -316,20 +311,10 @@ inline void DPSL::Query(int u, string filename){
     }
   }
 
-  cout << "Cache" << pid << ": ";
-  int cache_count = 0;
-  for(int i= 0; i<part_csr->n; i++){
-    cout << cache[i]  << ",";
-
-    if(cache[i] != -1){
-      cache_count++;
-    }
-  }
-  cout << " (" << cache_count << ")" << endl;
-  
 
   Log("Querying locally");
   vector<int> local_dist(part_csr->n);
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
   for(int v=0; v<part_csr->n; v++){
     int min = MAX_DIST;
     auto& vertices_v = psl_ptr->labels[v].vertices;
@@ -364,6 +349,7 @@ inline void DPSL::Query(int u, string filename){
     fill(all_dists, all_dists+whole_csr->n, -1);
     fill(source, source+whole_csr->n, -1);
 
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
     for(int i=0; i<local_dist.size(); i++){
       int global_id = part_csr->nodes[i];
       all_dists[global_id] = local_dist[i];
@@ -676,10 +662,13 @@ inline void DPSL::Index(){
     PSL& psl = *psl_ptr;
 
     vector<vector<int>*> init_labels(csr.n, nullptr);
+
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
     for(int u=0; u<csr.n; u++){
       init_labels[u] = psl.Init(u);
     }
     
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
     for(int u=0; u<csr.n; u++){
       if(psl.ranks[u] < psl.min_cut_rank && init_labels[u] != nullptr && !init_labels[u]->empty()){
         auto& labels = psl.labels[u].vertices;
@@ -691,6 +680,7 @@ inline void DPSL::Index(){
     MergeCut(init_labels, psl, true);
     Log("Merging Initial Labels End");
     
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
     for (int u = 0; u < csr.n; u++) {
       auto& labels = psl.labels[u];
       labels.dist_ptrs.reserve(3);
@@ -707,11 +697,13 @@ inline void DPSL::Index(){
         vector<vector<int>*> new_labels(csr.n, nullptr);
 
         Log("Pulling...");
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
         for(int u=0; u<csr.n; u++){
             new_labels[u] = psl.Pull(u,d);
         }
 
         Log("Adding non-cut vertices");
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
         for(int u=0; u<csr.n; u++){
           if(psl.ranks[u] < psl.min_cut_rank && new_labels[u] != nullptr && !new_labels[u]->empty()){
             auto& labels = psl.labels[u].vertices;
@@ -724,6 +716,7 @@ inline void DPSL::Index(){
         Log("Merging Labels for d=" + to_string(d) + " End");
 
 
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
         for(int u=0; u<csr.n; u++){
           auto& labels_u = psl.labels[u];
           labels_u.dist_ptrs.push_back(labels_u.vertices.size());
