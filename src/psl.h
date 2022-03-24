@@ -16,8 +16,8 @@
 #include <unordered_map>
 
 #define N_ROOTS 16
-#define MAX_BP_THREADS 6
-#define USEBP false
+#define MAX_BP_THREADS 1
+#define USEBP true
 #define NUM_THREADS 8
 
 using namespace std;
@@ -146,8 +146,8 @@ struct CSR {
 
 // Bit-Parallel Labels
 struct BPLabel {
-  uint8_t bpspt_d[N_ROOTS];
-  uint64_t bpspt_s[N_ROOTS][2];
+  uint8_t bp_dists[N_ROOTS];
+  uint64_t bp_sets[N_ROOTS][2];
 };
 
 // Stores the labels for each vertex
@@ -199,11 +199,15 @@ public:
   
   CSR &csr;
   vector<int> ranks;
+  vector<int> order;
   BPLabel* label_bp;
   bool* usd_bp;
   vector<int> v_vs[N_ROOTS];
   int last_dist = 2;
   int min_cut_rank = 0;
+  long long prune_rank = 0;
+  long long prune_labels = 0;
+  long long prune_bp = 0;
 
   void ConstructBPLabel();
   int BPQuery(int u, int v);
@@ -211,6 +215,7 @@ public:
   bool Prune(int u, int v, int d, const vector<char> &cache);
 
   vector<LabelSet> labels;
+  vector<BPLabel> bp_labels;
   PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr);
   vector<int>* Pull(int u, int d);
   vector<int>* Init(int u);
@@ -220,7 +225,190 @@ public:
   void Query(int u, string filename);
   void AddLabel(vector<int>* target_labels, int w);
   int GetLabel(int u, int i);
+  void CountPrune(int i);
+  void InitBP();
+  void InitBPForRoot(int r, vector<int>& Sr, int root_index);
+  bool PruneByBp(int u, int v, int d);
 };
+
+inline bool PSL::PruneByBp(int u, int v, int d){
+  BPLabel& bp_u = bp_labels[u];
+  BPLabel& bp_v = bp_labels[v];
+  for(int i=0; i<N_ROOTS; i++){
+    int dist = bp_u.bp_dists[i] + bp_v.bp_dists[i];
+  
+    if(dist <= d){
+      return true;
+    }
+
+    if(dist-2 <= d){
+      if(bp_u.bp_sets[i][0] & bp_v.bp_sets[i][0]){
+	return true;
+      } else if(dist-1 <= d && (bp_u.bp_sets[i][1] & bp_v.bp_sets[i][0])){
+	return true;
+      }
+    }
+
+  }
+
+  return false;
+}
+
+inline void PSL::InitBPForRoot(int r, vector<int>& Sr, int root_index){
+
+  cout << "BP Init for root=" << r << endl;
+  vector<pair<uint64_t,uint64_t>> bp_sets(csr.n, make_pair((uint64_t) 0, (uint64_t) 0));
+  vector<uint8_t> bp_dists(csr.n, (uint8_t) MAX_DIST);
+
+  int* Q0 = new int[csr.n];
+  int* Q1 = new int[csr.n];
+  int Q0_size = 0;
+  int Q0_ptr = 0;
+  int Q1_size = 0;
+  int Q1_ptr = 0;
+
+  Q0[Q0_size++] = r;
+  bp_dists[r] = 0;
+
+  for(int i=0; i<Sr.size(); i++){
+    int v = Sr[i];
+    Q0[Q0_size++] = v;
+    bp_dists[v] = 1;
+    bp_sets[v].first |= 1ULL << i;
+  }
+
+  while(Q0_ptr < Q0_size){
+    vector<pair<int,int>> E0;
+    vector<pair<int,int>> E1;
+
+    while(Q0_ptr < Q0_size){
+      int v = Q0[Q0_ptr++];
+
+      int start = csr.row_ptr[v];
+      int end = csr.row_ptr[v+1];
+
+      for(int i=start; i<end; i++){
+	int u = csr.col[i];
+
+	if(bp_dists[u] == MAX_DIST){
+	  E1.emplace_back(v,u);
+	  bp_dists[u] = bp_dists[v] + 1;
+	  Q1[Q1_size++] = u;
+	} else if(bp_dists[u] == bp_dists[v] + 1){
+	  E1.emplace_back(v,u);
+	} else if (bp_dists[u] == bp_dists[v]){
+	  E0.emplace_back(v,u);
+	} 
+      } 
+    }
+
+    for(auto& p : E0){
+      int v = p.first;
+      int u = p.second;
+      bp_sets[u].second |= bp_sets[v].first;
+    }
+
+    for(auto& p : E1){
+      int v = p.first;
+      int u = p.second;
+      bp_sets[u].first |= bp_sets[v].first;
+      bp_sets[u].second |= bp_sets[v].second;
+    }
+
+    swap(Q0, Q1);
+    swap(Q0_ptr, Q1_ptr);
+    swap(Q0_size, Q1_size);
+    Q1_ptr = 0;
+    Q1_size = 0;
+  }
+
+
+  for(int i=0; i<csr.n; i++){
+    auto& bp = bp_labels[i];
+    bp.bp_dists[root_index] = bp_dists[i];
+    bp.bp_sets[root_index][0] = bp_sets[i].first;
+    bp.bp_sets[root_index][1] = bp_sets[i].second;
+  }
+
+
+}
+
+inline void PSL::InitBP(){
+ 
+  cout << "Creating BP Labels" << endl; 
+  bp_labels.resize(csr.n);
+  for(int i=0; i<csr.n; i++){
+    for(int j=0; j<N_ROOTS; j++){
+      bp_labels[i].bp_dists[j] = (uint8_t) MAX_DIST;
+      bp_labels[i].bp_sets[j][0] = (uint64_t) 0;
+      bp_labels[i].bp_sets[j][1] = (uint64_t) 0;   
+    }
+  }
+
+
+  vector<bool> used(csr.n, false);
+
+  cout << "Sorting the neighbors" << endl;
+  for(int i=0; i<csr.n; i++){
+    int start = csr.row_ptr[i];
+    int end = csr.row_ptr[i+1];
+
+    sort(csr.col+start, csr.col+end, [this](int u, int v){
+	return this->ranks[u] > this->ranks[v];
+      });
+  }
+
+
+  int root_index = csr.n-1;
+  for(int i=0; i<N_ROOTS; i++){
+
+    cout << "Choosing root " << i << endl;
+    vector<int> SR;
+    SR.reserve(64);
+
+    while(root_index >= 0){
+      int root = order[root_index]; 
+      if(!used[root]){
+	break;
+      }
+      root_index--;
+    }
+
+    if(root_index == 0){
+      cout << "Run out of root nodes for BP" << endl;
+      break;
+    }
+
+    int root = order[root_index];
+    cout << "Chosen root=" << root << endl;
+    cout << "Chosen root rank=" << ranks[root] << endl;
+    used[root] = true;
+
+    int start = csr.row_ptr[root];
+    int end = csr.row_ptr[root+1];
+
+    cout << "Computing SR" << endl;
+    for(int j=start; j<end && j-start < 64; j++){
+      int v = csr.col[j];
+      SR.push_back(v);
+      used[v] = true;
+    }
+
+    InitBPForRoot(root, SR, i);    
+  }
+}
+
+inline void PSL::CountPrune(int i){
+#ifdef DEBUG
+  if(i == 0)
+    prune_rank++;
+  else if (i == 1)
+    prune_bp++;
+  else
+    prune_labels++;
+
+#endif
+}
 
 inline void PSL::AddLabel(vector<int>* target_labels, int w){
   target_labels->push_back(csr.nodes[w]);
@@ -232,7 +420,6 @@ inline int PSL::GetLabel(int u, int i){
 
 inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut) : csr(csr_),  labels(csr.n) {
 
-  vector<int> order;
   order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
 
   ranks.resize(csr.n);
@@ -250,7 +437,7 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut) : csr(csr_),  
   
   
   if constexpr(USEBP){
-    ConstructBPLabel();
+    InitBP();
   }
 }
 
@@ -415,16 +602,19 @@ inline vector<int>* PSL::Pull(int u, int d) {
       int w = GetLabel(v, j);
 
       if (ranks[u] > ranks[w]) {
+	CountPrune(0);
         continue;
       }
 
       if constexpr(USEBP){
-        if(BPPrune(u, w, d)){
+        if(PruneByBp(u, w, d)){
+	  CountPrune(1);
           continue;
         }
       }
 
       if(Prune(u, w, d, cache)){
+	CountPrune(2);
         continue;
       }
 
@@ -510,9 +700,9 @@ inline void PSL::Index() {
         continue;
       }
 
-      sort(new_labels[u]->begin(), new_labels[u]->end(), [this](int u, int v){
-        return this->ranks[u] > this->ranks[v];
-      });
+      /* sort(new_labels[u]->begin(), new_labels[u]->end(), [this](int u, int v){ */
+      /*   return this->ranks[u] > this->ranks[v]; */
+      /* }); */
 
       labels_u.vertices.insert(labels_u.vertices.end(), new_labels[u]->begin(), new_labels[u]->end());
       labels_u.dist_ptrs.push_back(labels_u.vertices.size());
@@ -525,180 +715,12 @@ inline void PSL::Index() {
 
   all_end_time = omp_get_wtime();
   cout << "Indexing: " << all_end_time-all_start_time << " seconds" << endl;
-}
 
-inline int PSL::BPQuery(int u, int v) {
-  BPLabel &idx_u = label_bp[u], &idx_v = label_bp[v];
-  int d = MAX_DIST;
-  for (int i = 0; i < N_ROOTS; ++i) {
-    int td = idx_u.bpspt_d[i] + idx_v.bpspt_d[i];
-    if (td - 2 <= d)
-      td += (idx_u.bpspt_s[i][0] & idx_v.bpspt_s[i][0]) ? -2
-            : ((idx_u.bpspt_s[i][0] & idx_v.bpspt_s[i][1]) |
-               (idx_u.bpspt_s[i][1] & idx_v.bpspt_s[i][0]))
-                ? -1
-                : 0;
-    if (td < d)
-      d = td;
-  }
-  return d;
-}
-
-inline bool PSL::BPPrune(int u, int v, int d) {
-  BPLabel &idx_u = label_bp[u], &idx_v = label_bp[v];
-  for (int i = 0; i < N_ROOTS; ++i) {
-    int td = idx_u.bpspt_d[i] + idx_v.bpspt_d[i];
-    if (td - 2 <= d)
-      td += (idx_u.bpspt_s[i][0] & idx_v.bpspt_s[i][0]) ? -2
-            : ((idx_u.bpspt_s[i][0] & idx_v.bpspt_s[i][1]) |
-               (idx_u.bpspt_s[i][1] & idx_v.bpspt_s[i][0]))
-                ? -1
-                : 0;
-    if (td <= d)
-      return true;
-  }
-  return false;
-}
-
-inline void PSL::ConstructBPLabel() {
-  int nown = csr.n;
-  int n = csr.n;
-  int m = csr.m;
-
-  printf("Constructing BP Label...\n");
-  double tt = omp_get_wtime();
-  label_bp = new BPLabel[nown];
-  usd_bp = new bool[n];
-  memset(usd_bp, 0, sizeof(bool) * n);
-  vector<int> v_vs[N_ROOTS];
-
-  int r = 0;
-  for (int i_bpspt = 0; i_bpspt < N_ROOTS; ++i_bpspt) {
-    while (r < nown && usd_bp[r])
-      ++r;
-    if (r == nown) {
-      for (int v = 0; v < nown; ++v)
-        label_bp[v].bpspt_d[i_bpspt] = MAX_DIST;
-      continue;
-    }
-    usd_bp[r] = true;
-    v_vs[i_bpspt].push_back(r);
-    int ns = 0;
-
-    int start = csr.row_ptr[r];
-    int end = csr.row_ptr[r];
-    for (int i = start; i < end; ++i) {
-      int v = csr.col[i];
-      if (!usd_bp[v]) {
-        usd_bp[v] = true;
-        v_vs[i_bpspt].push_back(v);
-        if (++ns == 64)
-          break;
-      }
-    }
-  }
-
-  int n_threads = 1;
-#pragma omp parallel
-  {
-    if (omp_get_thread_num() == 0)
-      n_threads = omp_get_num_threads();
-  }
-  if (n_threads > MAX_BP_THREADS)
-    omp_set_num_threads(MAX_BP_THREADS);
-#pragma omp parallel
-  {
-    int pid = omp_get_thread_num(), np = omp_get_num_threads();
-    if (pid == 0)
-      printf("n_threads_bp = %d\n", np);
-    vector<uint8_t> tmp_d(nown);
-    vector<pair<uint64_t, uint64_t>> tmp_s(nown);
-    vector<int> que(nown);
-    // vector<pair<int, int> > sibling_es(m/2);
-    vector<pair<int, int>> child_es(m / 2);
-
-    for (int i_bpspt = pid; i_bpspt < N_ROOTS; i_bpspt += np) {
-      printf("[%d]", i_bpspt);
-
-      if (v_vs[i_bpspt].size() == 0)
-        continue;
-      fill(tmp_d.begin(), tmp_d.end(), MAX_DIST);
-      fill(tmp_s.begin(), tmp_s.end(), make_pair(0, 0));
-
-      r = v_vs[i_bpspt][0];
-      int que_t0 = 0, que_t1 = 0, que_h = 0;
-      que[que_h++] = r;
-      tmp_d[r] = 0;
-      que_t1 = que_h;
-
-      for (size_t i = 1; i < v_vs[i_bpspt].size(); ++i) {
-        int v = v_vs[i_bpspt][i];
-        que[que_h++] = v;
-        tmp_d[v] = 1;
-        tmp_s[v].first = 1ULL << (i - 1);
-      }
-
-      for (int d = 0; que_t0 < que_h; ++d) {
-        // int num_sibling_es = 0;
-        int num_child_es = 0;
-
-        for (int que_i = que_t0; que_i < que_t1; ++que_i) {
-          int v = que[que_i];
-  
-          int start = csr.row_ptr[v];
-          int end = csr.row_ptr[v+1];
-          for (int i = start; i < end; ++i) {
-            int tv = csr.col[i];
-            int td = d + 1;
-
-            if (d == tmp_d[tv]) {
-              if (v < tv) {
-                // sibling_es[num_sibling_es].first  = v;
-                // sibling_es[num_sibling_es].second = tv;
-                //++num_sibling_es;
-                tmp_s[v].second |= tmp_s[tv].first;
-                tmp_s[tv].second |= tmp_s[v].first;
-              }
-            } else if (d < tmp_d[tv]) {
-              if (tmp_d[tv] == MAX_DIST) {
-                que[que_h++] = tv;
-                tmp_d[tv] = td;
-              }
-              child_es[num_child_es].first = v;
-              child_es[num_child_es].second = tv;
-              ++num_child_es;
-              // tmp_s[tv].first  |= tmp_s[v].first;
-              // tmp_s[tv].second |= tmp_s[v].second;
-            }
-          }
-        }
-
-        /*for (int i = 0; i < num_sibling_es; ++i) {
-                int v = sibling_es[i].first, w = sibling_es[i].second;
-                tmp_s[v].second |= tmp_s[w].first;
-                tmp_s[w].second |= tmp_s[v].first;
-        }*/
-
-        for (int i = 0; i < num_child_es; ++i) {
-          int v = child_es[i].first, c = child_es[i].second;
-          tmp_s[c].first |= tmp_s[v].first;
-          tmp_s[c].second |= tmp_s[v].second;
-        }
-
-        que_t0 = que_t1;
-        que_t1 = que_h;
-      }
-
-      for (int v = 0; v < nown; ++v) {
-        label_bp[v].bpspt_d[i_bpspt] = tmp_d[v];
-        label_bp[v].bpspt_s[i_bpspt][0] = tmp_s[v].first;
-        label_bp[v].bpspt_s[i_bpspt][1] = tmp_s[v].second & ~tmp_s[v].first;
-      }
-    }
-  }
-  omp_set_num_threads(n_threads);
-  printf("\nBP Label Constructed, bp_size=%0.3lfMB, time = %0.3lf sec\n",
-         sizeof(BPLabel) * nown / (1024.0 * 1024.0), omp_get_wtime() - tt);
+#ifdef DEBUG
+  cout << "Prune by Rank: " << prune_rank << endl; 
+  cout << "Prune by BP: " << prune_bp << endl; 
+  cout << "Prune by Labels: " << prune_labels << endl; 
+#endif
 }
 
 #endif

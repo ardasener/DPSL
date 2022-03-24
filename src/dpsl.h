@@ -543,7 +543,7 @@ inline bool DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init)
 }
 
 inline void DPSL::Barrier(){
-    MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Barrier(MPI_COMM_WORLD);
 }
 
 inline void DPSL::SendData(int* data, int size, int vertex, int to){
@@ -588,7 +588,7 @@ inline int DPSL::RecvData(int *& data, int vertex, int from){
 
 
 inline void DPSL::InitP0(){
-	string order_method = config.find("order_method")->as<string>();
+    string order_method = config.find("order_method")->as<string>();
     CSR& csr = *whole_csr;
 
     vc_ptr = new VertexCut(csr, order_method, np);
@@ -667,9 +667,9 @@ inline void DPSL::Init(){
 
 inline void DPSL::Index(){
  
-  double start, end, alg_start, alg_end;
-  Log("Indexing Start");
-  CSR& csr = *part_csr;
+    double start, end, alg_start, alg_end;
+    Log("Indexing Start");
+    CSR& csr = *part_csr;
 
     string order_method = config.find("order_method")->as<string>();
     psl_ptr = new PSL(*part_csr, order_method, &cut);
@@ -728,12 +728,11 @@ inline void DPSL::Index(){
               new_labels[u] = psl.Pull(u,d);
               if(psl.ranks[u] < psl.min_cut_rank && new_labels[u] != nullptr && !new_labels[u]->empty()){
                 updated = updated || true;
-              auto& labels = psl.labels[u].vertices;
-              labels.insert(labels.end(), new_labels[u]->begin(), new_labels[u]->end());
-   
+                auto& labels = psl.labels[u].vertices;
+                labels.insert(labels.end(), new_labels[u]->begin(), new_labels[u]->end());
               }
           }       
-      }
+        }
         end = omp_get_wtime();
         PrintTime("Level " + to_string(d), end-start);
 

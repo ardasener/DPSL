@@ -1,3 +1,2 @@
 mpi = false
-filename = "small_graphs/p2p-Gnutella04.mtx"
 order_method = "degree"
