@@ -317,11 +317,22 @@ inline void DPSL::Query(int u, string filename){
   }
 
 
+
   Log("Querying locally");
+
+  int local_u = -1;
+  auto it = part_csr->nodes_inv.find(u);
+  if(it != part_csr->nodes_inv.end()){
+    local_u = it->second;   
+  }
+
+  /* cout << "Local U:" << local_u << endl; */
+
   vector<int> local_dist(part_csr->n);
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
   for(int v=0; v<part_csr->n; v++){
-    int min = MAX_DIST;
+    int min = (local_u != -1) ? psl_ptr->QueryByBp(local_u, v) : MAX_DIST;
+
     auto& vertices_v = psl_ptr->labels[v].vertices;
     auto& dist_ptrs_v = psl_ptr->labels[v].dist_ptrs;
    

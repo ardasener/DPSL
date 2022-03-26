@@ -18,7 +18,7 @@
 #define N_ROOTS 5
 #define MAX_BP_THREADS 1
 #define USEBP true
-#define NUM_THREADS 16
+#define NUM_THREADS 8
 
 using namespace std;
 
@@ -269,13 +269,12 @@ inline int PSL::QueryByBp(int u, int v){
 		  ? -1
 		  : 0;
   
-      if (td <= d){
+      if (td < d){
 	d = td;
       }
     }
 
     return d;
-
 }
 
 
@@ -669,12 +668,6 @@ inline vector<int>* PSL::Pull(int u, int d) {
 	CountPrune(0);
         continue;
       }
-
-/* #ifdef DEBUG */
-/*       if(PruneByBp(u,w,d) && !Prune(u,w,d,cache)){ */
-/* 	printf("Prune mistake, u=%d, w=%d, d=%d \n", u,w,d); */
-/*       } */
-/* #endif */
 
       if constexpr(USEBP){
         if(PruneByBp(u, w, d)){
