@@ -15,10 +15,10 @@
 #include <unordered_set>
 #include <unordered_map>
 
-#define N_ROOTS 16
+#define N_ROOTS 5
 #define MAX_BP_THREADS 1
 #define USEBP true
-#define NUM_THREADS 8
+#define NUM_THREADS 16
 
 using namespace std;
 
@@ -210,9 +210,6 @@ public:
   long long prune_bp = 0;
 
   void ConstructBPLabel();
-  int BPQuery(int u, int v);
-  bool BPPrune(int u, int v, int d);
-  bool Prune(int u, int v, int d, const vector<char> &cache);
 
   vector<LabelSet> labels;
   vector<BPLabel> bp_labels;
@@ -222,39 +219,67 @@ public:
   void Index();
   void WriteLabelCounts(string filename);
   vector<int>* Query(int u);
-  void Query(int u, string filename);
   void AddLabel(vector<int>* target_labels, int w);
   int GetLabel(int u, int i);
   void CountPrune(int i);
   void InitBP();
   void InitBPForRoot(int r, vector<int>& Sr, int root_index);
   bool PruneByBp(int u, int v, int d);
+  bool Prune(int u, int v, int d, const vector<char> &cache);
+  void Query(int u, string filename);
+  int QueryByBp(int u, int v);
 };
 
 inline bool PSL::PruneByBp(int u, int v, int d){
-  BPLabel& bp_u = bp_labels[u];
-  BPLabel& bp_v = bp_labels[v];
-  for(int i=0; i<N_ROOTS; i++){
-    int dist = bp_u.bp_dists[i] + bp_v.bp_dists[i];
-  
-    if(dist <= d){
-      return true;
-    }
 
-    if(dist-2 <= d){
-      if(bp_u.bp_sets[i][0] & bp_v.bp_sets[i][0]){
-	return true;
-      } else if(dist-1 <= d && (bp_u.bp_sets[i][1] & bp_v.bp_sets[i][0])){
+  BPLabel &idx_u = bp_labels[u], &idx_v = bp_labels[v];
+
+  for (int i = 0; i < N_ROOTS; ++i) {
+
+      int td = idx_u.bp_dists[i] + idx_v.bp_dists[i];
+      if (td - 2 <= d)
+	td += (idx_u.bp_sets[i][0] & idx_v.bp_sets[i][0]) ? -2
+	      : ((idx_u.bp_sets[i][0] & idx_v.bp_sets[i][1]) |
+				 (idx_u.bp_sets[i][1] & idx_v.bp_sets[i][0]))
+		  ? -1
+		  : 0;
+  
+      if (td <= d){
+	/* printf("BPPruned u=%d v=%d td=%d d=%d \n", u,v,td,d); */
 	return true;
       }
     }
+    return false;
 
-  }
-
-  return false;
 }
 
-inline void PSL::InitBPForRoot(int r, vector<int>& Sr, int root_index){
+
+inline int PSL::QueryByBp(int u, int v){
+
+  BPLabel &idx_u = bp_labels[u], &idx_v = bp_labels[v];
+
+  int d = MAX_DIST;
+  for (int i = 0; i < N_ROOTS; ++i) {
+
+      int td = idx_u.bp_dists[i] + idx_v.bp_dists[i];
+      if (td - 2 <= d)
+	td += (idx_u.bp_sets[i][0] & idx_v.bp_sets[i][0]) ? -2
+	      : ((idx_u.bp_sets[i][0] & idx_v.bp_sets[i][1]) |
+				 (idx_u.bp_sets[i][1] & idx_v.bp_sets[i][0]))
+		  ? -1
+		  : 0;
+  
+      if (td <= d){
+	d = td;
+      }
+    }
+
+    return d;
+
+}
+
+
+inline void PSL::InitBPForRoot(int r, vector<int>& Sr, int bp_index){
 
   cout << "BP Init for root=" << r << endl;
   vector<pair<uint64_t,uint64_t>> bp_sets(csr.n, make_pair((uint64_t) 0, (uint64_t) 0));
@@ -268,18 +293,18 @@ inline void PSL::InitBPForRoot(int r, vector<int>& Sr, int root_index){
   int Q1_ptr = 0;
 
   Q0[Q0_size++] = r;
-  bp_dists[r] = 0;
+  bp_dists[r] = (uint8_t) 0;
 
   for(int i=0; i<Sr.size(); i++){
     int v = Sr[i];
-    Q0[Q0_size++] = v;
-    bp_dists[v] = 1;
+    Q1[Q1_size++] = v;
+    bp_dists[v] = (uint8_t) 1;
     bp_sets[v].first |= 1ULL << i;
   }
 
   while(Q0_ptr < Q0_size){
-    vector<pair<int,int>> E0;
-    vector<pair<int,int>> E1;
+    unordered_set<pair<int,int>, pair_hash> E0;
+    unordered_set<pair<int,int>, pair_hash> E1;
 
     while(Q0_ptr < Q0_size){
       int v = Q0[Q0_ptr++];
@@ -290,14 +315,14 @@ inline void PSL::InitBPForRoot(int r, vector<int>& Sr, int root_index){
       for(int i=start; i<end; i++){
 	int u = csr.col[i];
 
-	if(bp_dists[u] == MAX_DIST){
-	  E1.emplace_back(v,u);
-	  bp_dists[u] = bp_dists[v] + 1;
+	if(bp_dists[u] == (uint8_t) MAX_DIST){
+	  E1.emplace(v,u);
+	  bp_dists[u] = (uint8_t) (bp_dists[v] + 1);
 	  Q1[Q1_size++] = u;
 	} else if(bp_dists[u] == bp_dists[v] + 1){
-	  E1.emplace_back(v,u);
+	  E1.emplace(v,u);
 	} else if (bp_dists[u] == bp_dists[v]){
-	  E0.emplace_back(v,u);
+	  E0.emplace(v,u);
 	} 
       } 
     }
@@ -305,6 +330,7 @@ inline void PSL::InitBPForRoot(int r, vector<int>& Sr, int root_index){
     for(auto& p : E0){
       int v = p.first;
       int u = p.second;
+      bp_sets[v].second |= bp_sets[u].first;
       bp_sets[u].second |= bp_sets[v].first;
     }
 
@@ -312,7 +338,8 @@ inline void PSL::InitBPForRoot(int r, vector<int>& Sr, int root_index){
       int v = p.first;
       int u = p.second;
       bp_sets[u].first |= bp_sets[v].first;
-      bp_sets[u].second |= bp_sets[v].second;
+      bp_sets[u].second |= bp_sets[v].second & ~bp_sets[v].first;
+      /* bp_sets[u].second |= bp_sets[v].second; */
     }
 
     swap(Q0, Q1);
@@ -325,11 +352,13 @@ inline void PSL::InitBPForRoot(int r, vector<int>& Sr, int root_index){
 
   for(int i=0; i<csr.n; i++){
     auto& bp = bp_labels[i];
-    bp.bp_dists[root_index] = bp_dists[i];
-    bp.bp_sets[root_index][0] = bp_sets[i].first;
-    bp.bp_sets[root_index][1] = bp_sets[i].second;
+    bp.bp_dists[bp_index] = bp_dists[i];
+    bp.bp_sets[bp_index][0] = bp_sets[i].first;
+    bp.bp_sets[bp_index][1] = bp_sets[i].second;
   }
 
+  delete[] Q0;
+  delete[] Q1;
 
 }
 
@@ -347,6 +376,7 @@ inline void PSL::InitBP(){
 
 
   vector<bool> used(csr.n, false);
+  vector<int> roots;
 
   cout << "Sorting the neighbors" << endl;
   for(int i=0; i<csr.n; i++){
@@ -380,6 +410,7 @@ inline void PSL::InitBP(){
     }
 
     int root = order[root_index];
+    roots.push_back(root);
     cout << "Chosen root=" << root << endl;
     cout << "Chosen root rank=" << ranks[root] << endl;
     used[root] = true;
@@ -396,6 +427,39 @@ inline void PSL::InitBP(){
 
     InitBPForRoot(root, SR, i);    
   }
+
+#ifdef DEBUG
+  ofstream ofs("output_bp_labels.txt");
+  ofs << "__Roots__" << endl;
+  for(int i=0; i<roots.size(); i++){
+    ofs << roots[i] << ", ";	
+  }
+  ofs << endl;
+  ofs << "__Dists__" << endl;
+  for(int v=0; v<csr.n; v++){
+	  ofs << v << ": ";
+	  for(int i=0; i<N_ROOTS; i++){
+		  ofs << (int) bp_labels[v].bp_dists[i] << ", ";	
+	  }
+	  ofs << endl;
+  }
+  
+  ofs << "__Sets__" << endl;
+  for(int v=0; v<csr.n; v++){
+	  ofs << v << ": ";
+	  for(int i=0; i<N_ROOTS; i++){
+		  ofs << "(" << bp_labels[v].bp_sets[i][0] << "," << bp_labels[v].bp_sets[i][1] << ")" << ", ";	
+	  }
+	  ofs << endl;
+  }
+
+  ofs.close();
+
+
+
+
+#endif
+
 }
 
 inline void PSL::CountPrune(int i){
@@ -518,7 +582,7 @@ inline vector<int>* PSL::Query(int u) {
   for (int v = 0; v < csr.n; v++) {
 
     auto& labels_v = labels[v];
-    int min = MAX_DIST;
+    int min = QueryByBp(u,v);
 
     for (int d = 0; d < min && d < last_dist; d++) {
       int dist_start = labels_v.dist_ptrs[d];
@@ -605,6 +669,12 @@ inline vector<int>* PSL::Pull(int u, int d) {
 	CountPrune(0);
         continue;
       }
+
+/* #ifdef DEBUG */
+/*       if(PruneByBp(u,w,d) && !Prune(u,w,d,cache)){ */
+/* 	printf("Prune mistake, u=%d, w=%d, d=%d \n", u,w,d); */
+/*       } */
+/* #endif */
 
       if constexpr(USEBP){
         if(PruneByBp(u, w, d)){
