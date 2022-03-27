@@ -490,6 +490,8 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut) : csr(csr_),  
 		ranks[order[i]] = i;
 	}
 
+  min_cut_rank = INT_MAX;
+
   if(cut != nullptr && !cut->empty()){
     int high_rank = INT_MAX;
     for(int u : *cut){
@@ -670,7 +672,7 @@ inline vector<int>* PSL::Pull(int u, int d) {
       }
 
       if constexpr(USEBP){
-        if(PruneByBp(u, w, d)){
+        if(ranks[u] < min_cut_rank && ranks[w] < min_cut_rank && PruneByBp(u, w, d)){
 	  CountPrune(1);
           continue;
         }

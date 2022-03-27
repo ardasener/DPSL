@@ -12,11 +12,13 @@
 #include "metis.h"
 
 enum MPI_CONSTS{
+  MPI_GLOBAL_N,
   MPI_CSR_ROW_PTR,
   MPI_CSR_COL,
   MPI_CSR_NODES,
   MPI_CUT,
   MPI_PARTITION,
+  MPI_CACHE,
 };
 
 
@@ -240,7 +242,7 @@ public:
     int RecvData(int*& data,int vertex, int from);
     bool MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init=false);
     void Barrier();
-    int pid, np;
+    int pid, np, global_n;
     CSR* whole_csr;
     CSR* part_csr;
     int* partition;
@@ -270,32 +272,40 @@ inline void DPSL::PrintTime(string tag, double time){
   cout << "P" << pid << ": " << tag << ", " << time << " seconds" << endl;
 }
 
+
+
+
 inline void DPSL::Query(int u, string filename){
   
   Log("Starting Query");
+  Log("Global N: " + to_string(global_n));
   Barrier();
-    
+ 
   int* vertices_u;
   int* dist_ptrs_u;
   int dist_ptrs_u_size;
   int vertices_u_size;
+  
+  
 
   if(partition[u] == pid){
-    Log("Broadcasting u's labels");
-    int local_u = part_csr->nodes_inv[u];
-    auto& labels_u = psl_ptr->labels[local_u];
-    BroadcastData(labels_u.vertices.data(), labels_u.vertices.size(), 0);
-    BroadcastData(labels_u.dist_ptrs.data(), labels_u.dist_ptrs.size(), 1);
-    vertices_u = labels_u.vertices.data();
-    vertices_u_size = labels_u.vertices.size();
-    dist_ptrs_u = labels_u.dist_ptrs.data();
-    dist_ptrs_u_size = labels_u.dist_ptrs.size();
-
+      Log("Broadcasting u's labels");
+      int local_u = part_csr->nodes_inv[u];
+      auto& labels_u = psl_ptr->labels[local_u];
+      BroadcastData(labels_u.vertices.data(), labels_u.vertices.size(), 0);
+      BroadcastData(labels_u.dist_ptrs.data(), labels_u.dist_ptrs.size(), 1);
+      vertices_u = labels_u.vertices.data();
+      vertices_u_size = labels_u.vertices.size();
+      dist_ptrs_u = labels_u.dist_ptrs.data();
+      dist_ptrs_u_size = labels_u.dist_ptrs.size();
   } else {
-    Log("Recieving u's labels");
-    vertices_u_size = RecvData(vertices_u, 0, MPI_ANY_SOURCE);
-    dist_ptrs_u_size = RecvData(dist_ptrs_u, 1, MPI_ANY_SOURCE);
+    
+      Log("Recieving u's labels");
+      vertices_u_size = RecvData(vertices_u, 0, MPI_ANY_SOURCE);
+      dist_ptrs_u_size = RecvData(dist_ptrs_u, 1, MPI_ANY_SOURCE);
+    
   }
+
 
   Log("Constructing cache");
   int cache[part_csr->n];
@@ -303,34 +313,30 @@ inline void DPSL::Query(int u, string filename){
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for(int d=0; d<dist_ptrs_u_size-1; d++){
-    int start = dist_ptrs_u[d];
-    int end = dist_ptrs_u[d+1];
-
-    for(int i= start; i<end; i++){
-      int v = vertices_u[i];
-      auto it = part_csr->nodes_inv.find(v);
-      if(it != part_csr->nodes_inv.end()){
-        int local_v = it->second;
-        cache[local_v] = d;
-      }
+      int start = dist_ptrs_u[d];
+      int end = dist_ptrs_u[d+1];
+  
+      for(int i= start; i<end; i++){
+            int v = vertices_u[i];
+            auto it = part_csr->nodes_inv.find(v);
+            if(it != part_csr->nodes_inv.end()){
+              int local_v = it->second;
+              cache[local_v] = d;
+            }
+        }
     }
-  }
-
-
-
-  Log("Querying locally");
 
   int local_u = -1;
   auto it = part_csr->nodes_inv.find(u);
   if(it != part_csr->nodes_inv.end()){
-    local_u = it->second;   
+    local_u = it->second;
   }
 
-  /* cout << "Local U:" << local_u << endl; */
-
+  Log("Querying locally");
   vector<int> local_dist(part_csr->n);
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
   for(int v=0; v<part_csr->n; v++){
+    int global_v = part_csr->nodes[v];
     int min = (local_u != -1) ? psl_ptr->QueryByBp(local_u, v) : MAX_DIST;
 
     auto& vertices_v = psl_ptr->labels[v].vertices;
@@ -341,19 +347,21 @@ inline void DPSL::Query(int u, string filename){
       int end = dist_ptrs_v[d+1];
 
       for(int i= start; i<end; i++){
-        int w = psl_ptr->GetLabel(v,i);
+        int w = vertices_v[i];
+        int local_w = part_csr->nodes_inv[w];
        
-        if(cache[w] == -1){
+        if(cache[local_w] == -1){
           continue;
         }
 
-        int dist = cache[w] + d;
+        int dist = d + cache[local_w];        
         if(dist < min){
           min = dist;
         }
       }
     }
-    local_dist[v] = min;     
+
+    local_dist[v] = min;
   }
 
   Barrier();
@@ -601,6 +609,7 @@ inline int DPSL::RecvData(int *& data, int vertex, int from){
 inline void DPSL::InitP0(){
     string order_method = config.find("order_method")->as<string>();
     CSR& csr = *whole_csr;
+    global_n = csr.n;
 
     vc_ptr = new VertexCut(csr, order_method, np);
     VertexCut& vc = *vc_ptr;
@@ -615,9 +624,11 @@ inline void DPSL::InitP0(){
     auto& csrs = vc.csrs;
     part_csr = csrs[0];
 
+
     Log("Initial Barrier Region");
     Barrier();
     for(int i=1; i<np; i++){
+        SendData(&(whole_csr->n), 1, MPI_GLOBAL_N, i);
         SendData(csrs[i]->row_ptr, (csrs[i]->n)+1, MPI_CSR_ROW_PTR, i);
         SendData(csrs[i]->col, csrs[i]->m, MPI_CSR_COL, i);
         SendData(csrs[i]->nodes, csrs[i]->n, MPI_CSR_NODES, i);
@@ -660,6 +671,12 @@ inline void DPSL::Init(){
 
     Log("Initial Barrier Region");
     Barrier();
+    
+    int* global_n_ptr;
+    RecvData(global_n_ptr, MPI_GLOBAL_N, 0);
+    global_n = *global_n_ptr;
+    delete global_n_ptr;
+
     int size_row_ptr = RecvData(row_ptr, MPI_CSR_ROW_PTR, 0);
     int size_col = RecvData(col, MPI_CSR_COL, 0);
     int size_nodes = RecvData(nodes, MPI_CSR_NODES, 0);
