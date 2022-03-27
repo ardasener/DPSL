@@ -19,6 +19,7 @@ enum MPI_CONSTS{
   MPI_CUT,
   MPI_PARTITION,
   MPI_CACHE,
+  MPI_UPDATED,
 };
 
 
@@ -752,6 +753,8 @@ inline void DPSL::Index(){
     bool updated = true;
     last_dist = 1;
     for(int d=2; d < MAX_DIST; d++){    
+
+        Barrier();
         vector<vector<int>*> new_labels(csr.n, nullptr);
 
         start = omp_get_wtime();
@@ -793,8 +796,19 @@ inline void DPSL::Index(){
             delete new_labels[u];
         }
 
-        Barrier();
+        // Stops the execution once all processes agree that they are done
+        int updated_int = (int) updated;
+        BroadcastData(&updated_int, 1, MPI_UPDATED);
+        int* updated_other;
+        for(int i=0; i<np-1; i++){
+          RecvData(updated_other, MPI_UPDATED, MPI_ANY_SOURCE);
+          updated_int |= *updated_other;
+        }
+        delete updated_other;
 
+        if(!updated_int){
+          break;
+        }
     }
 
     alg_end = omp_get_wtime();
