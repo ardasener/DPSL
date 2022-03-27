@@ -121,6 +121,12 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
 
     bool u_in_cut = (cut.find(u) != cut.end());
 
+    if(u_in_cut){
+        for(int i=0; i<nodes.size(); i++){
+          nodes[i].insert(u);
+        }
+    }
+
     for(int j=start; j<end; j++){
       int v = csr.col[j];
 
@@ -540,6 +546,7 @@ inline bool DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init)
 
     for(int i=0; i<cut.size(); i++){
       int u = cut[i];
+      Log("Iteration u=" + to_string(u));
       auto& labels_u = psl.labels[u].vertices;
       int new_labels_size = (new_labels[u] == nullptr) ? 0 : new_labels[u]->size();
       int* new_labels_data = (new_labels[u] == nullptr) ? nullptr : new_labels[u]->data();
@@ -550,11 +557,12 @@ inline bool DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init)
       int size = RecvData(merged_labels, i, 0);
       Log("Recieving Labels for " + to_string(i) + " End");
       
-      if(size > 0){
+      if(size > 0 && merged_labels != nullptr){
         updated = true;
         labels_u.insert(labels_u.end(), merged_labels, merged_labels + size);
         delete[] merged_labels;
       }
+      Log("Inserting Labels for " + to_string(i) + " End");
     }
   }
 

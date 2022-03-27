@@ -15,10 +15,10 @@
 #include <unordered_set>
 #include <unordered_map>
 
-#define N_ROOTS 5
+#define N_ROOTS 16
 #define MAX_BP_THREADS 1
 #define USEBP true
-#define NUM_THREADS 8
+#define NUM_THREADS 1
 
 using namespace std;
 
