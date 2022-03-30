@@ -1,4 +1,4 @@
 release:
-	mpic++ src/main.cpp -O3 -fopenmp -std=c++17 -L. libmetis.so -Wl,-rpath=.
+	mpic++ src/main.cpp -O3 -fopenmp -std=c++17 -l:libmetis.a -l:libpatoh.a -l:libkahypar.so
 debug:
-	mpic++ src/main.cpp -O0 -g -fopenmp -std=c++17 -L. libmetis.so -Wl,-rpath=. -DDEBUG
+	mpic++ src/main.cpp -O0 -g -fopenmp -std=c++17 -l:libmetis.a -l:libpatoh.a -l:libkahypar.so
