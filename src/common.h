@@ -30,6 +30,7 @@ struct pair_hash
 };
 
 
+
 struct CSR {
   int *row_ptr;
   int *col;
@@ -136,5 +137,38 @@ struct CSR {
     delete[] coo_col;
   }
 };
+
+vector<int>* BFSQuery(CSR& csr, int u){
+
+  vector<int>* dists = new vector<int>(csr.n, -1);
+  auto& dist = *dists;
+
+	int q[csr.n];
+
+	int q_start = 0;
+	int q_end = 1;
+	q[q_start] = u;
+
+	dist[u] = 0;
+	while(q_start < q_end){
+		int curr = q[q_start++];
+
+		int start = csr.row_ptr[curr];
+		int end = csr.row_ptr[curr+1];
+
+		for(int i=start; i<end; i++){
+		      int v = csr.col[i];
+
+		      if(dist[v] == -1){
+			      dist[v] = dist[curr]+1;
+
+			      q[q_end++] = v;
+		      }
+	      }
+
+	}
+
+  return dists;
+}
 
 #endif

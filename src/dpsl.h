@@ -129,7 +129,7 @@ inline void DPSL::Query(int u, string filename){
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
   for(int v=0; v<part_csr->n; v++){
     int global_v = part_csr->nodes[v];
-    int min = (local_u != -1) ? psl_ptr->QueryByBp(local_u, v) : MAX_DIST;
+    int min = (local_u != -1) ? psl_ptr->bp_ptr->QueryByBp(local_u, v) : MAX_DIST;
 
     auto& vertices_v = psl_ptr->labels[v].vertices;
     auto& dist_ptrs_v = psl_ptr->labels[v].dist_ptrs;
