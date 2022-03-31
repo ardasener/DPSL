@@ -1,2 +1,19 @@
+# If set to true should be run using mpirun
 mpi = true
+
+# Could be degree, betweenness, closeness
 order_method = "degree"
+
+# Could be metis, patoh, kahypar
+partition_engine = "kahypar"
+
+
+# Settings for patoh partitioner (ignored if partition_engine != patoh)
+[patoh]
+# Could be RN or CN
+model = "RN"
+
+# Settings for kahypar partitioner (ignored if partition_engine != patoh)
+[kahypar]
+# Could be RN or CN
+config_file = "kahypar_config/cut_rKaHyPar_sea20.ini"

@@ -405,13 +405,16 @@ inline void DPSL::InitP0(){
     CSR& csr = *whole_csr;
     global_n = csr.n;
 
-    vc_ptr = new VertexCut(csr, order_method, np);
+    vc_ptr = new VertexCut(csr, order_method, np, config);
+
     VertexCut& vc = *vc_ptr;
 
+    Log("Creating All Cut");
     vector<int> all_cut(vc.cut.begin(), vc.cut.end());
     auto& ranks = vc.ranks;
 
-    sort(all_cut.begin(), all_cut.end(), [ranks](int u, int v){
+    Log("Ordering Cut By Rank");
+    sort(all_cut.begin(), all_cut.end(), [&ranks](int u, int v){
         return ranks[u] > ranks[v];
     });
 

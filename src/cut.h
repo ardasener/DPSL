@@ -4,44 +4,81 @@
 #include "common.h"
 #include "external/order/order.hpp"
 #include "external/metis/metis.h"
-#include "external/patoh/patoh.h"
 #include "external/kahypar/libkahypar.h"
+#include "external/toml/toml.h"
+// #include "patoh_wrap.h"
+#include <vector>
+#include "omp.h"
 
 using namespace std;
 
-class VertexCut{
-public:
-  unordered_set<int> cut;
-  vector<CSR*> csrs;
-  int* partition;
-  vector<int> ranks;
-  vector<vector<int>> aliasses;
+void KahyparPart(CSR& csr, int*& partition, int np, string config_file){
 
-  VertexCut(CSR& csr, string order_method, int np);
-};
+  kahypar_context_t* context = kahypar_context_new();
+  kahypar_configure_context_from_file(context, config_file.c_str());
 
-inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
+  const kahypar_hypernode_id_t num_vertices = csr.n;
+  const kahypar_hyperedge_id_t num_hyperedges = csr.m;
 
-  cout << "Ordering..." << endl;
-  vector<int> order;
-  order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
+  std::unique_ptr<size_t[]> hyperedge_indices = std::make_unique<size_t[]>(csr.m+1);
+  std::unique_ptr<kahypar_hyperedge_id_t[]> hyperedges = std::make_unique<kahypar_hyperedge_id_t[]>(csr.m*2);
 
-  cout << "Ranking..." << endl;
-  ranks.resize(csr.n);
-	for(int i=0; i<csr.n; i++){
-		ranks[order[i]] = i;
-	}
+  int index=0;
+  for(int u=0; u<csr.n; u++){
+    int start = csr.row_ptr[u];
+    int end = csr.row_ptr[u+1];
+
+    for(int j=start; j<end; j++){
+      int v = csr.col[j];
+      hyperedges[index++] = u; 
+      hyperedges[index++] = v; 
+    }
+  }
+
+  for(int i=0; i<csr.m+1; i++){
+    hyperedge_indices[i] = 2*i;
+  }
+
+  const double imbalance = 0.03;
+  const kahypar_partition_id_t k = np;
+  kahypar_hyperedge_weight_t objective = 0;
+
+  partition = new int[csr.n];
+
+  kahypar_partition(num_vertices, num_hyperedges,
+                  imbalance, k,
+                  /*vertex_weights */ nullptr, /*edge_weights*/ nullptr,
+                  hyperedge_indices.get(), hyperedges.get(),
+                  &objective, context, partition);
+
+  kahypar_context_free(context);
+
+}
+
+/*
+void PatohPart(CSR& csr, int*& partition, int np, string model){
+  partition = new int[csr.n];
+
+  int* ptrs = csr.row_ptr;
+  int* js = csr.col;
+  int m = csr.n;
+  int n = csr.n;
+  int nz = csr.m;
+  int* partv = partition;
+  if(model == "CN") colNetPart(ptrs, js, m, n, partv);
+  else if(model == "RN") rowNetPart(ptrs, js, m, n, partv);
+  else throw "Unsupported Patoh Model";
+  // else if(model == "TD") twoDimPart(I, J, m, n, nz, partv);
+  // else if(model == "CB") chkBrdPart(I, J, ptrs, js, m, n, partv);
+  
+}
+*/
+
+void MetisPart(CSR& csr, int*& partition, int np){
 
   int objval;
   partition = new int[csr.n];
 
-  /*
-  METIS_OPTION_OBJTYPE, METIS_OPTION_CTYPE, METIS_OPTION_IPTYPE,
-  METIS_OPTION_RTYPE, METIS_OPTION_NO2HOP, METIS_OPTION_NCUTS,
-  METIS_OPTION_NITER, METIS_OPTION_UFACTOR, METIS_OPTION_MINCONN,
-  METIS_OPTION_CONTIG, METIS_OPTION_SEED, METIS_OPTION_NUMBERING,
-  METIS_OPTION_DBGLVL
-  */
   idx_t options[METIS_NOPTIONS];
   options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_CUT;
   options[METIS_OPTION_CTYPE] = METIS_CTYPE_RM;
@@ -64,12 +101,48 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
 				       NULL, options, &objval, partition);
 
 
+}
+
+class VertexCut{
+public:
+  unordered_set<int> cut;
+  vector<CSR*> csrs;
+  int* partition;
+  vector<int> ranks;
+  vector<vector<int>> aliasses;
+
+  VertexCut(CSR& csr, string order_method, int np, const toml::Value& config);
+};
+
+inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::Value& config){
+
   ofstream ofs("output_vertex_cut.txt");
-  ofs << "__Partition__" << endl;
-  for(int i=0; i<csr.n; i++){
-    ofs << partition[i] << ",";
-  }
-  ofs << endl;
+  
+  cout << "Ordering..." << endl;
+  vector<int> order;
+  order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
+
+  cout << "Ranking..." << endl;
+  ranks.resize(csr.n);
+	for(int i=0; i<csr.n; i++){
+		ranks[order[i]] = i;
+	}
+
+  double start_part = omp_get_wtime();
+  string partition_engine = config.find("partition_engine")->as<string>();
+  if(partition_engine == "metis")
+    MetisPart(csr, partition, np);
+  else if (partition_engine == "patoh")
+    throw "Unsupported partition engine";
+    // PatohPart(csr, partition, np, config.find("patoh.model")->as<string>());
+  else if (partition_engine == "kahypar")
+    KahyparPart(csr, partition, np, config.find("kahypar.config_file")->as<string>());
+  else
+   throw "Unsupported partition engine";
+
+  double end_part = omp_get_wtime();
+  ofs << "Time: " << end_part-start_part << " seconds" << endl;
+
 
   cout << "Calculating cut..." << endl;
   for(int u=0; u<csr.n; u++){
@@ -89,11 +162,22 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
     }
   }
 
+  ofs << "Cut Size: " << cut.size() << endl;
+
+#ifdef DEBUG
+  ofs << "__Partition__" << endl;
+  for(int i=0; i<csr.n; i++){
+    ofs << partition[i] << ",";
+  }
+  ofs << endl;
+
   ofs << "__Cut__" << endl;
   for(int vertex: cut){
     ofs << vertex << ",";
   }
   ofs << endl;
+#endif
+
 
   cout << "Calculating edges and nodes..." << endl;
   vector<unordered_set<pair<int,int>, pair_hash>> edge_sets(np);
@@ -188,6 +272,7 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
 
     csrs[i] = new CSR(row_ptr, col, csr_nodes, n, m);
 
+#ifdef DEBUG
     ofs << "__P" << i << "__" << endl;
     for(int j=0; j<n; j++){
       ofs << csr_nodes[j] << ",";
@@ -217,10 +302,19 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np){
       ofs << col[i] << ",";
     }
     ofs << endl;
+#endif
   }
 
+  int index = 0;
+  for(auto csr : csrs){
+    ofs << "P" << index << " N:" << csr->n << endl;
+    ofs << "P" << index << " M:" << csr->m << endl;
+    index++;
+  }
+
+  cout << "Closing OFS" << endl;
   ofs.close();
-  
+  cout << "Closed OFS" << endl;
 
 }
 
