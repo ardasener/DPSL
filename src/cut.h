@@ -6,7 +6,7 @@
 #include "external/metis/metis.h"
 #include "external/kahypar/libkahypar.h"
 #include "external/toml/toml.h"
-// #include "patoh_wrap.h"
+#include "patoh_wrap.h"
 #include <vector>
 #include "omp.h"
 
@@ -55,8 +55,7 @@ void KahyparPart(CSR& csr, int*& partition, int np, string config_file){
 
 }
 
-/*
-void PatohPart(CSR& csr, int*& partition, int np, string model){
+void PatohPart(CSR& csr, int*& partition, int np, string mode, string minimize){
   partition = new int[csr.n];
 
   int* ptrs = csr.row_ptr;
@@ -65,14 +64,30 @@ void PatohPart(CSR& csr, int*& partition, int np, string model){
   int n = csr.n;
   int nz = csr.m;
   int* partv = partition;
-  if(model == "CN") colNetPart(ptrs, js, m, n, partv);
-  else if(model == "RN") rowNetPart(ptrs, js, m, n, partv);
-  else throw "Unsupported Patoh Model";
-  // else if(model == "TD") twoDimPart(I, J, m, n, nz, partv);
-  // else if(model == "CB") chkBrdPart(I, J, ptrs, js, m, n, partv);
+
+  if(mode == "default"){
+    patoh_speed = DEFAULT;
+  } else if(mode == "speed"){
+    patoh_speed = SPEED;
+  } else if(mode == "quality"){
+    patoh_speed = QUALITY;
+  } else {
+    throw "Unsupported mode";
+  }
+
+  if(minimize == "cut"){
+    patoh_metric = CUT;
+  } else if(minimize == "con"){
+    patoh_metric = CON;
+  } else {
+    throw "Unsupported minimization";
+  }
+
+  patoh_no_parts = np;
+
+  rowNetPart(ptrs, js, m, n, partv);
   
 }
-*/
 
 void MetisPart(CSR& csr, int*& partition, int np){
 
@@ -128,13 +143,15 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
 		ranks[order[i]] = i;
 	}
 
+  cout << "Partitioning..." << endl;
   double start_part = omp_get_wtime();
   string partition_engine = config.find("partition_engine")->as<string>();
   if(partition_engine == "metis")
     MetisPart(csr, partition, np);
   else if (partition_engine == "patoh")
-    throw "Unsupported partition engine";
-    // PatohPart(csr, partition, np, config.find("patoh.model")->as<string>());
+    PatohPart(csr, partition, np, 
+        config.find("patoh.mode")->as<string>(),
+        config.find("patoh.minimize")->as<string>());
   else if (partition_engine == "kahypar")
     KahyparPart(csr, partition, np, config.find("kahypar.config_file")->as<string>());
   else

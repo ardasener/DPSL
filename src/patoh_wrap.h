@@ -12,19 +12,19 @@
 
 using namespace std;
 
-#define CN 0
-#define RN 1
-#define TD 2
-#define CB 3
+#define CN 0 // Columns are nets
+#define RN 1 // Rows are nets
+#define TD 2 // 2D -> totally different hgraph, nets and nnz are the vertices
+#define CB 3 // Checkerboard -> CN like, reduces the max communication
 
 #define DEFAULT 0
-#define SPEED 1
+#define SPEED 1 
 #define QUALITY 2
 
 #define CUT 1
 #define CON 2
 
-#define DEBUG
+/* #define DEBUG */
 
 #define min(a,b) (((a)<(b))?(a):(b))
 #define max(a,b) (((a)>(b))?(a):(b))
@@ -56,13 +56,30 @@ void wrapPaToH(	int _c, int _n, int *xpins, int *pins, int *cwghts,
 	PaToH_Parameters args;
 	int* partwghts;
 
-	if(patoh_metric == 1) {
-	  PaToH_Initialize_Parameters(&args, PATOH_CUTPART, PATOH_SUGPARAM_QUALITY);//patoh_speed);
-	} else if(patoh_metric == 2) {
-	  PaToH_Initialize_Parameters(&args, PATOH_CONPART, PATOH_SUGPARAM_QUALITY);//patoh_speed);
+	
+	int cut_type = -1;
+	if(patoh_metric == CUT) {
+		cut_type = PATOH_CUTPART;
+	} else if(patoh_metric == CON) {
+		cut_type = PATOH_CONPART;
 	} else {
 	  throw "unknown patoh metric value";
 	}
+
+	int SBProbType = -1;
+	if(patoh_speed == DEFAULT) {
+		SBProbType = PATOH_SUGPARAM_DEFAULT;
+	} else if(patoh_speed == SPEED) {
+		SBProbType = PATOH_SUGPARAM_SPEED;
+	} else if (patoh_speed == QUALITY){
+		SBProbType = PATOH_SUGPARAM_QUALITY;
+	} else {
+	  throw "unknown patoh metric value";
+	}
+
+	PaToH_Initialize_Parameters(&args, cut_type, SBProbType);
+
+
 	args._k = patoh_no_parts;
 	args.MemMul_Pins += 3;
 	args.MemMul_CellNet += 3;

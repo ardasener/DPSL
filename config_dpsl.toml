@@ -5,15 +5,17 @@ mpi = true
 order_method = "degree"
 
 # Could be metis, patoh, kahypar
-partition_engine = "kahypar"
+partition_engine = "patoh"
 
 
 # Settings for patoh partitioner (ignored if partition_engine != patoh)
 [patoh]
-# Could be RN or CN
-model = "RN"
+# Could be default, speed, quality
+mode = "default"
+# Could be cut or con
+minimize = "cut"
 
 # Settings for kahypar partitioner (ignored if partition_engine != patoh)
 [kahypar]
-# Could be RN or CN
+# Path to the .ini file for kahypar
 config_file = "kahypar_config/cut_rKaHyPar_sea20.ini"

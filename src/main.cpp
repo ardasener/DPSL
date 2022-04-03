@@ -4,7 +4,6 @@
 #include "external/toml/toml.h"
 #include <cstddef>
 #include <iostream>
-#include "metis.h"
 #include <string>
 #include <vector>
 #include "mpi.h"
