@@ -124,6 +124,7 @@ public:
   vector<CSR*> csrs;
   int* partition;
   vector<int> ranks;
+  vector<int> order;
   vector<vector<int>> aliasses;
 
   VertexCut(CSR& csr, string order_method, int np, const toml::Value& config);
@@ -134,7 +135,6 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
   ofstream ofs("output_vertex_cut.txt");
   
   cout << "Ordering..." << endl;
-  vector<int> order;
   order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
 
   cout << "Ranking..." << endl;

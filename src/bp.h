@@ -13,13 +13,15 @@ struct BPLabel{
 class BP {
 public:
     vector<BPLabel> bp_labels;
-    CSR& csr;
   
-    BP(CSR& csr, vector<int>& ranks, vector<int>& order);
-    void InitBPForRoot(int r, vector<int>& Sr, int root_index);
+    BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut = nullptr);
+    BP(vector<BPLabel>& bp_labels);
+    void InitBPForRoot(int r, vector<int>& Sr, int root_index, CSR& csr);
     bool PruneByBp(int u, int v, int d);
     int QueryByBp(int u, int v);
 };
+
+inline BP::BP(vector<BPLabel>& bp_labels) : bp_labels(bp_labels){}
 
 inline bool BP::PruneByBp(int u, int v, int d){
 
@@ -67,7 +69,7 @@ inline int BP::QueryByBp(int u, int v){
     return d;
 }
 
-inline void BP::InitBPForRoot(int r, vector<int>& Sr, int bp_index){
+inline void BP::InitBPForRoot(int r, vector<int>& Sr, int bp_index, CSR& csr){
 
   cout << "BP Init for root=" << r << endl;
   vector<pair<uint64_t,uint64_t>> bp_sets(csr.n, make_pair((uint64_t) 0, (uint64_t) 0));
@@ -150,7 +152,7 @@ inline void BP::InitBPForRoot(int r, vector<int>& Sr, int bp_index){
 
 }
 
-BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order): csr(csr){
+BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut) {
  
   cout << "Creating BP Labels" << endl; 
   bp_labels.resize(csr.n);
@@ -176,8 +178,13 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order): csr(csr){
       });
   }
 
+  vector<int> candidates = order;
+  
+  if(cut != nullptr){
+    candidates.insert(candidates.end(), cut->rbegin(), cut->rend());
+  }
 
-  int root_index = csr.n-1;
+  int root_index = candidates.size();
   for(int i=0; i<N_ROOTS; i++){
 
     cout << "Choosing root " << i << endl;
@@ -185,7 +192,7 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order): csr(csr){
     SR.reserve(64);
 
     while(root_index >= 0){
-      int root = order[root_index]; 
+      int root = candidates[root_index]; 
       if(!used[root]){
 	break;
       }
@@ -197,7 +204,7 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order): csr(csr){
       break;
     }
 
-    int root = order[root_index];
+    int root = candidates[root_index];
     roots.push_back(root);
     cout << "Chosen root=" << root << endl;
     cout << "Chosen root rank=" << ranks[root] << endl;
@@ -213,7 +220,7 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order): csr(csr){
       used[v] = true;
     }
 
-    InitBPForRoot(root, SR, i);    
+    InitBPForRoot(root, SR, i, csr);    
   }
 
 #ifdef DEBUG

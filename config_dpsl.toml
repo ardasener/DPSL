@@ -5,15 +5,15 @@ mpi = true
 order_method = "degree"
 
 # Could be metis, patoh, kahypar
-partition_engine = "patoh"
+partition_engine = "metis"
 
 
 # Settings for patoh partitioner (ignored if partition_engine != patoh)
 [patoh]
 # Could be default, speed, quality
-mode = "default"
+mode = "quality"
 # Could be cut or con
-minimize = "cut"
+minimize = "con"
 
 # Settings for kahypar partitioner (ignored if partition_engine != patoh)
 [kahypar]

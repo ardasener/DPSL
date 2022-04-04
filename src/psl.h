@@ -26,8 +26,13 @@ using namespace std;
 struct LabelSet {
   vector<int> vertices; // global vertex ids in order of distances - log(n) 
   vector<int> dist_ptrs; // indices for the vertices vector denoting distance starts - max_dist
-  /* char bp_dist[N_ROOTS]; */
-  /* uint64_t bp_sets[N_ROOTS][2]; */
+};
+
+enum PruneIDs {
+  PRUNE_RANK,
+  PRUNE_GLOBAL_BP,
+  PRUNE_LOCAL_BP,
+  PRUNE_LABEL,
 };
 
 
@@ -38,20 +43,21 @@ public:
   CSR &csr;
   vector<int> ranks;
   vector<int> order;
-  BPLabel* label_bp;
+  BP* local_bp;
+  BP* global_bp;
   bool* usd_bp;
   vector<int> v_vs[N_ROOTS];
   int last_dist = 2;
   int min_cut_rank = 0;
   long long prune_rank = 0;
   long long prune_labels = 0;
-  long long prune_bp = 0;
+  long long prune_local_bp = 0;
+  long long prune_global_bp = 0;
 
   void ConstructBPLabel();
 
   vector<LabelSet> labels;
-  BP* bp_ptr;
-  PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr);
+  PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr, BP* global_bp=nullptr);
   vector<int>* Pull(int u, int d);
   vector<int>* Init(int u);
   void Index();
@@ -68,10 +74,12 @@ public:
 
 inline void PSL::CountPrune(int i){
 #ifdef DEBUG
-  if(i == 0)
+  if(i == PRUNE_RANK)
     prune_rank++;
-  else if (i == 1)
-    prune_bp++;
+  else if (i == PRUNE_GLOBAL_BP)
+    prune_local_bp++;
+  else if (i == PRUNE_LOCAL_BP)
+    prune_global_bp++;
   else
     prune_labels++;
 
@@ -86,7 +94,7 @@ inline int PSL::GetLabel(int u, int i){
   return csr.nodes_inv[labels[u].vertices[i]];
 }
 
-inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut) : csr(csr_),  labels(csr.n) {
+inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp) : csr(csr_),  labels(csr.n), global_bp(global_bp) {
 
   order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
 
@@ -106,8 +114,8 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut) : csr(csr_),  
   }
   
   
-  if constexpr(USEBP){
-    bp_ptr = new BP(csr_, ranks, order);
+  if constexpr(USE_LOCAL_BP){
+    local_bp = new BP(csr_, ranks, order);
   }
 }
 
@@ -188,7 +196,11 @@ inline vector<int>* PSL::Query(int u) {
   for (int v = 0; v < csr.n; v++) {
 
     auto& labels_v = labels[v];
-    int min = bp_ptr->QueryByBp(u,v);
+
+    int min = MAX_DIST;
+
+    if constexpr(USE_LOCAL_BP)
+      min = local_bp->QueryByBp(u,v);
 
     for (int d = 0; d < min && d < last_dist; d++) {
       int dist_start = labels_v.dist_ptrs[d];
@@ -237,6 +249,8 @@ inline bool PSL::Prune(int u, int v, int d, const vector<char> &cache) {
 
 inline vector<int>* PSL::Pull(int u, int d) {
 
+  int global_u = csr.nodes[u];
+  
   int start = csr.row_ptr[u];
   int end = csr.row_ptr[u + 1];
   
@@ -272,19 +286,27 @@ inline vector<int>* PSL::Pull(int u, int d) {
       int w = GetLabel(v, j);
 
       if (ranks[u] > ranks[w]) {
-	CountPrune(0);
+	CountPrune(PRUNE_RANK);
         continue;
       }
 
-      if constexpr(USEBP){
-        if(ranks[u] < min_cut_rank && ranks[w] < min_cut_rank && bp_ptr->PruneByBp(u, w, d)){
-	  CountPrune(1);
+      if constexpr(USE_GLOBAL_BP){
+        int global_w = labels_v.vertices[j];
+        if(global_bp != nullptr && global_bp->PruneByBp(global_u, global_w, d)){
+          CountPrune(PRUNE_GLOBAL_BP);
+          continue;
+        }
+      }
+
+      if constexpr(USE_LOCAL_BP){
+        if(ranks[u] < min_cut_rank && ranks[w] < min_cut_rank && local_bp->PruneByBp(u, w, d)){
+	  CountPrune(PRUNE_LOCAL_BP);
           continue;
         }
       }
 
       if(Prune(u, w, d, cache)){
-	CountPrune(2);
+	CountPrune(PRUNE_LABEL);
         continue;
       }
 
@@ -388,7 +410,8 @@ inline void PSL::Index() {
 
 #ifdef DEBUG
   cout << "Prune by Rank: " << prune_rank << endl; 
-  cout << "Prune by BP: " << prune_bp << endl; 
+  cout << "Prune by Local BP: " << prune_local_bp << endl; 
+  cout << "Prune by Global BP: " << prune_global_bp << endl; 
   cout << "Prune by Labels: " << prune_labels << endl; 
 #endif
 }

@@ -10,7 +10,8 @@
 
 #define N_ROOTS 16
 #define MAX_BP_THREADS 1
-#define USEBP true
+#define USE_LOCAL_BP true
+#define USE_GLOBAL_BP true
 #define NUM_THREADS 1
 
 

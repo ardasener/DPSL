@@ -23,20 +23,31 @@ enum MPI_CONSTS{
   MPI_PARTITION,
   MPI_CACHE,
   MPI_UPDATED,
+  MPI_BP_DIST,
+  MPI_BP_SET,
 };
 
 
 class DPSL{
 
 public:
-    void SendData(int* data, int size, int vertex, int to);
-    void BroadcastData(int* data, int size, int vertex);
-    int RecvData(int*& data,int vertex, int from);
+
+    template <typename T>
+    void SendData(T* data, int size, int vertex, int to, MPI_Datatype type=MPI_INT32_T);
+
+    template <typename T>
+    void BroadcastData(T* data, int size, int vertex, MPI_Datatype type=MPI_INT32_T);
+
+    template <typename T>
+    int RecvData(T*& data,int vertex, int from, MPI_Datatype type=MPI_INT32_T);
+
+
     bool MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init=false);
     void Barrier();
     int pid, np, global_n;
     CSR* whole_csr;
     CSR* part_csr;
+    BP* global_bp;
     int* partition;
     vector<int> cut;
     vector<int> names;
@@ -65,8 +76,6 @@ inline void DPSL::PrintTime(string tag, double time){
 }
 
 
-
-
 inline void DPSL::Query(int u, string filename){
   
   Log("Starting Query");
@@ -91,11 +100,9 @@ inline void DPSL::Query(int u, string filename){
       dist_ptrs_u = labels_u.dist_ptrs.data();
       dist_ptrs_u_size = labels_u.dist_ptrs.size();
   } else {
-    
       Log("Recieving u's labels");
       vertices_u_size = RecvData(vertices_u, 0, MPI_ANY_SOURCE);
       dist_ptrs_u_size = RecvData(dist_ptrs_u, 1, MPI_ANY_SOURCE);
-    
   }
 
 
@@ -119,9 +126,12 @@ inline void DPSL::Query(int u, string filename){
     }
 
   int local_u = -1;
-  auto it = part_csr->nodes_inv.find(u);
-  if(it != part_csr->nodes_inv.end()){
-    local_u = it->second;
+
+  if constexpr(USE_LOCAL_BP){
+    auto it = part_csr->nodes_inv.find(u);
+    if(it != part_csr->nodes_inv.end()){
+      local_u = it->second;
+    }
   }
 
   Log("Querying locally");
@@ -129,7 +139,20 @@ inline void DPSL::Query(int u, string filename){
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
   for(int v=0; v<part_csr->n; v++){
     int global_v = part_csr->nodes[v];
-    int min = (local_u != -1) ? psl_ptr->bp_ptr->QueryByBp(local_u, v) : MAX_DIST;
+    
+    int min = MAX_DIST;
+    if constexpr(USE_GLOBAL_BP){
+      min = global_bp->QueryByBp(u, global_v);
+    }
+
+    if constexpr(USE_LOCAL_BP){
+      if(local_u != -1){
+        int local_bp_dist = psl_ptr->local_bp->QueryByBp(local_u, v);
+        if(local_bp_dist < min){
+          min = local_bp_dist;
+        }
+      }
+    }
 
     auto& vertices_v = psl_ptr->labels[v].vertices;
     auto& dist_ptrs_v = psl_ptr->labels[v].dist_ptrs;
@@ -324,7 +347,7 @@ inline bool DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init)
         updated = true;
         BroadcastData(labels_u.data() + start, labels_u.size()-start, i);
       } else {
-        BroadcastData(nullptr, 0, i);
+        BroadcastData<int>(nullptr, 0, i);
       }
 
     }
@@ -359,25 +382,28 @@ inline void DPSL::Barrier(){
   MPI_Barrier(MPI_COMM_WORLD);
 }
 
-inline void DPSL::SendData(int* data, int size, int vertex, int to){
+template <typename T>
+inline void DPSL::SendData(T* data, int size, int vertex, int to, MPI_Datatype type){
   int tag = (vertex << 1);
   int size_tag = tag | 1;
 
   MPI_Send(&size, 1, MPI_INT32_T, to, size_tag, MPI_COMM_WORLD);
 
   if(size != 0 && data != nullptr)
-    MPI_Send(data, size, MPI_INT32_T, to, tag, MPI_COMM_WORLD);
+    MPI_Send(data, size, type, to, tag, MPI_COMM_WORLD);
 }
 
 // TODO: Replace this with MPI_Bcast
-inline void DPSL::BroadcastData(int *data, int size, int vertex){
+template <typename T>
+inline void DPSL::BroadcastData(T *data, int size, int vertex, MPI_Datatype type){
   for(int p=0; p<np; p++){
     if(p != pid)
       SendData(data, size, vertex, p);
   }
 }
 
-inline int DPSL::RecvData(int *& data, int vertex, int from){
+template <typename T>
+inline int DPSL::RecvData(T *& data, int vertex, int from, MPI_Datatype type){
     int tag = (vertex << 1);
     int size_tag = tag | 1;
     int size = 0;
@@ -387,8 +413,8 @@ inline int DPSL::RecvData(int *& data, int vertex, int from){
     error_code1 = MPI_Recv(&size, 1, MPI_INT32_T, from, size_tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
     if(size != 0){
-      data = new int[size];
-      error_code2 = MPI_Recv(data, size, MPI_INT32_T, from, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      data = new T[size];
+      error_code2 = MPI_Recv(data, size, type, from, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       Log("Recieved Data with codes= " + to_string(error_code1) + "," + to_string(error_code2) + " and with size=" + to_string(size));
     } else {
       data = nullptr;
@@ -406,26 +432,26 @@ inline void DPSL::InitP0(){
     global_n = csr.n;
 
     vc_ptr = new VertexCut(csr, order_method, np, config);
-
+    
     VertexCut& vc = *vc_ptr;
 
+    
     Log("Creating All Cut");
     vector<int> all_cut(vc.cut.begin(), vc.cut.end());
     auto& ranks = vc.ranks;
 
     Log("Ordering Cut By Rank");
-    sort(all_cut.begin(), all_cut.end(), [&ranks](int u, int v){
+    sort(all_cut.begin(), all_cut.end(), [ranks](int u, int v){
         return ranks[u] > ranks[v];
     });
 
     auto& csrs = vc.csrs;
     part_csr = csrs[0];
 
-
     Log("Initial Barrier Region");
     Barrier();
     for(int i=1; i<np; i++){
-        SendData(&(whole_csr->n), 1, MPI_GLOBAL_N, i);
+        SendData(&global_n, 1, MPI_GLOBAL_N, i);
         SendData(csrs[i]->row_ptr, (csrs[i]->n)+1, MPI_CSR_ROW_PTR, i);
         SendData(csrs[i]->col, csrs[i]->m, MPI_CSR_COL, i);
         SendData(csrs[i]->nodes, csrs[i]->n, MPI_CSR_NODES, i);
@@ -454,6 +480,25 @@ inline void DPSL::InitP0(){
     Barrier();
     Log("Initial Barrier Region End");
 
+    Log("Creating Global BP");
+    global_bp = new BP(csr, vc.ranks, vc.order, &all_cut);
+
+    Log("Global BP Barrier Region");
+    Barrier();
+    for(int i=0; i<global_n; i++){
+      BPLabel& bp_label = global_bp->bp_labels[i];
+      BroadcastData(bp_label.bp_dists, N_ROOTS, MPI_BP_DIST, MPI_UINT8_T);
+      vector<uint64_t> bp_sets;
+      for(int j=0; j<N_ROOTS; j++){
+        bp_sets.push_back(bp_label.bp_sets[j][0]);
+        bp_sets.push_back(bp_label.bp_sets[j][1]);
+      }
+      BroadcastData(bp_sets.data(), bp_sets.size(), MPI_BP_SET, MPI_UINT64_T);
+      Barrier();
+    }
+    Barrier();
+    Log("Global BP Barrier Region End");
+
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
     Log("Cut Size: " + to_string(cut.size()));
 
@@ -481,6 +526,30 @@ inline void DPSL::Init(){
     int size_cut = RecvData(cut_ptr, MPI_CUT, 0);
     Barrier();
     Log("Initial Barrier Region End");
+
+    Log("Global BP Barrier Region");
+    Barrier();
+    vector<BPLabel> bp_labels(global_n);
+    for(int i=0; i<global_n; i++){
+      uint8_t* bp_dists;
+      RecvData(bp_dists, MPI_BP_DIST, 0, MPI_UINT8_T);
+      copy(bp_dists, bp_dists + N_ROOTS, bp_labels[i].bp_dists);
+      
+      uint64_t* bp_sets;
+      RecvData(bp_sets, MPI_BP_SET, 0, MPI_UINT64_T);
+
+      for(int j=0; j<N_ROOTS; j++){
+        bp_labels[i].bp_sets[j][0] = bp_sets[j*2]; 
+        bp_labels[i].bp_sets[j][1] = bp_sets[j*2+1]; 
+      }
+
+      delete[] bp_dists;
+      delete[] bp_sets;
+    }
+    Barrier();
+    Log("Global BP Barrier Region End");
+
+    global_bp = new BP(bp_labels);
 
     cut.insert(cut.end(), cut_ptr, cut_ptr+size_cut);
 
