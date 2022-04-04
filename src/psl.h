@@ -76,9 +76,9 @@ inline void PSL::CountPrune(int i){
 #ifdef DEBUG
   if(i == PRUNE_RANK)
     prune_rank++;
-  else if (i == PRUNE_GLOBAL_BP)
-    prune_local_bp++;
   else if (i == PRUNE_LOCAL_BP)
+    prune_local_bp++;
+  else if (i == PRUNE_GLOBAL_BP)
     prune_global_bp++;
   else
     prune_labels++;
@@ -115,7 +115,7 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp)
   
   
   if constexpr(USE_LOCAL_BP){
-    local_bp = new BP(csr_, ranks, order);
+    local_bp = new BP(csr_, ranks, order, cut, LOCAL_BP_MODE);
   }
 }
 

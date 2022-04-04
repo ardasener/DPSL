@@ -398,7 +398,7 @@ template <typename T>
 inline void DPSL::BroadcastData(T *data, int size, int vertex, MPI_Datatype type){
   for(int p=0; p<np; p++){
     if(p != pid)
-      SendData(data, size, vertex, p);
+      SendData(data, size, vertex, p, type);
   }
 }
 
@@ -480,24 +480,27 @@ inline void DPSL::InitP0(){
     Barrier();
     Log("Initial Barrier Region End");
 
-    Log("Creating Global BP");
-    global_bp = new BP(csr, vc.ranks, vc.order, &all_cut);
+    if constexpr(USE_GLOBAL_BP){
+      Log("Creating Global BP");
+      global_bp = new BP(csr, vc.ranks, vc.order, &all_cut);
 
-    Log("Global BP Barrier Region");
-    Barrier();
-    for(int i=0; i<global_n; i++){
-      BPLabel& bp_label = global_bp->bp_labels[i];
-      BroadcastData(bp_label.bp_dists, N_ROOTS, MPI_BP_DIST, MPI_UINT8_T);
-      vector<uint64_t> bp_sets;
-      for(int j=0; j<N_ROOTS; j++){
-        bp_sets.push_back(bp_label.bp_sets[j][0]);
-        bp_sets.push_back(bp_label.bp_sets[j][1]);
-      }
-      BroadcastData(bp_sets.data(), bp_sets.size(), MPI_BP_SET, MPI_UINT64_T);
+      Log("Global BP Barrier Region");
       Barrier();
+      for(int i=0; i<global_n; i++){
+        BPLabel& bp_label = global_bp->bp_labels[i];
+        BroadcastData(bp_label.bp_dists, N_ROOTS, MPI_BP_DIST, MPI_UINT8_T);
+        vector<uint64_t> bp_sets;
+        bp_sets.reserve(N_ROOTS*2);
+        for(int j=0; j<N_ROOTS; j++){
+          bp_sets.push_back(bp_label.bp_sets[j][0]);
+          bp_sets.push_back(bp_label.bp_sets[j][1]);
+        }
+        BroadcastData(bp_sets.data(), bp_sets.size(), MPI_BP_SET, MPI_UINT64_T);
+        Barrier();
+      }
+      Barrier();
+      Log("Global BP Barrier Region End");
     }
-    Barrier();
-    Log("Global BP Barrier Region End");
 
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
     Log("Cut Size: " + to_string(cut.size()));
@@ -527,29 +530,34 @@ inline void DPSL::Init(){
     Barrier();
     Log("Initial Barrier Region End");
 
-    Log("Global BP Barrier Region");
-    Barrier();
-    vector<BPLabel> bp_labels(global_n);
-    for(int i=0; i<global_n; i++){
-      uint8_t* bp_dists;
-      RecvData(bp_dists, MPI_BP_DIST, 0, MPI_UINT8_T);
-      copy(bp_dists, bp_dists + N_ROOTS, bp_labels[i].bp_dists);
-      
-      uint64_t* bp_sets;
-      RecvData(bp_sets, MPI_BP_SET, 0, MPI_UINT64_T);
+    if constexpr(USE_GLOBAL_BP){
+      Log("Global BP Barrier Region");
+      Barrier();
+      vector<BPLabel> bp_labels(global_n);
+      for(int i=0; i<global_n; i++){
+        uint8_t* bp_dists;
+        RecvData(bp_dists, MPI_BP_DIST, 0, MPI_UINT8_T);
+        copy(bp_dists, bp_dists + N_ROOTS, bp_labels[i].bp_dists);
+        Log("Recieved dists");
+        
+        uint64_t* bp_sets;
+        RecvData(bp_sets, MPI_BP_SET, 0, MPI_UINT64_T);
+        Log("Recieved sets");
 
-      for(int j=0; j<N_ROOTS; j++){
-        bp_labels[i].bp_sets[j][0] = bp_sets[j*2]; 
-        bp_labels[i].bp_sets[j][1] = bp_sets[j*2+1]; 
+        for(int j=0; j<N_ROOTS; j++){
+          bp_labels[i].bp_sets[j][0] = bp_sets[j*2]; 
+          bp_labels[i].bp_sets[j][1] = bp_sets[j*2+1]; 
+        }
+
+        delete[] bp_dists;
+        delete[] bp_sets;
+        Barrier();
       }
+      Barrier();
+      Log("Global BP Barrier Region End");
 
-      delete[] bp_dists;
-      delete[] bp_sets;
+      global_bp = new BP(bp_labels);
     }
-    Barrier();
-    Log("Global BP Barrier Region End");
-
-    global_bp = new BP(bp_labels);
 
     cut.insert(cut.end(), cut_ptr, cut_ptr+size_cut);
 
@@ -566,7 +574,7 @@ inline void DPSL::Index(){
     CSR& csr = *part_csr;
 
     string order_method = config.find("order_method")->as<string>();
-    psl_ptr = new PSL(*part_csr, order_method, &cut);
+    psl_ptr = new PSL(*part_csr, order_method, &cut, global_bp);
     PSL& psl = *psl_ptr;
 
     start = omp_get_wtime();
@@ -670,6 +678,11 @@ inline void DPSL::Index(){
 
     alg_end = omp_get_wtime();
     PrintTime("Total", alg_end-alg_start);
+
+    Log("Prune by Rank: " + to_string(psl_ptr->prune_rank)); 
+    Log("Prune by Local BP: " + to_string(psl_ptr->prune_local_bp)); 
+    Log("Prune by Global BP: " + to_string(psl_ptr->prune_global_bp)); 
+    Log("Prune by Labels: " + to_string(psl_ptr->prune_labels)); 
 }
 
 inline DPSL::DPSL(int pid, CSR* csr, const toml::Value& config, int np): whole_csr(csr), pid(pid), config(config), np(np){

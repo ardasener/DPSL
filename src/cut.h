@@ -84,6 +84,7 @@ void PatohPart(CSR& csr, int*& partition, int np, string mode, string minimize){
   }
 
   patoh_no_parts = np;
+  patoh_imbal = 0.05;
 
   rowNetPart(ptrs, js, m, n, partv);
   
@@ -95,7 +96,7 @@ void MetisPart(CSR& csr, int*& partition, int np){
   partition = new int[csr.n];
 
   idx_t options[METIS_NOPTIONS];
-  options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_CUT;
+  options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_CUT; // Try others
   options[METIS_OPTION_CTYPE] = METIS_CTYPE_RM;
   options[METIS_OPTION_IPTYPE] = METIS_IPTYPE_NODE;
   options[METIS_OPTION_RTYPE] = METIS_RTYPE_GREEDY;

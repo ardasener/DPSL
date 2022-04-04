@@ -10,11 +10,16 @@ struct BPLabel{
   uint64_t bp_sets[N_ROOTS][2];
 };
 
+enum Mode {
+  GLOBAL_BP_MODE,
+  LOCAL_BP_MODE
+};
+
 class BP {
 public:
     vector<BPLabel> bp_labels;
   
-    BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut = nullptr);
+    BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut = nullptr, Mode mode=GLOBAL_BP_MODE);
     BP(vector<BPLabel>& bp_labels);
     void InitBPForRoot(int r, vector<int>& Sr, int root_index, CSR& csr);
     bool PruneByBp(int u, int v, int d);
@@ -152,7 +157,7 @@ inline void BP::InitBPForRoot(int r, vector<int>& Sr, int bp_index, CSR& csr){
 
 }
 
-BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut) {
+BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode mode) {
  
   cout << "Creating BP Labels" << endl; 
   bp_labels.resize(csr.n);
@@ -179,10 +184,18 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut) {
   }
 
   vector<int> candidates = order;
-  
+ 
   if(cut != nullptr){
+   if(mode == GLOBAL_BP_MODE){
     candidates.insert(candidates.end(), cut->rbegin(), cut->rend());
-  }
+    } else {
+      for(int cut_node : *cut){
+	used[cut_node] = true;
+      }
+    }
+
+  } 
+
 
   int root_index = candidates.size();
   for(int i=0; i<N_ROOTS; i++){
