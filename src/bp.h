@@ -76,7 +76,6 @@ inline int BP::QueryByBp(int u, int v){
 
 inline void BP::InitBPForRoot(int r, vector<int>& Sr, int bp_index, CSR& csr){
 
-  cout << "BP Init for root=" << r << endl;
   vector<pair<uint64_t,uint64_t>> bp_sets(csr.n, make_pair((uint64_t) 0, (uint64_t) 0));
   vector<uint8_t> bp_dists(csr.n, (uint8_t) MAX_DIST);
 
@@ -98,8 +97,8 @@ inline void BP::InitBPForRoot(int r, vector<int>& Sr, int bp_index, CSR& csr){
   }
 
   while(Q0_ptr < Q0_size){
-    unordered_set<pair<int,int>, pair_hash> E0;
-    unordered_set<pair<int,int>, pair_hash> E1;
+    vector<pair<int,int>> E0;
+    vector<pair<int,int>> E1;
 
     while(Q0_ptr < Q0_size){
       int v = Q0[Q0_ptr++];
@@ -111,13 +110,13 @@ inline void BP::InitBPForRoot(int r, vector<int>& Sr, int bp_index, CSR& csr){
 	int u = csr.col[i];
 
 	if(bp_dists[u] == (uint8_t) MAX_DIST){
-	  E1.emplace(v,u);
+	  E1.emplace_back(v,u);
 	  bp_dists[u] = (uint8_t) (bp_dists[v] + 1);
 	  Q1[Q1_size++] = u;
 	} else if(bp_dists[u] == bp_dists[v] + 1){
-	  E1.emplace(v,u);
+	  E1.emplace_back(v,u);
 	} else if (bp_dists[u] == bp_dists[v]){
-	  E0.emplace(v,u);
+	  E0.emplace_back(v,u);
 	} 
       } 
     }
@@ -158,8 +157,9 @@ inline void BP::InitBPForRoot(int r, vector<int>& Sr, int bp_index, CSR& csr){
 }
 
 BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode mode) {
- 
-  cout << "Creating BP Labels" << endl; 
+
+  double start_time = omp_get_wtime();
+
   bp_labels.resize(csr.n);
   for(int i=0; i<csr.n; i++){
     for(int j=0; j<N_ROOTS; j++){
@@ -173,7 +173,6 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode 
   vector<bool> used(csr.n, false);
   vector<int> roots;
 
-  cout << "Sorting the neighbors" << endl;
   for(int i=0; i<csr.n; i++){
     int start = csr.row_ptr[i];
     int end = csr.row_ptr[i+1];
@@ -201,13 +200,11 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode 
 
   } 
 
+  vector<vector<int>> Srs(N_ROOTS);
 
   int root_index = candidates.size()-1;
   for(int i=0; i<N_ROOTS; i++){
 
-    cout << "Choosing root " << i << endl;
-    vector<int> SR;
-    SR.reserve(64);
 
     while(root_index >= 0){
       int root = candidates[root_index]; 
@@ -224,22 +221,32 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode 
 
     int root = candidates[root_index];
     roots.push_back(root);
-    cout << "Chosen root=" << root << endl;
-    cout << "Chosen root rank=" << ranks[root] << endl;
+    /* cout << "Chosen root=" << root << endl; */
+    /* cout << "Chosen root rank=" << ranks[root] << endl; */
     used[root] = true;
+    
+    Srs[i].reserve(64);
 
     int start = csr.row_ptr[root];
     int end = csr.row_ptr[root+1];
 
-    cout << "Computing SR" << endl;
     for(int j=start; j<end && j-start < 64; j++){
       int v = csr.col[j];
-      SR.push_back(v);
+      Srs[i].push_back(v);
       used[v] = true;
     }
-
-    InitBPForRoot(root, SR, i, csr);    
   }
+
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+  for(int i=0; i<N_ROOTS; i++){
+    vector<int>& Sr = Srs[i];
+    int root = roots[i];
+    InitBPForRoot(root, Sr, i, csr);    
+  }
+
+
+  double end_time = omp_get_wtime();
+  cout << "Constructed BP Labels in " << end_time-start_time << " seconds" << endl;
 
 #ifdef DEBUG
   ofstream ofs("output_bp_labels.txt");

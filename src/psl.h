@@ -89,11 +89,6 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp)
 
   order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
 
-/*   cout << "__ORDER__" << endl; */
-/*   for(int i=0; i<csr.n; i++) */
-/*     cout << order[i] << ","; */
-/*   cout << endl; */
-
   ranks.resize(csr.n);
 	for(int i=0; i<csr.n; i++){
 		ranks[order[i]] = i;
