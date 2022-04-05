@@ -11,7 +11,7 @@
 #define N_ROOTS 16
 #define MAX_BP_THREADS 1
 #define USE_LOCAL_BP true
-#define USE_GLOBAL_BP true
+#define USE_GLOBAL_BP false
 #define NUM_THREADS 1
 
 
@@ -35,15 +35,12 @@ struct pair_hash
 struct CSR {
   int *row_ptr;
   int *col;
-  int *nodes;
-  unordered_map<int, int> nodes_inv;
   int n;
   int m;
 
   CSR(CSR& csr){
     row_ptr = new int[csr.n+1];
     col = new int[csr.m];
-    nodes = new int[csr.n];
 
     for(int i=0; i<csr.n+1; i++){
       row_ptr[i] = csr.row_ptr[i];
@@ -53,24 +50,13 @@ struct CSR {
       col[i] = csr.col[i];
     }
 
-    for(int i=0; i<csr.n; i++){
-      nodes[i] = csr.nodes[i];
-    }
-    
-    for(int i=0; i<csr.n; i++){
-      nodes_inv[nodes[i]] = i;
-    }
-
     n = csr.n;
     m = csr.m;
 
   }
 
-  CSR(int * row_ptr_, int *col_, int * nodes_, int n, int m): row_ptr(row_ptr_), col(col_), nodes(nodes_), n(n), m(m) {
-    for(int i=0; i<n; i++){
-      nodes_inv[nodes[i]] = i;
-    }
-  }
+  CSR(int * row_ptr, int *col, int n, int m): 
+    row_ptr(row_ptr), col(col), n(n), m(m) {}
 
   CSR(string filename) {
     PigoCOO pigo_coo(filename);
@@ -127,12 +113,6 @@ struct CSR {
     }
     row_ptr[0] = 0;
 
-    nodes = new int[n];
-  
-    for(int i=0; i<n; i++){
-      nodes[i] = i;
-      nodes_inv[nodes[i]] = i;
-    }
 
     delete[] coo_row;
     delete[] coo_col;

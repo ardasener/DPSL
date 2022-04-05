@@ -83,7 +83,7 @@ void wrapPaToH(	int _c, int _n, int *xpins, int *pins, int *cwghts,
 	args._k = patoh_no_parts;
 	args.MemMul_Pins += 3;
 	args.MemMul_CellNet += 3;
-	args.init_imbal = patoh_imbal;
+	/* args.init_imbal = 0.1; */
 	args.final_imbal = patoh_imbal;
 
 	ares = PaToH_Alloc(&args, _c, _n, no_cons, cwghts, nwghts, xpins, pins);

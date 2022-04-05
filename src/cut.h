@@ -12,7 +12,7 @@
 
 using namespace std;
 
-void KahyparPart(CSR& csr, int*& partition, int np, string config_file){
+void KahyparPart(CSR& csr, int*& partition, int np, string config_file, double imbalance){
 
   kahypar_context_t* context = kahypar_context_new();
   kahypar_configure_context_from_file(context, config_file.c_str());
@@ -39,7 +39,6 @@ void KahyparPart(CSR& csr, int*& partition, int np, string config_file){
     hyperedge_indices[i] = 2*i;
   }
 
-  const double imbalance = 0.03;
   const kahypar_partition_id_t k = np;
   kahypar_hyperedge_weight_t objective = 0;
 
@@ -55,7 +54,7 @@ void KahyparPart(CSR& csr, int*& partition, int np, string config_file){
 
 }
 
-void PatohPart(CSR& csr, int*& partition, int np, string mode, string minimize){
+void PatohPart(CSR& csr, int*& partition, int np, string mode, string minimize, double imbalance){
   partition = new int[csr.n];
 
   int* ptrs = csr.row_ptr;
@@ -84,7 +83,7 @@ void PatohPart(CSR& csr, int*& partition, int np, string mode, string minimize){
   }
 
   patoh_no_parts = np;
-  patoh_imbal = 0.05;
+  patoh_imbal = imbalance;
 
   rowNetPart(ptrs, js, m, n, partv);
   
@@ -126,7 +125,6 @@ public:
   int* partition;
   vector<int> ranks;
   vector<int> order;
-  vector<vector<int>> aliasses;
 
   VertexCut(CSR& csr, string order_method, int np, const toml::Value& config);
 };
@@ -152,9 +150,12 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
   else if (partition_engine == "patoh")
     PatohPart(csr, partition, np, 
         config.find("patoh.mode")->as<string>(),
-        config.find("patoh.minimize")->as<string>());
+        config.find("patoh.minimize")->as<string>(),
+        config.find("patoh.imbalance")->as<double>());
   else if (partition_engine == "kahypar")
-    KahyparPart(csr, partition, np, config.find("kahypar.config_file")->as<string>());
+    KahyparPart(csr, partition, np, 
+        config.find("kahypar.config_file")->as<string>(),
+        config.find("kahypar.imbalance")->as<double>());
   else
    throw "Unsupported partition engine";
 
@@ -199,20 +200,11 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
 
   cout << "Calculating edges and nodes..." << endl;
   vector<unordered_set<pair<int,int>, pair_hash>> edge_sets(np);
-  vector<unordered_set<int>> nodes(np);
   for(int u=0; u<csr.n; u++){
     int start = csr.row_ptr[u];
     int end = csr.row_ptr[u+1];
 
-    nodes[partition[u]].insert(u);
-
     bool u_in_cut = (cut.find(u) != cut.end());
-
-    if(u_in_cut){
-        for(int i=0; i<nodes.size(); i++){
-          nodes[i].insert(u);
-        }
-    }
 
     for(int j=start; j<end; j++){
       int v = csr.col[j];
@@ -223,19 +215,13 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
         for(int i=0; i<edge_sets.size(); i++){
           edge_sets[i].emplace(u,v);
           edge_sets[i].emplace(v,u);
-          nodes[i].insert({u,v});
         }
       } else if(partition[u] == partition[v] || v_in_cut){
         edge_sets[partition[u]].emplace(u,v);
         edge_sets[partition[u]].emplace(v,u);
-        nodes[partition[u]].insert({u,v});
       } else if(u_in_cut){
         edge_sets[partition[v]].emplace(u,v);
         edge_sets[partition[v]].emplace(v,u);
-        nodes[partition[v]].insert({u,v});
-      } else {
-        nodes[partition[u]].insert(u);
-        nodes[partition[v]].insert(v);
       }
     }
   }
@@ -248,9 +234,8 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
 
   cout << "Constructing csrs..." << endl;
   csrs.resize(np, nullptr);
-  aliasses.resize(np, vector<int>(csr.n, -1));
   for(int i=0; i<np; i++){
-    int n = nodes[i].size();
+    int n = csr.n;
     int m = edges[i].size();
     int *row_ptr = new int[n+1];
     int *col = new int[m];
@@ -258,20 +243,6 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
 
     fill(row_ptr, row_ptr+n+1, 0);
 
-    vector<int> nodes_i;
-    nodes_i.insert(nodes_i.end() ,nodes[i].begin(), nodes[i].end());
-    sort(nodes_i.begin(), nodes_i.end(), less<int>());
-
-    int new_index = 0;
-    for(int node: nodes_i){
-      aliasses[i][node] = new_index;
-      csr_nodes[new_index] = node;
-      new_index++;
-    }
-
-    for(int j=0; j<edges[i].size(); j++){
-        edges[i][j] = make_pair(aliasses[i][edges[i][j].first], aliasses[i][edges[i][j].second]);
-    }
     sort(edges[i].begin(), edges[i].end(), less<pair<int,int>>());
 
     row_ptr[0] = 0;
@@ -288,27 +259,9 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
       row_ptr[j+1] = count + row_ptr[j];
     }
 
-    csrs[i] = new CSR(row_ptr, col, csr_nodes, n, m);
+    csrs[i] = new CSR(row_ptr, col, n, m);
 
 #ifdef DEBUG
-    ofs << "__P" << i << "__" << endl;
-    for(int j=0; j<n; j++){
-      ofs << csr_nodes[j] << ",";
-    }
-    ofs << endl;
-
-    ofs << "__Inv P" << i << "__" << endl;
-    for(int j=0; j<n; j++){
-      ofs << csrs[i]->nodes_inv[csr_nodes[j]] << ",";
-    }
-    ofs << endl;
-
-    ofs << "__Edges P" << i << "__" << endl;
-    for(int j=0; j<m; j++){
-      ofs << "(" << edges[i][j].first << "," << edges[i][j].second << ")" << ",";
-    }
-    ofs << endl;
-
     ofs << "__Row Ptr P" << i << "__" << endl;
     for(int i=0; i<n+1; i++){
       ofs << row_ptr[i] << ",";

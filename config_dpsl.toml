@@ -14,8 +14,12 @@ partition_engine = "metis"
 mode = "quality"
 # Could be cut or con
 minimize = "con"
+# Imbalance value to be used (float between 0 and 1)
+imbalance = 0.001
 
 # Settings for kahypar partitioner (ignored if partition_engine != patoh)
 [kahypar]
 # Path to the .ini file for kahypar
 config_file = "kahypar_config/cut_rKaHyPar_sea20.ini"
+# Imbalance value to be used (float between 0 and 1)
+imbalance = 0.005

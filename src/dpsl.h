@@ -86,13 +86,10 @@ inline void DPSL::Query(int u, string filename){
   int* dist_ptrs_u;
   int dist_ptrs_u_size;
   int vertices_u_size;
-  
-  
 
   if(partition[u] == pid){
       Log("Broadcasting u's labels");
-      int local_u = part_csr->nodes_inv[u];
-      auto& labels_u = psl_ptr->labels[local_u];
+      auto& labels_u = psl_ptr->labels[u];
       BroadcastData(labels_u.vertices.data(), labels_u.vertices.size(), 0);
       BroadcastData(labels_u.dist_ptrs.data(), labels_u.dist_ptrs.size(), 1);
       vertices_u = labels_u.vertices.data();
@@ -107,8 +104,8 @@ inline void DPSL::Query(int u, string filename){
 
 
   Log("Constructing cache");
-  int cache[part_csr->n];
-  fill(cache, cache+part_csr->n, -1);
+  int cache[global_n];
+  fill(cache, cache+global_n, -1);
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for(int d=0; d<dist_ptrs_u_size-1; d++){
@@ -117,40 +114,24 @@ inline void DPSL::Query(int u, string filename){
   
       for(int i= start; i<end; i++){
             int v = vertices_u[i];
-            auto it = part_csr->nodes_inv.find(v);
-            if(it != part_csr->nodes_inv.end()){
-              int local_v = it->second;
-              cache[local_v] = d;
-            }
+            cache[v] = d;
         }
     }
-
-  int local_u = -1;
-
-  if constexpr(USE_LOCAL_BP){
-    auto it = part_csr->nodes_inv.find(u);
-    if(it != part_csr->nodes_inv.end()){
-      local_u = it->second;
-    }
-  }
 
   Log("Querying locally");
   vector<int> local_dist(part_csr->n);
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
   for(int v=0; v<part_csr->n; v++){
-    int global_v = part_csr->nodes[v];
     
     int min = MAX_DIST;
     if constexpr(USE_GLOBAL_BP){
-      min = global_bp->QueryByBp(u, global_v);
+      min = global_bp->QueryByBp(u, v);
     }
 
     if constexpr(USE_LOCAL_BP){
-      if(local_u != -1){
-        int local_bp_dist = psl_ptr->local_bp->QueryByBp(local_u, v);
-        if(local_bp_dist < min){
-          min = local_bp_dist;
-        }
+      int local_bp_dist = psl_ptr->local_bp->QueryByBp(u, v);
+      if(local_bp_dist < min){
+        min = local_bp_dist;
       }
     }
 
@@ -163,13 +144,12 @@ inline void DPSL::Query(int u, string filename){
 
       for(int i= start; i<end; i++){
         int w = vertices_v[i];
-        int local_w = part_csr->nodes_inv[w];
        
-        if(cache[local_w] == -1){
+        if(cache[w] == -1){
           continue;
         }
 
-        int dist = d + cache[local_w];        
+        int dist = d + cache[w];        
         if(dist < min){
           min = dist;
         }
@@ -190,19 +170,17 @@ inline void DPSL::Query(int u, string filename){
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
     for(int i=0; i<local_dist.size(); i++){
-      int global_id = part_csr->nodes[i];
-      all_dists[global_id] = local_dist[i];
-      source[global_id] = 0;
+      all_dists[i] = local_dist[i];
+      source[i] = 0;
     }
 
     for(int p=1; p<np; p++){
       int* dists;
       int size = RecvData(dists, 0, p);
       for(int i=0; i<size; i++){
-        int global_id = vc_ptr->csrs[p]->nodes[i];
-        if(all_dists[global_id] == -1){
-          all_dists[global_id] = dists[i];
-          source[global_id] = p;
+        if(all_dists[i] == -1 || all_dists[i] > dists[i]){
+          all_dists[i] = dists[i];
+          source[i] = p;
         }
       }
       delete [] dists;
@@ -254,31 +232,21 @@ inline void DPSL::WriteLabelCounts(string filename){
     fill(source, source + whole_csr->n, -1); // -1 indicates free floating vertex
 
     for(int i=0; i<part_csr->n; i++){
-      int global_id = part_csr->nodes[i];
-      all_counts[global_id] = counts[i];
-      
-      if(counts[i] != -1)
-        source[global_id] = 0;  // 0 indicates cut vertex as well as partition 0
+      all_counts[i] = counts[i];
+      source[i] = 0;  // 0 indicates cut vertex as well as partition 0
     }
 
     for(int p=1; p<np; p++){
       int* recv_counts;
       int size = RecvData(recv_counts, 0, p);
       for(int i=0; i<size; i++){
-        int global_id = vc_ptr->csrs[p]->nodes[i];
         if(recv_counts[i] != -1){ // Count recieved
-          if(vc_ptr->cut.find(global_id) == vc_ptr->cut.end()){  // vertex not in cut
+          if(vc_ptr->cut.find(i) == vc_ptr->cut.end() && all_counts[i] < recv_counts[i]){  // vertex not in cut and counted on the recieved data
             
-            all_counts[global_id] = recv_counts[i]; // Update count
+            all_counts[i] = recv_counts[i]; // Update count
+            source[i] = p;
 
-            if(source[global_id] != -1)
-              source[global_id] = -2; // -2 indicates overwrite to non-cut vertex
-            else
-              source[global_id] = p; // Process id denotes partition
-          } else if(all_counts[global_id] != recv_counts[i]){ // vertex in cut and counts don't match
-            cut_mistake = true;
-            cout << "Cut mistake at " << global_id << " with counts: " << all_counts[global_id] << "," << recv_counts[i] << endl;
-          }
+          } 
         }
       } 
     }
@@ -334,9 +302,8 @@ inline bool DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init)
         Log("Merging Labels for " + to_string(i));
 
         if(init){
-          int global_u = part_csr->nodes[u];
-          merged_labels.erase(global_u);
-          labels_u.push_back(global_u);
+          merged_labels.erase(u);
+          labels_u.push_back(u);
         }
 
         labels_u.insert(labels_u.end(), merged_labels.begin(), merged_labels.end()); 
@@ -437,11 +404,11 @@ inline void DPSL::InitP0(){
 
     
     Log("Creating All Cut");
-    vector<int> all_cut(vc.cut.begin(), vc.cut.end());
+    cut.insert(cut.end(), vc.cut.begin(), vc.cut.end());
     auto& ranks = vc.ranks;
 
     Log("Ordering Cut By Rank");
-    sort(all_cut.begin(), all_cut.end(), [ranks](int u, int v){
+    sort(cut.begin(), cut.end(), [ranks](int u, int v){
         return ranks[u] > ranks[v];
     });
 
@@ -454,35 +421,18 @@ inline void DPSL::InitP0(){
         SendData(&global_n, 1, MPI_GLOBAL_N, i);
         SendData(csrs[i]->row_ptr, (csrs[i]->n)+1, MPI_CSR_ROW_PTR, i);
         SendData(csrs[i]->col, csrs[i]->m, MPI_CSR_COL, i);
-        SendData(csrs[i]->nodes, csrs[i]->n, MPI_CSR_NODES, i);
         SendData(vc.partition, csr.n, MPI_PARTITION, i);
+        SendData(cut.data(), cut.size(), MPI_CUT, i);
     }
 
     partition = vc.partition;
-
-    for(int i=1; i<np; i++){
-      vector<int> cut_alias(all_cut.size());
-      for(int j=0; j<all_cut.size(); j++){
-        int u = all_cut[j];
-        int u_alias = vc.aliasses[i][u];
-        cut_alias[j] = u_alias;
-      }
-      SendData(cut_alias.data(), cut_alias.size(), MPI_CUT, i);
-    }
     
-    cut.resize(all_cut.size());
-    for(int j=0; j<all_cut.size(); j++){
-        int u = all_cut[j];
-        int u_alias = vc.aliasses[0][u];
-        cut[j] = u_alias;
-    }
-
     Barrier();
     Log("Initial Barrier Region End");
 
     if constexpr(USE_GLOBAL_BP){
       Log("Creating Global BP");
-      global_bp = new BP(csr, vc.ranks, vc.order, &all_cut);
+      global_bp = new BP(csr, vc.ranks, vc.order, &cut);
 
       Log("Global BP Barrier Region");
       Barrier();
@@ -511,8 +461,6 @@ inline void DPSL::Init(){
     int *row_ptr;
     int *col;
     int *cut_ptr;
-    int * nodes;
-    int * nodes_inv;
 
     Log("Initial Barrier Region");
     Barrier();
@@ -524,7 +472,6 @@ inline void DPSL::Init(){
 
     int size_row_ptr = RecvData(row_ptr, MPI_CSR_ROW_PTR, 0);
     int size_col = RecvData(col, MPI_CSR_COL, 0);
-    int size_nodes = RecvData(nodes, MPI_CSR_NODES, 0);
     int size_partition = RecvData(partition, MPI_PARTITION, 0);
     int size_cut = RecvData(cut_ptr, MPI_CUT, 0);
     Barrier();
@@ -561,7 +508,7 @@ inline void DPSL::Init(){
 
     cut.insert(cut.end(), cut_ptr, cut_ptr+size_cut);
 
-    part_csr = new CSR(row_ptr, col, nodes, size_row_ptr-1, size_col);
+    part_csr = new CSR(row_ptr, col, size_row_ptr-1, size_col);
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
     delete[] cut_ptr;
 

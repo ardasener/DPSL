@@ -178,16 +178,21 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode 
     int start = csr.row_ptr[i];
     int end = csr.row_ptr[i+1];
 
-    sort(csr.col+start, csr.col+end, [ranks](int u, int v){
+    sort(csr.col+start, csr.col+end, [&ranks](int u, int v){
 	return ranks[u] > ranks[v];
       });
   }
 
   vector<int> candidates = order;
- 
+
+
+
+  // If the mode is global then the cut vertices are inserted to the end of the list
+  // This way they are picked first and only when they are covered we start choosing others
+  // If the mode is local then the cut vertices are ignored entirely here (ie, marked used)
   if(cut != nullptr){
-   if(mode == GLOBAL_BP_MODE){
-    candidates.insert(candidates.end(), cut->rbegin(), cut->rend());
+    if(mode == GLOBAL_BP_MODE){
+      candidates.insert(candidates.end(), cut->rbegin(), cut->rend());
     } else {
       for(int cut_node : *cut){
 	used[cut_node] = true;
@@ -197,7 +202,7 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode 
   } 
 
 
-  int root_index = candidates.size();
+  int root_index = candidates.size()-1;
   for(int i=0; i<N_ROOTS; i++){
 
     cout << "Choosing root " << i << endl;

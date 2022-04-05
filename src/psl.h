@@ -63,8 +63,6 @@ public:
   void Index();
   void WriteLabelCounts(string filename);
   vector<int>* Query(int u);
-  void AddLabel(vector<int>* target_labels, int w);
-  int GetLabel(int u, int i);
   void CountPrune(int i);
   bool Prune(int u, int v, int d, const vector<char> &cache);
   void Query(int u, string filename);
@@ -86,17 +84,15 @@ inline void PSL::CountPrune(int i){
 #endif
 }
 
-inline void PSL::AddLabel(vector<int>* target_labels, int w){
-  target_labels->push_back(csr.nodes[w]);
-}
-
-inline int PSL::GetLabel(int u, int i){
-  return csr.nodes_inv[labels[u].vertices[i]];
-}
 
 inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp) : csr(csr_),  labels(csr.n), global_bp(global_bp) {
 
   order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
+
+/*   cout << "__ORDER__" << endl; */
+/*   for(int i=0; i<csr.n; i++) */
+/*     cout << order[i] << ","; */
+/*   cout << endl; */
 
   ranks.resize(csr.n);
 	for(int i=0; i<csr.n; i++){
@@ -115,7 +111,7 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp)
   
   
   if constexpr(USE_LOCAL_BP){
-    local_bp = new BP(csr_, ranks, order, cut, LOCAL_BP_MODE);
+    local_bp = new BP(csr, ranks, order, cut, LOCAL_BP_MODE);
   }
 }
 
@@ -183,13 +179,13 @@ inline vector<int>* PSL::Query(int u) {
 
   
 
-  for (int i = 0; i < last_dist; i++) {
-    int dist_start = labels_u.dist_ptrs[i];
-    int dist_end = labels_u.dist_ptrs[i + 1];
+  for (int d = 0; d < last_dist; d++) {
+    int dist_start = labels_u.dist_ptrs[d];
+    int dist_end = labels_u.dist_ptrs[d + 1];
 
-    for (int d = dist_start; d < dist_end; d++) {
-      int w = GetLabel(u, d); 
-      cache[w] = (char) i;
+    for (int i = dist_start; i < dist_end; i++) {
+      int w = labels_u.vertices[i]; 
+      cache[w] = (char) d;
     }
   }
 
@@ -207,8 +203,8 @@ inline vector<int>* PSL::Query(int u) {
       int dist_end = labels_v.dist_ptrs[d + 1];
 
       for (int i = dist_start; i < dist_end; i++) {
-        int w = GetLabel(v, i);
-        
+        int w = labels_v.vertices[i];
+
         if(cache[w] == -1){
           continue;
         }
@@ -236,7 +232,7 @@ inline bool PSL::Prune(int u, int v, int d, const vector<char> &cache) {
     int dist_end = labels_v.dist_ptrs[i + 1];
 
     for (int j = dist_start; j < dist_end; j++) {
-      int w = GetLabel(v, j); 
+      int w = labels_v.vertices[j]; 
 
       if (cache[w] != -1 && (i + cache[w]) <= d) {
         return true;
@@ -249,8 +245,6 @@ inline bool PSL::Prune(int u, int v, int d, const vector<char> &cache) {
 
 inline vector<int>* PSL::Pull(int u, int d) {
 
-  int global_u = csr.nodes[u];
-  
   int start = csr.row_ptr[u];
   int end = csr.row_ptr[u + 1];
   
@@ -266,7 +260,7 @@ inline vector<int>* PSL::Pull(int u, int d) {
     int dist_end = labels_u.dist_ptrs[i + 1];
 
     for (int j = dist_start; j < dist_end; j++) {
-      int w = GetLabel(u, j);
+      int w = labels_u.vertices[j];
       cache[w] = (char) i;
     }
   }
@@ -283,7 +277,7 @@ inline vector<int>* PSL::Pull(int u, int d) {
     
 
     for (int j = labels_start; j < labels_end; j++) {
-      int w = GetLabel(v, j);
+      int w = labels_v.vertices[j];
 
       if (ranks[u] > ranks[w]) {
 	CountPrune(PRUNE_RANK);
@@ -291,8 +285,7 @@ inline vector<int>* PSL::Pull(int u, int d) {
       }
 
       if constexpr(USE_GLOBAL_BP){
-        int global_w = labels_v.vertices[j];
-        if(global_bp != nullptr && global_bp->PruneByBp(global_u, global_w, d)){
+        if(global_bp != nullptr && global_bp->PruneByBp(u, w, d)){
           CountPrune(PRUNE_GLOBAL_BP);
           continue;
         }
@@ -310,7 +303,7 @@ inline vector<int>* PSL::Pull(int u, int d) {
         continue;
       }
 
-      AddLabel(new_labels, w);
+      new_labels->push_back(w);
       cache[w] = d;
     }
   }
@@ -322,7 +315,7 @@ inline vector<int>* PSL::Init(int u){
   
   vector<int>* init_labels = new vector<int>;
 
-  AddLabel(init_labels, u);
+  init_labels->push_back(u);
 
   int start = csr.row_ptr[u];
   int end = csr.row_ptr[u + 1];
@@ -331,7 +324,7 @@ inline vector<int>* PSL::Init(int u){
     int v = csr.col[j];
 
     if (ranks[v] > ranks[u]) {
-      AddLabel(init_labels, v);
+      init_labels->push_back(v);
     }
   }
 
