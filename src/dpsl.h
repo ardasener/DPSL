@@ -225,7 +225,6 @@ inline void DPSL::WriteLabelCounts(string filename){
   
   if(pid == 0){
     
-    bool cut_mistake = false;
     int source[whole_csr->n]; 
     int all_counts[whole_csr->n];
     fill(all_counts, all_counts + whole_csr->n, -1);
@@ -251,6 +250,13 @@ inline void DPSL::WriteLabelCounts(string filename){
       } 
     }
 
+
+    int total_per_source[np];
+    fill(total_per_source, total_per_source+np, 0);
+    for(int i=0; i<part_csr->n; i++){
+      total_per_source[source[i]]++; 
+    }
+
     ofstream ofs(filename);
     ofs << "Vertex\tLabelCount\tSource" << endl;
     long long total = 0;
@@ -264,7 +270,10 @@ inline void DPSL::WriteLabelCounts(string filename){
 
     ofs << "Total Label Count: " << total << endl;
     ofs << "Avg. Label Count: " << total/(double) whole_csr->n << endl;
-    ofs << "Cut Mistake: " << cut_mistake << endl; 
+    
+    for(int p=0; p<np; p++){
+      ofs << "Total for P" << p << ": " << total_per_source[p] << endl;
+    }
     
     ofs << endl;
 
@@ -611,14 +620,14 @@ inline void DPSL::Index(){
         // Stops the execution once all processes agree that they are done
         int updated_int = (int) updated;
         BroadcastData(&updated_int, 1, MPI_UPDATED);
-        int* updated_other;
         for(int i=0; i<np-1; i++){
+          int* updated_other;
           RecvData(updated_other, MPI_UPDATED, MPI_ANY_SOURCE);
           updated_int |= *updated_other;
+          delete updated_other;
         }
-        delete updated_other;
 
-        if(!updated_int){
+        if(updated_int == 0){
           break;
         }
     }

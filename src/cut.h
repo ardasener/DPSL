@@ -9,10 +9,11 @@
 #include "patoh_wrap.h"
 #include <vector>
 #include "omp.h"
+#include <cmath>
 
 using namespace std;
 
-void KahyparPart(CSR& csr, int*& partition, int np, string config_file, double imbalance){
+void KahyparPart(CSR& csr, int*& partition, int np, string config_file, double imbalance, int* vertex_weights){
 
   kahypar_context_t* context = kahypar_context_new();
   kahypar_configure_context_from_file(context, config_file.c_str());
@@ -46,7 +47,7 @@ void KahyparPart(CSR& csr, int*& partition, int np, string config_file, double i
 
   kahypar_partition(num_vertices, num_hyperedges,
                   imbalance, k,
-                  /*vertex_weights */ nullptr, /*edge_weights*/ nullptr,
+                  vertex_weights, /*edge_weights*/ nullptr,
                   hyperedge_indices.get(), hyperedges.get(),
                   &objective, context, partition);
 
@@ -89,7 +90,7 @@ void PatohPart(CSR& csr, int*& partition, int np, string mode, string minimize, 
   
 }
 
-void MetisPart(CSR& csr, int*& partition, int np){
+void MetisPart(CSR& csr, int*& partition, int np, int* vertex_weights){
 
   int objval;
   partition = new int[csr.n];
@@ -112,7 +113,7 @@ void MetisPart(CSR& csr, int*& partition, int np){
   cout << "Partitioning..." << endl;
   int nw = 1;
   METIS_PartGraphKway(&csr.n, &nw, csr.row_ptr, csr.col,
-				       NULL, NULL, NULL, &np, NULL,
+				       vertex_weights, NULL, NULL, &np, NULL,
 				       NULL, options, &objval, partition);
 
 
@@ -138,15 +139,35 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
 
   cout << "Ranking..." << endl;
   ranks.resize(csr.n);
-	for(int i=0; i<csr.n; i++){
-		ranks[order[i]] = i;
-	}
+  for(int i=0; i<csr.n; i++){
+    ranks[order[i]] = i;
+  }
+
+  int vertex_weights[csr.n];
+  string partition_weight = config.find("partition_weight")->as<string>();
+  if(partition_weight == "uniform"){
+    fill(vertex_weights, vertex_weights + csr.n, 1);
+  } else if(partition_weight == "rank"){
+    for(int i=0; i<csr.n; i++){
+      vertex_weights[i] = ranks[i]; 
+    }
+  } else if(partition_weight == "degree"){
+    for(int i=0; i<csr.n; i++){
+      vertex_weights[i] = csr.row_ptr[i+1] - csr.row_ptr[i];
+    }
+  } else if(partition_weight == "degree_log"){
+    for(int i=0; i<csr.n; i++){
+      int degree = csr.row_ptr[i+1] - csr.row_ptr[i];
+      int degree_log = (int) log2(degree);
+      vertex_weights[i] = (degree_log >= 0) ? degree_log : 0;
+    }
+  }
 
   cout << "Partitioning..." << endl;
   double start_part = omp_get_wtime();
   string partition_engine = config.find("partition_engine")->as<string>();
   if(partition_engine == "metis")
-    MetisPart(csr, partition, np);
+    MetisPart(csr, partition, np, vertex_weights);
   else if (partition_engine == "patoh")
     PatohPart(csr, partition, np, 
         config.find("patoh.mode")->as<string>(),
@@ -155,7 +176,8 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
   else if (partition_engine == "kahypar")
     KahyparPart(csr, partition, np, 
         config.find("kahypar.config_file")->as<string>(),
-        config.find("kahypar.imbalance")->as<double>());
+        config.find("kahypar.imbalance")->as<double>(),
+        vertex_weights);
   else
    throw "Unsupported partition engine";
 
@@ -184,6 +206,13 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
   ofs << "Cut Size: " << cut.size() << endl;
 
 #ifdef DEBUG
+  ofs << "__Vertex Weights__" << endl;
+  for(int i=0; i<csr.n; i++){
+    ofs << vertex_weights[i] << ",";
+  }
+  ofs << endl;
+
+
   ofs << "__Partition__" << endl;
   for(int i=0; i<csr.n; i++){
     ofs << partition[i] << ",";

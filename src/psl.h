@@ -57,6 +57,7 @@ public:
   void ConstructBPLabel();
 
   vector<LabelSet> labels;
+  vector<int> max_ranks;
   PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr, BP* global_bp=nullptr);
   vector<int>* Pull(int u, int d);
   vector<int>* Init(int u);
@@ -172,8 +173,6 @@ inline vector<int>* PSL::Query(int u) {
 
   vector<char> cache(csr.n, -1);
 
-  
-
   for (int d = 0; d < last_dist; d++) {
     int dist_start = labels_u.dist_ptrs[d];
     int dist_end = labels_u.dist_ptrs[d + 1];
@@ -227,9 +226,10 @@ inline bool PSL::Prune(int u, int v, int d, const vector<char> &cache) {
     int dist_end = labels_v.dist_ptrs[i + 1];
 
     for (int j = dist_start; j < dist_end; j++) {
-      int w = labels_v.vertices[j]; 
+      int w = labels_v.vertices[j];
+      int cache_dist = cache[w];
 
-      if (cache[w] != -1 && (i + cache[w]) <= d) {
+      if ((i + cache_dist) <= d) {
         return true;
       }
     }
@@ -249,7 +249,7 @@ inline vector<int>* PSL::Pull(int u, int d) {
 
   auto &labels_u = labels[u];
   
-  vector<char> cache(csr.n, -1);
+  vector<char> cache(csr.n, MAX_DIST);
   for (int i = 0; i < d; i++) {
     int dist_start = labels_u.dist_ptrs[i];
     int dist_end = labels_u.dist_ptrs[i + 1];
@@ -274,6 +274,10 @@ inline vector<int>* PSL::Pull(int u, int d) {
     for (int j = labels_start; j < labels_end; j++) {
       int w = labels_v.vertices[j];
 
+      if(cache[w] <= d){
+        continue;
+      }
+
       if (ranks[u] > ranks[w]) {
 	CountPrune(PRUNE_RANK);
         continue;
@@ -287,7 +291,7 @@ inline vector<int>* PSL::Pull(int u, int d) {
       }
 
       if constexpr(USE_LOCAL_BP){
-        if(ranks[u] < min_cut_rank && ranks[w] < min_cut_rank && local_bp->PruneByBp(u, w, d)){
+        if(ranks[w] < min_cut_rank && local_bp->PruneByBp(u, w, d)){
 	  CountPrune(PRUNE_LOCAL_BP);
           continue;
         }
@@ -300,6 +304,9 @@ inline vector<int>* PSL::Pull(int u, int d) {
 
       new_labels->push_back(w);
       cache[w] = d;
+      if(ranks[w] > max_ranks[u]){
+        max_ranks[u] = ranks[w];
+      }
     }
   }
 
@@ -349,26 +356,29 @@ inline void PSL::Index() {
   end_time = omp_get_wtime();
   cout << "Level 0 & 1: " << end_time-start_time << " seconds" << endl;
 
-  // bool should_run[csr.n];
-  // fill(should_run, should_run+csr.n, true);
+  bool should_run[csr.n];
+  fill(should_run, should_run+csr.n, true);
+  max_ranks.resize(csr.n, -1);
 
   bool updated = true;
   for (int d = 2; d < MAX_DIST && updated; d++) {
     
     start_time = omp_get_wtime();
     updated = false;
+    fill(max_ranks.begin(), max_ranks.end(), -1);
 
     vector<vector<int>*> new_labels(csr.n, nullptr);
     #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated)
     for (int u = 0; u < csr.n; u++) {
-
-      new_labels[u] =  Pull(u, d);
-      updated = updated || (new_labels[u] != nullptr && !new_labels[u]->empty());
+      if(should_run[u]){
+        new_labels[u] =  Pull(u, d);
+        updated = updated || (new_labels[u] != nullptr && !new_labels[u]->empty());
+      }
     }
 
     last_dist++;
 
-    // fill(should_run, should_run+csr.n, false);
+    fill(should_run, should_run+csr.n, false);
     
     #pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
     for (int u = 0; u < csr.n; u++) {
@@ -387,6 +397,16 @@ inline void PSL::Index() {
       labels_u.vertices.insert(labels_u.vertices.end(), new_labels[u]->begin(), new_labels[u]->end());
       labels_u.dist_ptrs.push_back(labels_u.vertices.size());
       delete new_labels[u];
+
+      int start = csr.row_ptr[u]; 
+      int end = csr.row_ptr[u+1];
+
+      for(int i=start; i<end; i++){
+        int v = csr.col[i];
+        if(ranks[v] < max_ranks[u]){
+          should_run[v] = true;
+        }
+      } 
     }
 
     end_time = omp_get_wtime();

@@ -7,6 +7,9 @@ order_method = "degree"
 # Could be metis, patoh, kahypar
 partition_engine = "metis"
 
+# Weights to be used in partitioning
+# Could be uniform, rank, degree, degree_log
+partition_weight = "degree_log"
 
 # Settings for patoh partitioner (ignored if partition_engine != patoh)
 [patoh]
@@ -22,4 +25,4 @@ imbalance = 0.001
 # Path to the .ini file for kahypar
 config_file = "kahypar_config/cut_rKaHyPar_sea20.ini"
 # Imbalance value to be used (float between 0 and 1)
-imbalance = 0.005
+imbalance = 0.05
