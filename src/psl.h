@@ -58,8 +58,9 @@ public:
 
   vector<LabelSet> labels;
   vector<int> max_ranks;
+  vector<vector<char>> caches;
   PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr, BP* global_bp=nullptr);
-  vector<int>* Pull(int u, int d);
+  vector<int>* Pull(int u, int d, vector<char>& cache);
   vector<int>* Init(int u);
   void Index();
   void WriteLabelCounts(string filename);
@@ -109,6 +110,8 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp)
   if constexpr(USE_LOCAL_BP){
     local_bp = new BP(csr, ranks, order, cut, LOCAL_BP_MODE);
   }
+
+  caches.resize(NUM_THREADS, vector<char>(csr.n));
 }
 
 
@@ -238,7 +241,9 @@ inline bool PSL::Prune(int u, int v, int d, const vector<char> &cache) {
   return false;
 }
 
-inline vector<int>* PSL::Pull(int u, int d) {
+inline vector<int>* PSL::Pull(int u, int d, vector<char>& cache) {
+
+  /* int pull_start_time = omp_get_wtime(); */
 
   int start = csr.row_ptr[u];
   int end = csr.row_ptr[u + 1];
@@ -248,8 +253,8 @@ inline vector<int>* PSL::Pull(int u, int d) {
   }
 
   auto &labels_u = labels[u];
-  
-  vector<char> cache(csr.n, MAX_DIST);
+ 
+  fill(cache.begin(), cache.end(), MAX_DIST);
   for (int i = 0; i < d; i++) {
     int dist_start = labels_u.dist_ptrs[i];
     int dist_end = labels_u.dist_ptrs[i + 1];
@@ -310,6 +315,8 @@ inline vector<int>* PSL::Pull(int u, int d) {
     }
   }
 
+  /* int pull_end_time = omp_get_wtime(); */
+  /* cout << "Pull for " << u << ":" << pull_end_time - pull_start_time << endl; */
   return new_labels;
 }
 
@@ -368,13 +375,18 @@ inline void PSL::Index() {
     fill(max_ranks.begin(), max_ranks.end(), -1);
 
     vector<vector<int>*> new_labels(csr.n, nullptr);
-    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated)
-    for (int u = 0; u < csr.n; u++) {
-      if(should_run[u]){
-        new_labels[u] =  Pull(u, d);
-        updated = updated || (new_labels[u] != nullptr && !new_labels[u]->empty());
-      }
+    #pragma omp parallel default(shared) num_threads(NUM_THREADS) reduction(||:updated)
+    {
+      int tid = omp_get_thread_num();
+      int nt = omp_get_num_threads();
+      for (int u = tid; u < csr.n; u+=nt) {
+        if(should_run[u]){
+          new_labels[u] =  Pull(u, d, caches[tid]);
+          updated = updated || (new_labels[u] != nullptr && !new_labels[u]->empty());
+        }
+      }   
     }
+
 
     last_dist++;
 

@@ -54,6 +54,7 @@ public:
     VertexCut* vc_ptr;
     int last_dist;
     const toml::Value& config;
+    vector<vector<char>> caches;
     void InitP0();
     void Init();
     void Index();
@@ -464,6 +465,8 @@ inline void DPSL::InitP0(){
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
     Log("Cut Size: " + to_string(cut.size()));
 
+    caches.resize(NUM_THREADS, vector<char>(part_csr->n));
+
 }
 
 inline void DPSL::Init(){
@@ -478,6 +481,7 @@ inline void DPSL::Init(){
     RecvData(global_n_ptr, MPI_GLOBAL_N, 0);
     global_n = *global_n_ptr;
     delete global_n_ptr;
+
 
     int size_row_ptr = RecvData(row_ptr, MPI_CSR_ROW_PTR, 0);
     int size_col = RecvData(col, MPI_CSR_COL, 0);
@@ -521,6 +525,7 @@ inline void DPSL::Init(){
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
     delete[] cut_ptr;
 
+    caches.resize(NUM_THREADS, vector<char>(part_csr->n));
 }
 
 inline void DPSL::Index(){
@@ -583,15 +588,19 @@ inline void DPSL::Index(){
           last_dist = d;
           updated = false;
           Log("Pulling...");
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated) 
-          for(int u=0; u<csr.n; u++){
-              new_labels[u] = psl.Pull(u,d);
+#pragma omp parallel default(shared) num_threads(NUM_THREADS) reduction(||:updated) 
+        {
+          int tid = omp_get_thread_num();
+          int nt = omp_get_num_threads();
+          for(int u=tid; u<csr.n; u+=nt){
+              new_labels[u] = psl.Pull(u,d,caches[tid]);
               if(psl.ranks[u] < psl.min_cut_rank && new_labels[u] != nullptr && !new_labels[u]->empty()){
                 updated = updated || true;
                 auto& labels = psl.labels[u].vertices;
                 labels.insert(labels.end(), new_labels[u]->begin(), new_labels[u]->end());
               }
-          }       
+            }       
+          }
         }
         end = omp_get_wtime();
         PrintTime("Level " + to_string(d), end-start);
@@ -647,6 +656,7 @@ inline DPSL::DPSL(int pid, CSR* csr, const toml::Value& config, int np): whole_c
     } else {
         Init();
     }
+
 }
 
 #endif
