@@ -65,6 +65,8 @@ struct CSR {
     int *coo_col = pigo_coo.y();
     m = pigo_coo.m();
     n = pigo_coo.n();
+    cout << "N:" << n << endl;
+    cout << "M:" << m << endl;
 
     int min1 = *min_element(coo_row, coo_row+m, less<int>());
     int min2 = *min_element(coo_col, coo_col+m, less<int>());
@@ -79,18 +81,11 @@ struct CSR {
       }
     }
 
-    unordered_set<pair<int, int>, pair_hash> edge_set;
-
-    for (size_t i = 0; i < m; i++) {
-      edge_set.insert(pair<int, int>(coo_row[i], coo_col[i]));
-      edge_set.insert(pair<int, int>(coo_col[i], coo_row[i]));
+    vector<pair<int,int>> edges(m);
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+    for(int i=0; i<m; i++){
+      edges[i] = make_pair(coo_row[i], coo_col[i]);
     }
-
-    m = edge_set.size();
-    cout << "N:" << n << endl;
-    cout << "M:" << m << endl;
-
-    vector<pair<int,int>> edges(edge_set.begin(), edge_set.end());
 
     sort(edges.begin(), edges.end(), less<pair<int, int>>());
 
@@ -111,6 +106,7 @@ struct CSR {
     for (int i = n; i > 0; i--) {
       row_ptr[i] = row_ptr[i - 1];
     }
+
     row_ptr[0] = 0;
 
 

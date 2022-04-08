@@ -279,12 +279,12 @@ inline vector<int>* PSL::Pull(int u, int d, vector<char>& cache) {
     for (int j = labels_start; j < labels_end; j++) {
       int w = labels_v.vertices[j];
 
-      if(cache[w] <= d){
+      if (ranks[u] > ranks[w]) {
+	CountPrune(PRUNE_RANK);
         continue;
       }
 
-      if (ranks[u] > ranks[w]) {
-	CountPrune(PRUNE_RANK);
+      if(cache[w] <= d){
         continue;
       }
 
