@@ -81,6 +81,7 @@ struct CSR {
       }
     }
 
+
     vector<pair<int,int>> edges(m);
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
     for(int i=0; i<m; i++){
@@ -88,6 +89,15 @@ struct CSR {
     }
 
     sort(edges.begin(), edges.end(), less<pair<int, int>>());
+
+    auto unique_it = unique(edges.begin(), edges.end(), [](const pair<int,int>& p1, const pair<int,int>& p2){
+	    return (p1.first == p2.first) && (p1.second == p2.second);
+	  });
+
+    edges.erase(unique_it, edges.end());
+
+    m = edges.size();
+    cout << "Unique M:" << m << endl;
 
     row_ptr = new int[n + 1];
     col = new int[m];
