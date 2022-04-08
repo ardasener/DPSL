@@ -52,7 +52,7 @@ void RunDPSL(const toml::Value& config, int pid, int np, string filename){
 
 int main(int argc, char* argv[]){
 
-	if(argc < 2){
+	if(argc < 3){
 		cerr << "Usage: <exe> config_file graph_file" << endl;
 		return 1;
 	}

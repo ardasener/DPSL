@@ -58,15 +58,15 @@ public:
 
   vector<LabelSet> labels;
   vector<int> max_ranks;
-  vector<vector<char>> caches;
+  char** caches;
   PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr, BP* global_bp=nullptr);
-  vector<int>* Pull(int u, int d, vector<char>& cache);
+  vector<int>* Pull(int u, int d, char* cache);
   vector<int>* Init(int u);
   void Index();
   void WriteLabelCounts(string filename);
   vector<int>* Query(int u);
   void CountPrune(int i);
-  bool Prune(int u, int v, int d, const vector<char> &cache);
+  bool Prune(int u, int v, int d, char* cache);
   void Query(int u, string filename);
 
 };
@@ -111,7 +111,11 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp)
     local_bp = new BP(csr, ranks, order, cut, LOCAL_BP_MODE);
   }
 
-  caches.resize(NUM_THREADS, vector<char>(csr.n));
+  caches = new char*[NUM_THREADS];
+  for(int i=0; i<NUM_THREADS; i++){
+    caches[i] = new char[csr.n];
+    fill(caches[i], caches[i] + csr.n, MAX_DIST);
+  }
 }
 
 
@@ -220,7 +224,7 @@ inline vector<int>* PSL::Query(int u) {
   return results;
 }
 
-inline bool PSL::Prune(int u, int v, int d, const vector<char> &cache) {
+inline bool PSL::Prune(int u, int v, int d, char* cache) {
 
   auto &labels_v = labels[v];
 
@@ -241,7 +245,7 @@ inline bool PSL::Prune(int u, int v, int d, const vector<char> &cache) {
   return false;
 }
 
-inline vector<int>* PSL::Pull(int u, int d, vector<char>& cache) {
+inline vector<int>* PSL::Pull(int u, int d, char* cache) {
 
   /* int pull_start_time = omp_get_wtime(); */
 
@@ -253,8 +257,7 @@ inline vector<int>* PSL::Pull(int u, int d, vector<char>& cache) {
   }
 
   auto &labels_u = labels[u];
- 
-  fill(cache.begin(), cache.end(), MAX_DIST);
+
   for (int i = 0; i < d; i++) {
     int dist_start = labels_u.dist_ptrs[i];
     int dist_end = labels_u.dist_ptrs[i + 1];
@@ -265,8 +268,8 @@ inline vector<int>* PSL::Pull(int u, int d, vector<char>& cache) {
     }
   }
 
-  vector<int>* new_labels = new vector<int>;
-  bool updated = false;
+  vector<bool> used(csr.n, false);
+  vector<int> candidates;
 
   for (int i = start; i < end; i++) {
     int v = csr.col[i];
@@ -274,17 +277,16 @@ inline vector<int>* PSL::Pull(int u, int d, vector<char>& cache) {
 
     int labels_start = labels_v.dist_ptrs[d-1];
     int labels_end = labels_v.dist_ptrs[d];
-    
 
     for (int j = labels_start; j < labels_end; j++) {
       int w = labels_v.vertices[j];
 
-      if (ranks[u] > ranks[w]) {
-	CountPrune(PRUNE_RANK);
+      if(used[w]){
         continue;
       }
 
-      if(cache[w] <= d){
+      if (ranks[u] > ranks[w]) {
+	CountPrune(PRUNE_RANK);
         continue;
       }
 
@@ -297,26 +299,48 @@ inline vector<int>* PSL::Pull(int u, int d, vector<char>& cache) {
 
       if constexpr(USE_LOCAL_BP){
         if(ranks[w] < min_cut_rank && local_bp->PruneByBp(u, w, d)){
-	  CountPrune(PRUNE_LOCAL_BP);
+          CountPrune(PRUNE_LOCAL_BP);
           continue;
         }
       }
 
-      if(Prune(u, w, d, cache)){
-	CountPrune(PRUNE_LABEL);
-        continue;
-      }
 
-      new_labels->push_back(w);
-      cache[w] = d;
-      if(ranks[w] > max_ranks[u]){
-        max_ranks[u] = ranks[w];
-      }
+      candidates.push_back(w);
+      used[w] = true;
+    
     }
   }
 
-  /* int pull_end_time = omp_get_wtime(); */
-  /* cout << "Pull for " << u << ":" << pull_end_time - pull_start_time << endl; */
+  vector<int>* new_labels = nullptr;
+  if(!candidates.empty()){
+    new_labels = new vector<int>;
+  }
+  
+
+  for(int w : candidates){
+
+    if(Prune(u, w, d, cache)){
+      CountPrune(PRUNE_LABEL);
+      continue;
+    }
+
+    new_labels->push_back(w);
+    if(ranks[w] > max_ranks[u]){
+      max_ranks[u] = ranks[w];
+    }
+  }
+
+
+  for (int i = 0; i < d; i++) {
+    int dist_start = labels_u.dist_ptrs[i];
+    int dist_end = labels_u.dist_ptrs[i + 1];
+
+    for (int j = dist_start; j < dist_end; j++) {
+      int w = labels_u.vertices[j];
+      cache[w] = (char) MAX_DIST;
+    }
+  }
+  
   return new_labels;
 }
 
@@ -344,7 +368,7 @@ inline vector<int>* PSL::Init(int u){
 
 inline void PSL::Index() {
 
-  double start_time, end_time, all_start_time, all_end_time;
+  double start_time, end_time, all_start_time, all_end_time, pull_start_time, pull_end_time;
   all_start_time = omp_get_wtime();
 
   // Adds the first two level of vertices
@@ -367,6 +391,7 @@ inline void PSL::Index() {
   fill(should_run, should_run+csr.n, true);
   max_ranks.resize(csr.n, -1);
 
+  vector<vector<int>*> new_labels(csr.n, nullptr);
   bool updated = true;
   for (int d = 2; d < MAX_DIST && updated; d++) {
     
@@ -374,11 +399,11 @@ inline void PSL::Index() {
     updated = false;
     fill(max_ranks.begin(), max_ranks.end(), -1);
 
-    vector<vector<int>*> new_labels(csr.n, nullptr);
+    pull_start_time = omp_get_wtime();
     #pragma omp parallel default(shared) num_threads(NUM_THREADS) reduction(||:updated)
     {
       int tid = omp_get_thread_num();
-      int nt = omp_get_num_threads();
+      int nt = NUM_THREADS;
       for (int u = tid; u < csr.n; u+=nt) {
         if(should_run[u]){
           new_labels[u] =  Pull(u, d, caches[tid]);
@@ -386,6 +411,7 @@ inline void PSL::Index() {
         }
       }   
     }
+    pull_end_time = omp_get_wtime();
 
 
     last_dist++;
@@ -409,6 +435,7 @@ inline void PSL::Index() {
       labels_u.vertices.insert(labels_u.vertices.end(), new_labels[u]->begin(), new_labels[u]->end());
       labels_u.dist_ptrs.push_back(labels_u.vertices.size());
       delete new_labels[u];
+      new_labels[u] = nullptr;
 
       int start = csr.row_ptr[u]; 
       int end = csr.row_ptr[u+1];
@@ -423,6 +450,7 @@ inline void PSL::Index() {
 
     end_time = omp_get_wtime();
     cout << "Level " << d << ": " << end_time-start_time << " seconds" << endl;
+    cout << "Level " << d << " Pull: " << pull_end_time - pull_start_time << " seconds" << endl;
   }
 
   all_end_time = omp_get_wtime();

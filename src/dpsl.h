@@ -54,7 +54,7 @@ public:
     VertexCut* vc_ptr;
     int last_dist;
     const toml::Value& config;
-    vector<vector<char>> caches;
+    char** caches;
     void InitP0();
     void Init();
     void Index();
@@ -465,7 +465,10 @@ inline void DPSL::InitP0(){
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
     Log("Cut Size: " + to_string(cut.size()));
 
-    caches.resize(NUM_THREADS, vector<char>(part_csr->n));
+    caches = new char*[NUM_THREADS];
+    for(int i=0; i<NUM_THREADS; i++){
+      caches[i] = new char[part_csr->n];
+    }
 
 }
 
@@ -525,7 +528,10 @@ inline void DPSL::Init(){
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
     delete[] cut_ptr;
 
-    caches.resize(NUM_THREADS, vector<char>(part_csr->n));
+    caches = new char*[NUM_THREADS];
+    for(int i=0; i<NUM_THREADS; i++){
+      caches[i] = new char[part_csr->n];
+    }
 }
 
 inline void DPSL::Index(){
