@@ -123,11 +123,7 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp)
     local_bp = new BP(csr, ranks, order, cut, LOCAL_BP_MODE);
   }
 
-  caches = new char*[NUM_THREADS];
-  for(int i=0; i<NUM_THREADS; i++){
-    caches[i] = new char[csr.n];
-    fill(caches[i], caches[i] + csr.n, MAX_DIST);
-  }
+
 
   max_ranks.resize(csr.n, -1);
 }
@@ -248,7 +244,9 @@ inline bool PSL::Prune(int u, int v, int d, char* cache) {
 
     for (int j = dist_start; j < dist_end; j++) {
       int w = labels_v.vertices[j];
+      
       int cache_dist = cache[w];
+
 
       if ((i + cache_dist) <= d) {
         return true;
@@ -262,6 +260,16 @@ inline bool PSL::Prune(int u, int v, int d, char* cache) {
 inline vector<int>* PSL::Pull(int u, int d, char* cache) {
 
   /* int pull_start_time = omp_get_wtime(); */
+
+  /* cout << "Pulling u=" << u << endl; */
+
+
+/*   for(int i=0; i<csr.n; i++){ */
+/*     int w = labels[i].vertices[0]; */
+/*     if(w != i){ */
+/*       cout << "Invalid in Pull i=" << i << " w=" << w << endl; */
+/*     } */
+/*   } */
 
   int start = csr.row_ptr[u];
   int end = csr.row_ptr[u + 1];
@@ -278,6 +286,9 @@ inline vector<int>* PSL::Pull(int u, int d, char* cache) {
 
     for (int j = dist_start; j < dist_end; j++) {
       int w = labels_u.vertices[j];
+      /* if(!(w >= 0 && csr.n > w)) */
+        /* cout << "Invalid w=" << w << endl; */
+
       cache[w] = (char) i;
     }
   }
@@ -384,6 +395,12 @@ inline void PSL::Index() {
 
   double start_time, end_time, all_start_time, all_end_time, pull_start_time, pull_end_time;
   all_start_time = omp_get_wtime();
+
+  caches = new char*[NUM_THREADS];
+  for(int i=0; i<NUM_THREADS; i++){
+    caches[i] = new char[csr.n];
+    fill(caches[i], caches[i] + csr.n, MAX_DIST);
+  }
 
   // Adds the first two level of vertices
   // Level 0: vertex to itself

@@ -105,9 +105,7 @@ inline void DPSL::Query(int u, string filename){
   }
 
 
-  Log("Constructing cache");
-  int cache[global_n];
-  fill(cache, cache+global_n, -1);
+  char* cache = caches[0];
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for(int d=0; d<dist_ptrs_u_size-1; d++){
@@ -146,12 +144,8 @@ inline void DPSL::Query(int u, string filename){
 
       for(int i= start; i<end; i++){
         int w = vertices_v[i];
-       
-        if(cache[w] == -1){
-          continue;
-        }
 
-        int dist = d + cache[w];        
+        int dist = d + (int) cache[w];        
         if(dist < min){
           min = dist;
         }
@@ -292,6 +286,8 @@ inline bool DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init)
       int u = cut[i];
       auto& labels_u = psl.labels[u].vertices;
       int start = labels_u.size();
+
+      // TODO: Replace with vector + unique iterator
       unordered_set<int> merged_labels;
 
       Log("Recieving Labels for " + to_string(i));
@@ -468,12 +464,6 @@ inline void DPSL::InitP0(){
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
     Log("Cut Size: " + to_string(cut.size()));
 
-    caches = new char*[NUM_THREADS];
-    for(int i=0; i<NUM_THREADS; i++){
-      caches[i] = new char[part_csr->n];
-      fill(caches[i], caches[i]+part_csr->n, MAX_DIST);
-    }
-
 }
 
 inline void DPSL::Init(){
@@ -532,11 +522,6 @@ inline void DPSL::Init(){
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
     delete[] cut_ptr;
 
-    caches = new char*[NUM_THREADS];
-    for(int i=0; i<NUM_THREADS; i++){
-      caches[i] = new char[part_csr->n];
-      fill(caches[i], caches[i]+part_csr->n, MAX_DIST);
-    }
 }
 
 inline void DPSL::Index(){
@@ -544,6 +529,12 @@ inline void DPSL::Index(){
     double start, end, alg_start, alg_end;
     Log("Indexing Start");
     CSR& csr = *part_csr;
+
+    caches = new char*[NUM_THREADS];
+    for(int i=0; i<NUM_THREADS; i++){
+      caches[i] = new char[part_csr->n];
+      fill(caches[i], caches[i]+part_csr->n, MAX_DIST);
+    }
 
     string order_method = config.find("order_method")->as<string>();
     psl_ptr = new PSL(*part_csr, order_method, &cut, global_bp);
@@ -585,8 +576,9 @@ inline void DPSL::Index(){
 
     Barrier();
 
+
     bool should_run[csr.n];
-    fill(should_run, should_run+csr.n, true);
+    fill(should_run, should_run + csr.n, true);
 
     Log("Starting DN Loop");
     bool updated = true;
@@ -610,8 +602,6 @@ inline void DPSL::Index(){
               new_labels[u] = psl.Pull(u,d,caches[tid]);
               if(psl.ranks[u] < psl.min_cut_rank && new_labels[u] != nullptr && !new_labels[u]->empty()){
                 updated = updated || true;
-                auto& labels = psl.labels[u].vertices;
-                labels.insert(labels.end(), new_labels[u]->begin(), new_labels[u]->end());
               }
             }       
           }
@@ -619,6 +609,15 @@ inline void DPSL::Index(){
         end = omp_get_wtime();
         PrintTime("Level " + to_string(d), end-start);
 
+
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+      for(int u=0; u<csr.n; u++){
+        if(new_labels[u] != nullptr && !new_labels[u]->empty()){
+         auto& labels = psl.labels[u].vertices;
+         labels.insert(labels.end(), new_labels[u]->begin(), new_labels[u]->end());
+        }
+     
+      }
         
         Barrier();
         

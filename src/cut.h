@@ -6,7 +6,7 @@
 #include "external/metis/metis.h"
 #include "external/kahypar/libkahypar.h"
 #include "external/toml/toml.h"
-#include "patoh_wrap.h"
+/* #include "patoh_wrap.h" */
 #include <vector>
 #include "omp.h"
 #include <cmath>
