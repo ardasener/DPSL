@@ -11,7 +11,7 @@
 #define N_ROOTS 16
 /* #define MAX_BP_THREADS 1 */
 #define USE_LOCAL_BP true
-#define USE_GLOBAL_BP false
+#define USE_GLOBAL_BP true
 #define NUM_THREADS 16
 
 
@@ -37,6 +37,11 @@ struct CSR {
   int *col;
   int n;
   int m;
+
+  ~CSR(){
+    delete[] row_ptr;
+    delete[] col;
+  }
 
   CSR(CSR& csr){
     row_ptr = new int[csr.n+1];
@@ -130,30 +135,31 @@ vector<int>* BFSQuery(CSR& csr, int u){
   vector<int>* dists = new vector<int>(csr.n, -1);
   auto& dist = *dists;
 
-	int q[csr.n];
+  int* q = new int[csr.n];
 
-	int q_start = 0;
-	int q_end = 1;
-	q[q_start] = u;
+  int q_start = 0;
+  int q_end = 1;
+  q[q_start] = u;
 
-	dist[u] = 0;
-	while(q_start < q_end){
-		int curr = q[q_start++];
+  dist[u] = 0;
+  while(q_start < q_end){
+    int curr = q[q_start++];
 
-		int start = csr.row_ptr[curr];
-		int end = csr.row_ptr[curr+1];
+    int start = csr.row_ptr[curr];
+    int end = csr.row_ptr[curr+1];
 
-		for(int i=start; i<end; i++){
-		      int v = csr.col[i];
+    for(int i=start; i<end; i++){
+	  int v = csr.col[i];
 
-		      if(dist[v] == -1){
-			      dist[v] = dist[curr]+1;
+	  if(dist[v] == -1){
+	      dist[v] = dist[curr]+1;
+	      q[q_end++] = v;
+	  }
+    }
 
-			      q[q_end++] = v;
-		      }
-	      }
+  }
 
-	}
+  delete[] q;
 
   return dists;
 }

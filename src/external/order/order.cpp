@@ -432,6 +432,25 @@ vector<int> gen_order(int *xadj, int *adj, int n, int m, string method) {
     order.push_back(p.second);
   }
 
+  for (int i = 0; i < nthreads; i++) {
+    delete[] pque[i];
+    delete[] plevel[i];
+    delete[] ppred[i];
+    delete[] pendpred[i];
+    delete[] psigma[i];
+    delete[] pdelta[i];
+    delete[] pb_cent[i];
+    delete[] pc_cent[i];
+  }
+
+  delete[] cent;
+  delete[] probs;
+  delete[] next_vals;
+
+  delete[] lxadj;
+  delete[] ladj;
+  delete[] ltadj;
+
   return order;
 }
 

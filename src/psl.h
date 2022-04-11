@@ -43,10 +43,8 @@ public:
   CSR &csr;
   vector<int> ranks;
   vector<int> order;
-  BP* local_bp;
-  BP* global_bp;
-  bool* usd_bp;
-  vector<int> v_vs[N_ROOTS];
+  BP* local_bp = nullptr;
+  BP* global_bp = nullptr;
   int last_dist = 2;
   int min_cut_rank = 0;
   long long prune_rank = 0;
@@ -58,8 +56,9 @@ public:
 
   vector<LabelSet> labels;
   vector<int> max_ranks;
-  char** caches;
+  char** caches = nullptr;
   PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr, BP* global_bp=nullptr);
+  ~PSL();
   vector<int>* Pull(int u, int d, char* cache);
   vector<int>* Init(int u);
   void Index();
@@ -71,6 +70,19 @@ public:
 
 };
 
+inline PSL::~PSL(){
+  if(local_bp != nullptr)
+    delete local_bp;
+
+  if(caches != nullptr){
+   
+   for(int i=0; i<NUM_THREADS; i++){
+    delete [] caches[i];
+   }
+   delete[] caches; 
+  }
+
+}
 
 inline void PSL::CountPrune(int i){
 #ifdef DEBUG
@@ -116,6 +128,8 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp)
     caches[i] = new char[csr.n];
     fill(caches[i], caches[i] + csr.n, MAX_DIST);
   }
+
+  max_ranks.resize(csr.n, -1);
 }
 
 
@@ -389,7 +403,6 @@ inline void PSL::Index() {
 
   bool should_run[csr.n];
   fill(should_run, should_run+csr.n, true);
-  max_ranks.resize(csr.n, -1);
 
   vector<vector<int>*> new_labels(csr.n, nullptr);
   bool updated = true;

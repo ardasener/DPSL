@@ -45,9 +45,9 @@ public:
     bool MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init=false);
     void Barrier();
     int pid, np, global_n;
-    CSR* whole_csr;
-    CSR* part_csr;
-    BP* global_bp;
+    CSR* whole_csr = nullptr;
+    CSR* part_csr = nullptr;
+    BP* global_bp = nullptr;
     int* partition;
     vector<int> cut;
     vector<int> names;
@@ -64,6 +64,7 @@ public:
     void PrintTime(string tag, double time);
     PSL * psl_ptr;
     DPSL(int pid, CSR* csr, const toml::Value& config, int np);
+    ~DPSL();
 };
 
 inline void DPSL::Log(string msg){
@@ -433,6 +434,8 @@ inline void DPSL::InitP0(){
         SendData(csrs[i]->col, csrs[i]->m, MPI_CSR_COL, i);
         SendData(vc.partition, csr.n, MPI_PARTITION, i);
         SendData(cut.data(), cut.size(), MPI_CUT, i);
+        delete csrs[i];
+        csrs[i] = nullptr;
     }
 
     partition = vc.partition;
@@ -468,6 +471,7 @@ inline void DPSL::InitP0(){
     caches = new char*[NUM_THREADS];
     for(int i=0; i<NUM_THREADS; i++){
       caches[i] = new char[part_csr->n];
+      fill(caches[i], caches[i]+part_csr->n, MAX_DIST);
     }
 
 }
@@ -483,7 +487,7 @@ inline void DPSL::Init(){
     int* global_n_ptr;
     RecvData(global_n_ptr, MPI_GLOBAL_N, 0);
     global_n = *global_n_ptr;
-    delete global_n_ptr;
+    delete [] global_n_ptr;
 
 
     int size_row_ptr = RecvData(row_ptr, MPI_CSR_ROW_PTR, 0);
@@ -531,6 +535,7 @@ inline void DPSL::Init(){
     caches = new char*[NUM_THREADS];
     for(int i=0; i<NUM_THREADS; i++){
       caches[i] = new char[part_csr->n];
+      fill(caches[i], caches[i]+part_csr->n, MAX_DIST);
     }
 }
 
@@ -572,7 +577,6 @@ inline void DPSL::Index(){
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
     for (int u = 0; u < csr.n; u++) {
       auto& labels = psl.labels[u];
-      labels.dist_ptrs.reserve(3);
       labels.dist_ptrs.push_back(0);
       labels.dist_ptrs.push_back(1);
       labels.dist_ptrs.push_back(labels.vertices.size());
@@ -580,6 +584,9 @@ inline void DPSL::Index(){
     }
 
     Barrier();
+
+    bool should_run[csr.n];
+    fill(should_run, should_run+csr.n, true);
 
     Log("Starting DN Loop");
     bool updated = true;
@@ -590,15 +597,16 @@ inline void DPSL::Index(){
         vector<vector<int>*> new_labels(csr.n, nullptr);
 
         start = omp_get_wtime();
-        if(updated){
-          last_dist = d;
-          updated = false;
-          Log("Pulling...");
+        last_dist = d;
+        updated = false;
+        Log("Pulling...");
 #pragma omp parallel default(shared) num_threads(NUM_THREADS) reduction(||:updated) 
         {
           int tid = omp_get_thread_num();
-          int nt = omp_get_num_threads();
+          int nt = NUM_THREADS;
           for(int u=tid; u<csr.n; u+=nt){
+            /* cout << "Pulling for u=" << u << endl; */
+            if(should_run[u]){
               new_labels[u] = psl.Pull(u,d,caches[tid]);
               if(psl.ranks[u] < psl.min_cut_rank && new_labels[u] != nullptr && !new_labels[u]->empty()){
                 updated = updated || true;
@@ -623,13 +631,27 @@ inline void DPSL::Index(){
         Log("Merging Labels for d=" + to_string(d) + " End");
 
 
+        fill(should_run, should_run + csr.n, false);
+
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
         for(int u=0; u<csr.n; u++){
           auto& labels_u = psl.labels[u];
           labels_u.dist_ptrs.push_back(labels_u.vertices.size());
 
-          if(new_labels[u] != nullptr)
+          if(new_labels[u] != nullptr){ 
             delete new_labels[u];
+
+            int start_neighbors = csr.row_ptr[u];
+            int end_neighbors = csr.row_ptr[u+1];
+            for(int i=start_neighbors; i<end_neighbors; i++){
+              int v = csr.col[i];
+              if(psl.ranks[v] < psl.max_ranks[u]){
+                should_run[v] = true;
+              }
+            }
+          }
+
+
         }
 
         // Stops the execution once all processes agree that they are done
@@ -639,7 +661,7 @@ inline void DPSL::Index(){
           int* updated_other;
           RecvData(updated_other, MPI_UPDATED, MPI_ANY_SOURCE);
           updated_int |= *updated_other;
-          delete updated_other;
+          delete [] updated_other;
         }
 
         if(updated_int == 0){
@@ -663,6 +685,27 @@ inline DPSL::DPSL(int pid, CSR* csr, const toml::Value& config, int np): whole_c
         Init();
     }
 
+}
+
+inline DPSL::~DPSL(){
+
+  for(int i=0; i<NUM_THREADS; i++){
+    delete [] caches[i];
+  }
+  delete [] caches;
+
+  delete part_csr;  
+
+
+  delete psl_ptr;
+
+  if(vc_ptr == nullptr)
+    delete [] partition;
+  else
+    delete vc_ptr;
+
+  if(global_bp != nullptr)
+    delete global_bp;
 }
 
 #endif

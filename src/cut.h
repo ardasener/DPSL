@@ -55,6 +55,7 @@ void KahyparPart(CSR& csr, int*& partition, int np, string config_file, double i
 
 }
 
+/*
 void PatohPart(CSR& csr, int*& partition, int np, string mode, string minimize, double imbalance){
   partition = new int[csr.n];
 
@@ -89,6 +90,7 @@ void PatohPart(CSR& csr, int*& partition, int np, string mode, string minimize, 
   rowNetPart(ptrs, js, m, n, partv);
   
 }
+*/
 
 void MetisPart(CSR& csr, int*& partition, int np, int* vertex_weights){
 
@@ -128,7 +130,12 @@ public:
   vector<int> order;
 
   VertexCut(CSR& csr, string order_method, int np, const toml::Value& config);
+  ~VertexCut();
 };
+
+inline VertexCut::~VertexCut(){
+  delete partition;  
+}
 
 inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::Value& config){
 
@@ -169,10 +176,13 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
   if(partition_engine == "metis")
     MetisPart(csr, partition, np, vertex_weights);
   else if (partition_engine == "patoh")
+    /*
     PatohPart(csr, partition, np, 
         config.find("patoh.mode")->as<string>(),
         config.find("patoh.minimize")->as<string>(),
         config.find("patoh.imbalance")->as<double>());
+        */
+    throw "Patoh is not supported at the moment";
   else if (partition_engine == "kahypar")
     KahyparPart(csr, partition, np, 
         config.find("kahypar.config_file")->as<string>(),
