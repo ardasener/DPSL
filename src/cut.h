@@ -238,7 +238,7 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
 
 
   cout << "Calculating edges and nodes..." << endl;
-  vector<unordered_set<pair<int,int>, pair_hash>> edge_sets(np);
+  vector<vector<pair<int,int>>> edges(np);
   for(int u=0; u<csr.n; u++){
     int start = csr.row_ptr[u];
     int end = csr.row_ptr[u+1];
@@ -251,24 +251,24 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
       bool v_in_cut = (cut.find(v) != cut.end());
 
       if(u_in_cut && v_in_cut){
-        for(int i=0; i<edge_sets.size(); i++){
-          edge_sets[i].emplace(u,v);
-          edge_sets[i].emplace(v,u);
+        for(int i=0; i<np; i++){
+          edges[i].emplace_back(u,v);
         }
       } else if(partition[u] == partition[v] || v_in_cut){
-        edge_sets[partition[u]].emplace(u,v);
-        edge_sets[partition[u]].emplace(v,u);
+        edges[partition[u]].emplace_back(u,v);
       } else if(u_in_cut){
-        edge_sets[partition[v]].emplace(u,v);
-        edge_sets[partition[v]].emplace(v,u);
+        edges[partition[v]].emplace_back(u,v);
       }
     }
   }
 
-  vector<vector<pair<int,int>>> edges(np);
 
   for(int i=0; i<np; i++) {
-    edges[i].insert(edges[i].end(), edge_sets[i].begin(), edge_sets[i].end());
+    sort(edges[i].begin(), edges[i].end(), less<pair<int, int>>());
+    auto unique_it = unique(edges[i].begin(), edges[i].end(), [](const pair<int,int>& p1, const pair<int,int>& p2){
+	    return (p1.first == p2.first) && (p1.second == p2.second);
+	  });
+    edges[i].erase(unique_it, edges[i].end());
   }
 
   cout << "Constructing csrs..." << endl;
@@ -281,8 +281,6 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
     int *csr_nodes = new int[n];
 
     fill(row_ptr, row_ptr+n+1, 0);
-
-    sort(edges[i].begin(), edges[i].end(), less<pair<int,int>>());
 
     row_ptr[0] = 0;
 
@@ -322,9 +320,7 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
     index++;
   }
 
-  cout << "Closing OFS" << endl;
   ofs.close();
-  cout << "Closed OFS" << endl;
 
 }
 

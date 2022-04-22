@@ -7,10 +7,11 @@
 #include <algorithm>
 #include <climits>
 #include <iostream>
+#include <fstream>
 
 #define N_ROOTS 16
 /* #define MAX_BP_THREADS 1 */
-#define USE_LOCAL_BP true
+#define USE_LOCAL_BP false
 #define USE_GLOBAL_BP true
 #define NUM_THREADS 4
 
@@ -30,6 +31,26 @@ struct pair_hash
     }
 };
 
+
+struct Stats {
+  long long prune_rank;
+  long long prune_labels;
+  long long prune_local_bp;
+  long long prune_global_bp;
+  long long total_label_count;
+  double avg_label_count;
+  double time_elapsed;
+};
+
+void WriteStats(const vector<Stats>& stats_vec, string filename){
+  ofstream ofs(filename);
+  ofs << "prune_rank" << "|" << "prune_labels" << "|" << "prune_global_bp" << "|" << "prune_local_bp" << "|" << "total_label_count" << "|" << "avg_label_count" << "|" << "time_elapsed" << endl;
+  for(int i=0; i<stats_vec.size(); i++){
+    auto& stats = stats_vec[i];
+    ofs << "STATS_Level_" << i + 2 << ",";
+    ofs << stats.prune_rank << "," << stats.prune_labels << "," << stats.prune_global_bp << "," << stats.prune_local_bp << "," << stats.total_label_count << "," << stats.avg_label_count << "," << stats.time_elapsed << endl;
+  }
+}
 
 
 struct CSR {

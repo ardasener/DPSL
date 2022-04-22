@@ -42,7 +42,7 @@ public:
     int RecvData(T*& data,int vertex, int from, MPI_Datatype type=MPI_INT32_T);
 
 
-    bool MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init=false);
+    bool MergeCut(vector<vector<int>*> new_labels, PSL& psl);
     void Barrier();
     int pid, np, global_n;
     CSR* whole_csr = nullptr;
@@ -159,8 +159,8 @@ inline void DPSL::Query(int u, string filename){
   
   Log("Synchronizing query results");
   if(pid == 0){
-    int all_dists[whole_csr->n];
-    int source[whole_csr->n];
+    int* all_dists = new int[whole_csr->n];
+    int* source = new int[whole_csr->n];
     fill(all_dists, all_dists+whole_csr->n, -1);
     fill(source, source+whole_csr->n, -1);
 
@@ -182,6 +182,7 @@ inline void DPSL::Query(int u, string filename){
       delete [] dists;
     }
 
+
     vector<int>* bfs_results = BFSQuery(*whole_csr, u);
 
     ofstream ofs(filename);
@@ -196,6 +197,8 @@ inline void DPSL::Query(int u, string filename){
       ofs << i << "\t" << psl_res << "(" << source[i] << ")" << "\t" << bfs_res << "\t" << correctness << endl;
     }
     delete bfs_results;
+    delete all_dists;
+    delete source;
     ofs.close();
 
   } else {
@@ -208,21 +211,23 @@ inline void DPSL::WriteLabelCounts(string filename){
   Barrier();
   CSR& csr = *part_csr;
 
-  int counts[part_csr->n];
+  int* counts = new int[part_csr->n];
   fill(counts, counts + part_csr->n, -1);
 
   for(int i=0; i<part_csr->n; i++){
     counts[i] = psl_ptr->labels[i].vertices.size();
   }
 
-  if(pid != 0)
+  if(pid != 0){
     SendData(counts, part_csr->n, 0, 0);
+    delete [] counts;
+  }
 
   
   if(pid == 0){
     
-    int source[whole_csr->n]; 
-    int all_counts[whole_csr->n];
+    int* source = new int[whole_csr->n]; 
+    int* all_counts = new int[whole_csr->n];
     fill(all_counts, all_counts + whole_csr->n, -1);
     fill(source, source + whole_csr->n, -1); // -1 indicates free floating vertex
 
@@ -247,10 +252,16 @@ inline void DPSL::WriteLabelCounts(string filename){
     }
 
 
-    int total_per_source[np];
+    long long* total_per_source =  new long long[np];
     fill(total_per_source, total_per_source+np, 0);
     for(int i=0; i<part_csr->n; i++){
-      total_per_source[source[i]]++; 
+      if(psl_ptr->min_cut_rank > i){
+        total_per_source[source[i]] += all_counts[i];
+      } else {
+        for(int j=0; j<np; j++)
+          total_per_source[j] += all_counts[i];
+      }
+
     }
 
     ofstream ofs(filename);
@@ -269,15 +280,20 @@ inline void DPSL::WriteLabelCounts(string filename){
     
     for(int p=0; p<np; p++){
       ofs << "Total for P" << p << ": " << total_per_source[p] << endl;
+      ofs << "Avg for P" << p << ": " << total_per_source[p] / (double) whole_csr->n << endl;
     }
     
     ofs << endl;
 
     ofs.close();
+
+    delete [] all_counts;
+    delete [] source;
+    delete [] total_per_source;
   }
 }
 
-inline bool DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init){
+inline bool DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl){
   
   bool updated = false;
 
@@ -288,38 +304,37 @@ inline bool DPSL::MergeCut(vector<vector<int>*> new_labels, PSL& psl, bool init)
       int start = labels_u.size();
 
       // TODO: Replace with vector + unique iterator
-      unordered_set<int> merged_labels;
+      /* unordered_set<int> merged_labels; */
+      vector<int> merged_labels;
 
       Log("Recieving Labels for " + to_string(i));
       for(int p=1; p<np; p++){
         int* recv_labels;
         int size = RecvData(recv_labels, i, p);
         if(size != 0 && recv_labels != nullptr){
-          merged_labels.insert(recv_labels, recv_labels+size);
+          merged_labels.insert(merged_labels.end(), recv_labels, recv_labels+size);
           delete[] recv_labels;
         }
       }
 
       Log("Adding Self Labels for " + to_string(i));
       if(new_labels[u] != nullptr && !new_labels[u]->empty()){
-        merged_labels.insert(new_labels[u]->begin(), new_labels[u]->end());
+        merged_labels.insert(merged_labels.end(), new_labels[u]->begin(), new_labels[u]->end());
       }
 
       if(merged_labels.size() > 0){
         Log("Merging Labels for " + to_string(i));
+        
+        sort(merged_labels.begin(), merged_labels.end());
 
-        if(init){
-          merged_labels.erase(u);
-          labels_u.push_back(u);
-        }
+        auto unique_it = unique(merged_labels.begin(), merged_labels.end());
+        merged_labels.erase(unique_it, merged_labels.end());
 
         labels_u.insert(labels_u.end(), merged_labels.begin(), merged_labels.end()); 
-      }
-      
-      Log("Broadcasting Labels for " + to_string(i));
-      if(labels_u.size() > start){
+
+        Log("Broadcasting Labels for " + to_string(i));
         updated = true;
-        BroadcastData(labels_u.data() + start, labels_u.size()-start, i);
+        BroadcastData(labels_u.data() + start, labels_u.size() - start, i);
       } else {
         BroadcastData<int>(nullptr, 0, i);
       }
@@ -525,7 +540,8 @@ inline void DPSL::Init(){
 }
 
 inline void DPSL::Index(){
- 
+
+    Barrier();
     double start, end, alg_start, alg_end;
     Log("Indexing Start");
     CSR& csr = *part_csr;
@@ -545,6 +561,7 @@ inline void DPSL::Index(){
     vector<vector<int>*> init_labels(csr.n, nullptr);
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
     for(int u=0; u<csr.n; u++){
+      psl.labels[u].vertices.push_back(u);
       init_labels[u] = psl.Init(u);
     }
     
@@ -560,7 +577,7 @@ inline void DPSL::Index(){
 
     Log("Merging Initial Labels");
     start = omp_get_wtime();
-    MergeCut(init_labels, psl, true);
+    MergeCut(init_labels, psl);
     end = omp_get_wtime();
     PrintTime("Merge 0&1", end-start);
     Log("Merging Initial Labels End");
@@ -663,18 +680,26 @@ inline void DPSL::Index(){
           delete [] updated_other;
         }
 
+
+#ifdef DEBUG
+    psl.CountStats(omp_get_wtime() - alg_start);
+#endif
+
         if(updated_int == 0){
           break;
         }
     }
 
-    alg_end = omp_get_wtime();
-    PrintTime("Total", alg_end-alg_start);
+  alg_end = omp_get_wtime();
+  PrintTime("Total", alg_end-alg_start);
 
-    Log("Prune by Rank: " + to_string(psl_ptr->prune_rank)); 
-    Log("Prune by Local BP: " + to_string(psl_ptr->prune_local_bp)); 
-    Log("Prune by Global BP: " + to_string(psl_ptr->prune_global_bp)); 
-    Log("Prune by Labels: " + to_string(psl_ptr->prune_labels)); 
+#ifdef DEBUG
+  Log("Prune by Rank: " + to_string(psl_ptr->prune_rank)); 
+  Log("Prune by Local BP: " + to_string(psl_ptr->prune_local_bp)); 
+  Log("Prune by Global BP: " + to_string(psl_ptr->prune_global_bp)); 
+  Log("Prune by Labels: " + to_string(psl_ptr->prune_labels));
+  WriteStats(psl.stats_vec, "stats_p" + to_string(pid) + ".txt");
+#endif
 }
 
 inline DPSL::DPSL(int pid, CSR* csr, const toml::Value& config, int np): whole_csr(csr), pid(pid), config(config), np(np){

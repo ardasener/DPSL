@@ -55,6 +55,7 @@ public:
   void ConstructBPLabel();
 
   vector<LabelSet> labels;
+  vector<Stats> stats_vec;
   vector<int> max_ranks;
   char** caches = nullptr;
   PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr, BP* global_bp=nullptr);
@@ -67,8 +68,29 @@ public:
   void CountPrune(int i);
   bool Prune(int u, int v, int d, char* cache);
   void Query(int u, string filename);
-
+  void CountStats(double time);
 };
+
+inline void PSL::CountStats(double time){
+
+  long long total_label_count = 0;
+  for(int u=0; u<csr.n; u++){
+    total_label_count += labels[u].vertices.size();
+  }
+  double avg_label_count = total_label_count / (double) csr.n;
+
+  Stats new_stats;
+ 
+  new_stats.prune_rank = prune_rank; 
+  new_stats.prune_labels = prune_labels; 
+  new_stats.prune_local_bp = prune_local_bp;
+  new_stats.prune_global_bp = prune_global_bp;
+  new_stats.total_label_count = total_label_count;
+  new_stats.avg_label_count = avg_label_count;
+  new_stats.time_elapsed = time;
+
+  stats_vec.push_back(new_stats);
+}
 
 inline PSL::~PSL(){
   if(local_bp != nullptr)
@@ -373,8 +395,6 @@ inline vector<int>* PSL::Init(int u){
   
   vector<int>* init_labels = new vector<int>;
 
-  init_labels->push_back(u);
-
   int start = csr.row_ptr[u];
   int end = csr.row_ptr[u + 1];
 
@@ -409,6 +429,7 @@ inline void PSL::Index() {
   #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for (int u = 0; u < csr.n; u++) {
     auto init_labels = Init(u);
+    labels[u].vertices.push_back(u);
     labels[u].vertices.insert(labels[u].vertices.end(), init_labels->begin(), init_labels->end());
     delete init_labels;
     labels[u].dist_ptrs.push_back(0);
@@ -478,6 +499,10 @@ inline void PSL::Index() {
       } 
     }
 
+#ifdef DEBUG
+    CountStats(omp_get_wtime() - all_start_time);
+#endif
+
     end_time = omp_get_wtime();
     cout << "Level " << d << ": " << end_time-start_time << " seconds" << endl;
     cout << "Level " << d << " Pull: " << pull_end_time - pull_start_time << " seconds" << endl;
@@ -491,6 +516,7 @@ inline void PSL::Index() {
   cout << "Prune by Local BP: " << prune_local_bp << endl; 
   cout << "Prune by Global BP: " << prune_global_bp << endl; 
   cout << "Prune by Labels: " << prune_labels << endl; 
+  WriteStats(stats_vec, "stats.txt");
 #endif
 }
 
