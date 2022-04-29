@@ -1,3 +1,6 @@
 large_graphs/*
 *.out
 output*
+*.part*
+cutter
+dpsl

@@ -68,16 +68,43 @@ int main(int argc, char* argv[]){
 	}
 	cout << "Cut data assertion passed" << endl;
 
+	int n,m;
 	for(int i=0; i<4; i++){
 		CSR& csr1 = *(vc4.csrs[i]);
 		CSR& csr2 = *(vc4_test.csrs[i]);
-	
+		
+		n = csr1.n;
+		m = csr1.m;
+
 		assert(csr1.n == csr2.n);
 		assert(csr1.m == csr2.m);
 		assert(csr1.row_ptr[0] == csr2.row_ptr[0]);
+		assert(csr1.row_ptr[n/2] == csr2.row_ptr[n/2]);
+		assert(csr1.row_ptr[n] == csr2.row_ptr[n]);
 		assert(csr1.col[0] == csr2.col[0]);
+		assert(csr1.col[m/2] == csr2.col[m/2]);
+		assert(csr1.col[m-1] == csr2.col[m-1]);
 		cout << "CSR " << i << " assertions passed" << endl;
 	}
 
+	assert(vc4.partition[0] == vc4_test.partition[0]);
+	assert(vc4.partition[n/2] == vc4_test.partition[n/2]);
+	assert(vc4.partition[n-1] == vc4_test.partition[n-1]);
+	cout << "Partition assertions passed" << endl;
+
+	
+	assert(vc4.ranks[0] == vc4_test.ranks[0]);
+	assert(vc4.ranks[n/2] == vc4_test.ranks[n/2]);
+	assert(vc4.ranks[n-1] == vc4_test.ranks[n-1]);
+	cout << "Rank assertions passed" << endl;
+
+	assert(vc4.order[0] == vc4_test.order[0]);
+	assert(vc4.order[n/2] == vc4_test.order[n/2]);
+	assert(vc4.order[n-1] == vc4_test.order[n-1]);
+	cout << "Order assertions passed" << endl;
+
+
 #endif
+
+	return 0;
 }

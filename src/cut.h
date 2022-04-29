@@ -92,7 +92,7 @@ void PatohPart(CSR& csr, int*& partition, int np, string mode, string minimize, 
 }
 */
 
-void MetisPart(CSR& csr, int*& partition, int np, int* vertex_weights){
+void MetisPart(CSR& csr, int*& partition, int np, int* vertex_weights, int ufactor){
 
   int objval;
   partition = new int[csr.n];
@@ -105,7 +105,7 @@ void MetisPart(CSR& csr, int*& partition, int np, int* vertex_weights){
   options[METIS_OPTION_NO2HOP] = 1;
   options[METIS_OPTION_NCUTS] = 1;
   options[METIS_OPTION_NITER] = 10;
-  options[METIS_OPTION_UFACTOR] = 30;
+  options[METIS_OPTION_UFACTOR] = ufactor;
   options[METIS_OPTION_MINCONN] = 0;
   options[METIS_OPTION_CONTIG] = 0;
   options[METIS_OPTION_SEED] = 42;
@@ -142,10 +142,11 @@ inline void VertexCut::Write(string filename){
   int csr_count = csrs.size();
   ofs.write((char*) &csr_count, sizeof(int));
 
+  int n,m;
   for(CSR* part_csr_ptr : csrs){
     CSR& part_csr = *part_csr_ptr;
-    int n = part_csr.n;
-    int m = part_csr.m;
+    n = part_csr.n;
+    m = part_csr.m;
     ofs.write((char*) &part_csr.n, sizeof(int));	
     ofs.write((char*) &part_csr.m, sizeof(int));	
     ofs.write((char*) part_csr.row_ptr, sizeof(int)*(n+1));
@@ -157,6 +158,10 @@ inline void VertexCut::Write(string filename){
   ofs.write((char*) &cut_vec_size, sizeof(int));
   ofs.write((char*) cut_vec.data(), sizeof(int)*cut_vec.size());
 
+  ofs.write((char*) partition, sizeof(int)*n);
+  ofs.write((char*) ranks.data(), sizeof(int)*n);
+  ofs.write((char*) order.data(), sizeof(int)*n);
+
   ofs.close();
 }
 
@@ -166,8 +171,10 @@ inline VertexCut::VertexCut(string filename){
   int csr_count;
   ifs.read((char *) &csr_count, sizeof(int));
 
+  
+  int n, m;
+ 
   for(int i=0; i<csr_count; i++){
-    int n, m;
     ifs.read((char *) &n, sizeof(int));
     ifs.read((char *) &m, sizeof(int));
 
@@ -189,6 +196,21 @@ inline VertexCut::VertexCut(string filename){
   cut.insert(cut_data, cut_data + cut_size);
   delete[] cut_data;
 
+  partition = new int[n];
+  ifs.read((char *) partition, sizeof(int)*n);
+
+  int* ranks_data = new int[n];
+  ifs.read((char *) ranks_data, sizeof(int)*n);
+  ranks.insert(ranks.end(), ranks_data, ranks_data + n); 
+  delete[] ranks_data;
+
+  int* order_data = new int[n];
+  ifs.read((char *) order_data, sizeof(int)*n);
+  order.insert(order.end(), order_data, order_data + n); 
+  delete[] order_data;
+
+
+
 }
 
 inline VertexCut::~VertexCut(){
@@ -209,7 +231,8 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
     ranks[order[i]] = i;
   }
 
-  int vertex_weights[csr.n];
+  cout << "Assigning Weights..." << endl;
+  int* vertex_weights = new int[csr.n];
   string partition_weight = config.find("partition_weight")->as<string>();
   if(partition_weight == "uniform"){
     fill(vertex_weights, vertex_weights + csr.n, 1);
@@ -233,7 +256,8 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
   double start_part = omp_get_wtime();
   string partition_engine = config.find("partition_engine")->as<string>();
   if(partition_engine == "metis")
-    MetisPart(csr, partition, np, vertex_weights);
+    MetisPart(csr, partition, np, vertex_weights,
+        config.find("metis.ufactor")->as<int>());
   else if (partition_engine == "patoh")
     /*
     PatohPart(csr, partition, np, 
