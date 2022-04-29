@@ -105,8 +105,6 @@ __device__ bool GPSL_Prune(int u, int v, int d, char* cache, LabelSet* device_la
     node = node->next;
     dist++;
   }
-
-  return false;
 }
 
 __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels, char* cache, int n, int *device_csr_row_ptr, int *device_csr_col, int*& new_labels, int* new_labels_size, int tid, BPLabel* device_bp, int* device_ranks){

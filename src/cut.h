@@ -125,16 +125,75 @@ class VertexCut{
 public:
   unordered_set<int> cut;
   vector<CSR*> csrs;
-  int* partition;
+  int* partition = nullptr;
   vector<int> ranks;
   vector<int> order;
 
   VertexCut(CSR& csr, string order_method, int np, const toml::Value& config);
+  VertexCut(string filename);
   ~VertexCut();
+
+  void Write(string filename);
 };
 
+inline void VertexCut::Write(string filename){
+  ofstream ofs(filename, ios::out | ios::binary);
+
+  int csr_count = csrs.size();
+  ofs.write((char*) &csr_count, sizeof(int));
+
+  for(CSR* part_csr_ptr : csrs){
+    CSR& part_csr = *part_csr_ptr;
+    int n = part_csr.n;
+    int m = part_csr.m;
+    ofs.write((char*) &part_csr.n, sizeof(int));	
+    ofs.write((char*) &part_csr.m, sizeof(int));	
+    ofs.write((char*) part_csr.row_ptr, sizeof(int)*(n+1));
+    ofs.write((char*) part_csr.col, sizeof(int)*m);
+  }
+
+  vector<int> cut_vec(cut.begin(), cut.end());
+  int cut_vec_size = cut_vec.size();
+  ofs.write((char*) &cut_vec_size, sizeof(int));
+  ofs.write((char*) cut_vec.data(), sizeof(int)*cut_vec.size());
+
+  ofs.close();
+}
+
+inline VertexCut::VertexCut(string filename){
+  ifstream ifs(filename);
+
+  int csr_count;
+  ifs.read((char *) &csr_count, sizeof(int));
+
+  for(int i=0; i<csr_count; i++){
+    int n, m;
+    ifs.read((char *) &n, sizeof(int));
+    ifs.read((char *) &m, sizeof(int));
+
+    int * row_ptr = new int[n+1];
+    int * col = new int[m];
+    ifs.read((char *) row_ptr, sizeof(int)*(n+1));
+    ifs.read((char *) col, sizeof(int)*m);
+
+    CSR* part_csr = new CSR(row_ptr, col, n, m);
+    csrs.push_back(part_csr);
+  }
+
+  int cut_size;
+  ifs.read((char *) &cut_size, sizeof(int));
+
+  int* cut_data = new int[cut_size];
+  ifs.read((char *) cut_data, sizeof(int)*cut_size);
+  
+  cut.insert(cut_data, cut_data + cut_size);
+  delete[] cut_data;
+
+}
+
 inline VertexCut::~VertexCut(){
-  delete partition;  
+  if(partition != nullptr)
+    delete [] partition;  
 }
 
 inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::Value& config){
