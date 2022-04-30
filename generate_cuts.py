@@ -10,7 +10,7 @@ ignore_existing = False
 
 config = toml.load("config_dpsl.toml")
 
-ufactors = [30, 60, 90, 120];
+ufactors = [50];
 weights = ["uniform", "degree", "degree_log"]
 graphs = [graph for graph in os.listdir("large_graphs") if ".part" not in graph]
 

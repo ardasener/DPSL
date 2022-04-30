@@ -416,6 +416,9 @@ inline int DPSL::RecvData(T *& data, int vertex, int from, MPI_Datatype type){
 
 
 inline void DPSL::InitP0(){
+
+    double init_start = omp_get_wtime();
+
     string order_method = config.find("order_method")->as<string>();
     CSR& csr = *whole_csr;
     global_n = csr.n;
@@ -478,6 +481,9 @@ inline void DPSL::InitP0(){
 
     Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
     Log("Cut Size: " + to_string(cut.size()));
+
+
+    double init_end = omp_get_wtime();
 
 }
 

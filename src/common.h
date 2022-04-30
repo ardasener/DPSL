@@ -13,7 +13,7 @@
 /* #define MAX_BP_THREADS 1 */
 #define USE_LOCAL_BP false
 #define USE_GLOBAL_BP true
-#define NUM_THREADS 4
+#define NUM_THREADS 1
 
 
 using namespace std;
