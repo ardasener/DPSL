@@ -110,7 +110,7 @@ void MetisPart(CSR& csr, int*& partition, int np, int* vertex_weights, int ufact
   options[METIS_OPTION_CONTIG] = 0;
   options[METIS_OPTION_SEED] = 42;
   options[METIS_OPTION_NUMBERING] = 0;
-  options[METIS_OPTION_DBGLVL] = METIS_DBG_INFO;
+  options[METIS_OPTION_DBGLVL] = 0;
 
   cout << "Partitioning..." << endl;
   int nw = 1;

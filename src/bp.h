@@ -203,12 +203,14 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode 
   vector<vector<int>> Srs(N_ROOTS);
 
   int root_index = candidates.size()-1;
+  int number_of_roots_used = 0;
   for(int i=0; i<N_ROOTS; i++){
 
 
     while(root_index >= 0){
       int root = candidates[root_index]; 
       if(!used[root]){
+	number_of_roots_used++;
 	break;
       }
       root_index--;
@@ -238,7 +240,7 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode 
   }
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
-  for(int i=0; i<N_ROOTS; i++){
+  for(int i=0; i<number_of_roots_used; i++){
     vector<int>& Sr = Srs[i];
     int root = roots[i];
     InitBPForRoot(root, Sr, i, csr);    
