@@ -11,9 +11,9 @@
 
 #define N_ROOTS 16
 /* #define MAX_BP_THREADS 1 */
-#define USE_LOCAL_BP false
-#define USE_GLOBAL_BP true
-#define NUM_THREADS 1
+#define USE_LOCAL_BP true
+#define USE_GLOBAL_BP false
+#define NUM_THREADS 16
 
 
 using namespace std;
