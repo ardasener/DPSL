@@ -18,7 +18,7 @@ void computeBCandCC(int *xadj, int *adj, int n, int noBFS, int **que,
                     int **level, int **pred, int **endpred, float **sigma,
                     float **delta, float **b_cent, float **c_cent,
                     int maxlevel) {
-  int i, j, k, v, w, qeptr, cur, ptr;
+  int i, j, v, w, qeptr, cur, ptr;
   long int sum;
   int nthreads = omp_get_max_threads();
 
