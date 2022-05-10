@@ -118,7 +118,7 @@ __device__ bool GPSL_Prune(int u, int v, int d, char* cache, LabelSet* device_la
       int w = node->data[i];
       int cache_dist = cache[w];
 
-      if((i + cache_dist) <= d){
+      if((dist + cache_dist) <= d){
         return true;
       }
     }
@@ -391,16 +391,27 @@ __global__ void GPSL_AddLabels_Kernel(int n, LabelSet* device_labels, int** new_
   const int tid = blockIdx.x * blockDim.x + threadIdx.x;
   const int nt = blockDim.x * gridDim.x;
 
+  int local_updated = 0;
   for(int u=tid; u<n; u+=nt){
 
-    if(updated_flag != nullptr && *updated_flag == 0 && new_labels_size[u] > 0){
-      atomicExch(updated_flag, 1);
-    }
+    if(local_updated == 0 && new_labels_size[u] > 0){
+      local_updated = 1;
+    } 
 
     device_labels[u].Insert(new_labels[u], new_labels_size[u]);
     new_labels[u] = nullptr;
     new_labels_size[u] = 0;
   }
+
+
+  if(updated_flag != nullptr)
+    atomicCAS(updated_flag, 0, local_updated);
+
+  /*
+  if(local_updated == true && *updated_flag == 0){
+    atomicExch(updated_flag, 1);
+  }
+  */
 
 }
 
