@@ -5,7 +5,11 @@
 #include "bp.h"
 #include "external/order/order.hpp"
 
-#define ARRAY_MANAGER_ALLOC_SIZE (1ULL << 30)
+// IN GBs
+#define ARRAY_MANAGER_ALLOC_SIZE 6
+#define GBS_TO_BYTES (1024ULL*1024ULL*1024ULL);
+
+
 #define HEAP_SIZE (1ULL << 32)
 #define REALLOCATE false
 /* #define DEBUG */
@@ -22,39 +26,19 @@ struct ArrayManager {
   int* buffer;
   size_t last_index;
   int mutex;
-  size_t alloc_size;
 
   __device__ void Get(int*& ptr, int size){
     
     lock(&mutex);
    
-#ifdef DEBUG 
-    if(buffer == nullptr || last_index + size > alloc_size){
-      printf("Buffer is full \n");
-      printf("buffer=%lu, last_index=%lu, size=%d, alloc_size=%lu \n", buffer, last_index, size, alloc_size);
-      
-      if(REALLOCATE){
- 	buffer = new int[alloc_size];
-	last_index = 0;     
-      } else {
-	printf("Try setting REALLOCATE to true or increasing the allocation size \n");
-	while(true){};
-      }
-    }
-#endif
-
     ptr = buffer + last_index;
     last_index += size;
-
-/*     if(size != 0) */
-/*       printf("minted ptr=%ld size=%d \n", ptr, size); */
 
     unlock(&mutex);
   }
 
   __device__ void LoadBuffer(int* new_buffer){
     buffer = new_buffer;
-    alloc_size = ARRAY_MANAGER_ALLOC_SIZE;
     last_index = 0;
     mutex = 0;
   }
@@ -148,10 +132,16 @@ __device__ bool GPSL_Prune(int u, int v, int d, char* cache, LabelSet* device_la
 
 }
 
-__device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *device_csr_row_ptr, int *device_csr_col, char* cache, char* owner, int*& new_labels, int* new_labels_size, int tid, BPLabel* device_bp, int* device_ranks, ArrayManager* array_manager, int* array_sizes){
+__device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *device_csr_row_ptr, int *device_csr_col, char* cache, char* owner, int*& new_labels, int* new_labels_size, int tid, BPLabel* device_bp, int* device_ranks, ArrayManager* array_manager, int* array_sizes, bool* should_run_prev, bool* should_run_next){
 
  // Warp size
  const int ws = 32;
+
+ __shared__ int global_max_rank;
+
+ if(tid == 0)
+   global_max_rank = 0;
+
  
  // Fill the cache using <d labels
  LabelSet& labels_u = device_labels[u];
@@ -166,10 +156,12 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
   __syncwarp();
  }
 
+ int rank_u = device_ranks[u];
 
  // First we want to figure out how much memory we need to allocate
  // So we need the compute the local size for each thread
  int local_size = 0;
+ int local_max_rank = 0;
  
 
  // Iterate through the neighbors
@@ -196,7 +188,8 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
       continue;
     }
 
-    if(device_ranks[u] > device_ranks[w]){ // Rank based prune
+    int rank_w = device_ranks[w];
+    if(rank_u > rank_w){ // Rank based prune
       continue;
     }
 
@@ -211,7 +204,10 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
     // Not an atomic operation but should not cause race conditions anyway
     // Because, there can't be two instances of the same label in the same neighbor
     owner[w] = tid; // Mark the vertex
-
+    
+    if(device_ranks[w] > local_max_rank)
+      local_max_rank = rank_w;  
+    
     local_size++; 
   }
 
@@ -221,6 +217,7 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
 
  // Write local size to shared memory
  array_sizes[tid] = local_size;
+ atomicMax_block(&global_max_rank, local_max_rank);
 
  __syncwarp();
 
@@ -240,7 +237,11 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
   // Allocate the memory 
   // To avoid slowness of device malloc, the memory is actually preallocated
   // So this step just distributes it
-  array_manager->Get(new_labels, global_size);
+  if(global_size > 0){
+    array_manager->Get(new_labels, global_size);
+  } else {
+    new_labels = nullptr;
+  }
 
   // Set the size for the AddLabels kernel
   *new_labels_size = global_size;
@@ -252,7 +253,8 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
  // Repeats the loops in the local size calculation part
  // Instead of pruning, it will just check the owner array for marks
  // If the vertex was marked by the current thread, it will be written to the array 
- if(local_size > 0){
+ int global_size = array_sizes[ws-1];
+ if(global_size > 0){
   int offset = (tid > 0) ? array_sizes[tid-1] : 0;
   int written = 0;
   
@@ -260,21 +262,18 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
   int ngh_end = device_csr_row_ptr[u+1];
   for(int i=ngh_start; i<ngh_end; i++){
 
-    if(written == local_size){
-      break;
-    }
-
     int v = device_csr_col[i];
     LabelSet& labels_v = device_labels[v];
     LabelSetNode& prev_labels_v = labels_v.array[d-1];
   
+
+    if(tid == 0 && !should_run_next[v] && device_ranks[v] < global_max_rank){
+      should_run_next[v] = true; 
+    }
+
     // For each neighbor check the d-1 labels in parallel
     // For each label if the label is owned by this thread, add it to the new_labels array
-    for(int j=tid; j<prev_labels_v.size; j+=ws){
-
-      if(written == local_size){
-	break;
-      }
+    for(int j=tid; j<prev_labels_v.size && written < local_size; j+=ws){
 
       int w = prev_labels_v.data[j];
 
@@ -307,7 +306,6 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
 
 
  // Reset cache for =d nodes
- int global_size = array_sizes[ws-1];
  for(int i=tid; i<global_size; i+=ws){
   cache[new_labels[i]] = MAX_DIST;
  }
@@ -315,7 +313,7 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
    
 }
 
-__global__ void GPSL_Main_Kernel(int d, int n, LabelSet* device_labels, int* device_csr_row_ptr, int* device_csr_col, char* device_caches, char* device_owners, int** all_new_labels, int* all_new_labels_size, BPLabel* device_bp, int* device_ranks, ArrayManager* array_manager, int* array_sizes){
+__global__ void GPSL_Main_Kernel(int d, int n, LabelSet* device_labels, int* device_csr_row_ptr, int* device_csr_col, char* device_caches, char* device_owners, int** all_new_labels, int* all_new_labels_size, BPLabel* device_bp, int* device_ranks, ArrayManager* array_manager, int* array_sizes, bool* should_run_prev, bool* should_run_next){
 
  const int ws = 32;
  const int bid = blockIdx.x;
@@ -329,7 +327,9 @@ __global__ void GPSL_Main_Kernel(int d, int n, LabelSet* device_labels, int* dev
  const size_t array_sizes_offset = wid*32;
 
  for(int u=wid; u<n; u+=nw){
-   GPSL_Pull(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset);
+   if(d == 2 || should_run_prev[u]){
+    GPSL_Pull(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next);
+   }
  }
 
 }
@@ -539,7 +539,7 @@ __host__ void GPSL_Index(CSR& csr, int number_of_warps){
   size_t total_size = 0;
 
   int* init_buffer;
-  size = sizeof(int)*ARRAY_MANAGER_ALLOC_SIZE;
+  size = ARRAY_MANAGER_ALLOC_SIZE*GBS_TO_BYTES;
   total_size += size;
   cudaMalloc((void**) &init_buffer, size);  
 
@@ -616,6 +616,18 @@ __host__ void GPSL_Index(CSR& csr, int number_of_warps){
   total_size += size;
   cudaMalloc((void**) &array_manager, size);  
 
+  bool* should_run_prev;
+  size = sizeof(bool)*csr.n;
+  total_size += size;
+  cudaMalloc((void**)&should_run_prev, sizeof(bool)*csr.n);
+  cudaMemset(should_run_prev, 0, sizeof(bool));
+
+  bool* should_run_next;
+  size = sizeof(bool)*csr.n;
+  total_size += size;
+  cudaMalloc((void**)&should_run_next, sizeof(bool)*csr.n);
+  cudaMemset(should_run_next, 0, sizeof(bool));
+
   end_time = omp_get_wtime();
 
   cout << "Memory Allocations" << ": " << end_time - start_time << " seconds" << endl;
@@ -676,17 +688,25 @@ __host__ void GPSL_Index(CSR& csr, int number_of_warps){
 
     last_dist = d;
 
+    // Reset the updated flag
     cudaMemset(updated_flag, 0, sizeof(int));
-    cudaDeviceSynchronize();
 
-    GPSL_Main_Kernel<<<number_of_warps,32>>>(d, csr.n, device_labels, device_csr_row_ptr, device_csr_col, device_caches, device_owners, new_labels, new_labels_size, device_bp, device_ranks, array_manager, array_sizes);
+    // Swap and reset the should_run arrays
+    bool* temp = should_run_prev;
+    should_run_prev = should_run_next;
+    should_run_next = temp;
+    cudaMemset(should_run_next, 0, sizeof(bool));
+
+    // Run the main kernel
+    GPSL_Main_Kernel<<<number_of_warps,32>>>(d, csr.n, device_labels, device_csr_row_ptr, device_csr_col, device_caches, device_owners, new_labels, new_labels_size, device_bp, device_ranks, array_manager, array_sizes, should_run_prev, should_run_next);
     cudaDeviceSynchronize();
     
+    // Add the labels to the proper places
     GPSL_AddLabels_Kernel<<<number_of_warps,32>>>(csr.n, d, device_labels, new_labels, new_labels_size, updated_flag);
     cudaDeviceSynchronize();
 
+    // Copy the updated flag to the CPU
     cudaMemcpy(&updated, updated_flag, sizeof(int), cudaMemcpyDeviceToHost);
-    cudaDeviceSynchronize();
 
     end_time = omp_get_wtime();
     cout << "Level " << d << ": " << end_time - start_time << " seconds" << endl;
@@ -703,7 +723,7 @@ __host__ void GPSL_Index(CSR& csr, int number_of_warps){
 __host__ int main(int argc, char* argv[]){
   CSR csr(argv[1]);
   cudaSetDevice(1);
-  GPSL_Index(csr, 100);
+  GPSL_Index(csr, 200);
 }
 
 #endif
