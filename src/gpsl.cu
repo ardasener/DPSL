@@ -200,9 +200,9 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
       continue;
     }
 
-/*     if(GPSL_PruneByBp(u, w, d, device_bp)){ // Bit parallel prune */
-/*       continue; */
-/*     } */
+    if(GPSL_PruneByBp(u, w, d, device_bp)){ // Bit parallel prune
+      continue;
+    }
 
     if(GPSL_Prune(u, w, d, cache, device_labels)){ // Standard prune
       continue;
@@ -252,13 +252,17 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
  // Repeats the loops in the local size calculation part
  // Instead of pruning, it will just check the owner array for marks
  // If the vertex was marked by the current thread, it will be written to the array 
- int global_size = array_sizes[ws-1];
- if(global_size > 0){
+ if(local_size > 0){
   int offset = (tid > 0) ? array_sizes[tid-1] : 0;
+  int written = 0;
   
   int ngh_start = device_csr_row_ptr[u];
   int ngh_end = device_csr_row_ptr[u+1];
   for(int i=ngh_start; i<ngh_end; i++){
+
+    if(written == local_size){
+      break;
+    }
 
     int v = device_csr_col[i];
     LabelSet& labels_v = device_labels[v];
@@ -267,16 +271,20 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
     // For each neighbor check the d-1 labels in parallel
     // For each label if the label is owned by this thread, add it to the new_labels array
     for(int j=tid; j<prev_labels_v.size; j+=ws){
+
+      if(written == local_size){
+	break;
+      }
+
       int w = prev_labels_v.data[j];
 
       if(owner[w] == tid){
 	new_labels[offset++] = w;
 	owner[w] = -1;
+	written++;
       }
     
     }
-
-    __syncwarp();
 
   }
 
@@ -299,6 +307,7 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
 
 
  // Reset cache for =d nodes
+ int global_size = array_sizes[ws-1];
  for(int i=tid; i<global_size; i+=ws){
   cache[new_labels[i]] = MAX_DIST;
  }
@@ -694,7 +703,7 @@ __host__ void GPSL_Index(CSR& csr, int number_of_warps){
 __host__ int main(int argc, char* argv[]){
   CSR csr(argv[1]);
   cudaSetDevice(1);
-  GPSL_Index(csr, 10);
+  GPSL_Index(csr, 100);
 }
 
 #endif
