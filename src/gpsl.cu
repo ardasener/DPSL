@@ -5,6 +5,7 @@
 #include "bp.h"
 #include "external/order/order.hpp"
 
+
 // IN GBs
 #define ARRAY_MANAGER_ALLOC_SIZE 6
 #define GBS_TO_BYTES (1024ULL*1024ULL*1024ULL);
@@ -13,6 +14,14 @@
 #define HEAP_SIZE (1ULL << 32)
 #define REALLOCATE false
 /* #define DEBUG */
+
+/*
+  0 -> parallelize at w only
+  1 -> parallelize at v only
+  2 -> 8 groups for v, 4 threads for w
+  3 -> 4 groups for v, 8 threads for w
+*/
+#define KERNEL_MODE 2
 
 __device__ void lock(int* mutex){
   while(atomicCAS_block(mutex, 0, 1) != 0);
@@ -205,7 +214,7 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
     // Because, there can't be two instances of the same label in the same neighbor
     owner[w] = tid; // Mark the vertex
     
-    if(device_ranks[w] > local_max_rank)
+    if(rank_w > local_max_rank)
       local_max_rank = rank_w;  
     
     local_size++; 
@@ -258,8 +267,6 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
   int offset = (tid > 0) ? array_sizes[tid-1] : 0;
   int written = 0;
   
-  int ngh_start = device_csr_row_ptr[u];
-  int ngh_end = device_csr_row_ptr[u+1];
   for(int i=ngh_start; i<ngh_end; i++){
 
     int v = device_csr_col[i];
@@ -299,15 +306,211 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
   for(int j=tid; j<node.size; j+=ws){
     cache[node.data[j]] = MAX_DIST;
   }
-  
+ }
+
+   
+}
+
+
+__device__ void GPSL_Pull_v2(int u, int d, LabelSet* device_labels,  int n, int *device_csr_row_ptr, int *device_csr_col, char* cache, char* owner, int*& new_labels, int* new_labels_size, int tid, BPLabel* device_bp, int* device_ranks, ArrayManager* array_manager, int* array_sizes, bool* should_run_prev, bool* should_run_next, int v_size){
+
+ // Warp size
+ const int ws = 32;
+ const int w_size = ws/v_size;
+ const int w_tid = tid % w_size;
+ const int v_group = tid / w_size;
+
+ /* printf("v_size=%d w_size=%d w_tid=%d v_group=%d \n", v_size, w_size, w_tid, v_group); */
+
+ __shared__ int global_max_rank;
+
+ if(tid == 0)
+   global_max_rank = 0;
+
+ 
+ // Fill the cache using <d labels
+ LabelSet& labels_u = device_labels[u];
+
+ for(int i=0; i<d; i++){
+  LabelSetNode& node = labels_u.array[i];
+
+  for(int j=tid; j<node.size; j+=ws){
+    cache[node.data[j]] = i;
+  }
+
   __syncwarp();
  }
 
+ int rank_u = device_ranks[u];
+
+ // First we want to figure out how much memory we need to allocate
+ // So we need the compute the local size for each thread
+ // But since we are parallelizing at v now, there could be duplicates
+ // So we first mark the vertices and then do a second loop to count
+ int local_size = 0;
+ int temp_size = 0;
+ int local_max_rank = 0;
+ 
+
+ // Iterate through the neighbors
+ int ngh_start = device_csr_row_ptr[u];
+ int ngh_end = device_csr_row_ptr[u+1];
+ for(int i=ngh_start + v_group; i<ngh_end; i+=v_size){
+
+  int v = device_csr_col[i];
+  LabelSet& labels_v = device_labels[v];
+  LabelSetNode& prev_labels_v = labels_v.array[d-1];
+  
+  // For each neighbor check the d-1 labels in parallel
+  // For each label if all the pruning stages are passed increment temp size
+  for(int j=w_tid; j<prev_labels_v.size; j+=w_size){
+    int w = prev_labels_v.data[j];
+
+    /* printf("tid=%d w=%d u=%d \n", tid, w, u); */
+
+    if(owner[w] >= 0){ // If the vertex is marked already
+      continue;
+    }
+
+    if(cache[w] < d){ // If the vertex is already labelled with a lower distance
+      continue;
+    }
+
+    int rank_w = device_ranks[w];
+    if(rank_u > rank_w){ // Rank based prune
+      continue;
+    }
+
+    if(GPSL_PruneByBp(u, w, d, device_bp)){ // Bit parallel prune
+      continue;
+    }
+
+    if(GPSL_Prune(u, w, d, cache, device_labels)){ // Standard prune
+      continue;
+    }
+    // Not an atomic operation but should not cause race conditions anyway
+    // Because, there can't be two instances of the same label in the same neighbor
+    owner[w] = tid; // Mark the vertex
+    
+    temp_size++; 
+
+    if(rank_w > local_max_rank)
+      local_max_rank = rank_w;
+  }
+ 
+ }
+
+ __syncwarp();
+
+  // Count the labels for real this time
+  for(int i=ngh_start + v_group; i<ngh_end && local_size < temp_size; i+=v_size){
+
+    int v = device_csr_col[i];
+    LabelSet& labels_v = device_labels[v];
+    LabelSetNode& prev_labels_v = labels_v.array[d-1];
+  
+
+    // For each neighbor check the d-1 labels in parallel
+    // For each label if the label is owned by this thread, add it to the new_labels array
+    for(int j=w_tid; j<prev_labels_v.size && local_size < temp_size; j+=w_size){
+
+      int w = prev_labels_v.data[j];
+
+      if(owner[w] == tid){
+	local_size++;
+	owner[w] = -tid-2;
+      }
+    
+    }
+
+  }
 
 
- // Reset cache for =d nodes
- for(int i=tid; i<global_size; i+=ws){
-  cache[new_labels[i]] = MAX_DIST;
+  __syncwarp();
+
+
+ // Write local size to shared memory
+ array_sizes[tid] = local_size;
+ atomicMax_block(&global_max_rank, local_max_rank);
+
+ __syncwarp();
+
+ if(tid == 0){
+ 
+ 
+  // Make sizes cumilative
+  // So size[i-1], size[i] indicates the region thread i will write to
+  for(int i=1; i<ws; i++){
+    array_sizes[i] += array_sizes[i-1];
+  }
+
+  // After the previous process the last index should have the overall sum of the sizes
+  int global_size = array_sizes[ws-1];
+
+
+  // Allocate the memory 
+  // To avoid slowness of device malloc, the memory is actually preallocated
+  // So this step just distributes it
+  if(global_size > 0){
+    array_manager->Get(new_labels, global_size);
+  } else {
+    new_labels = nullptr;
+  }
+
+  // Set the size for the AddLabels kernel
+  *new_labels_size = global_size;
+ }
+ 
+ __syncwarp();
+
+
+ // Repeats the loops in the local size calculation part
+ // Instead of pruning, it will just check the owner array for marks
+ // If the vertex was marked by the current thread, it will be written to the array 
+ int global_size = array_sizes[ws-1];
+ if(global_size > 0){
+  int offset = (tid > 0) ? array_sizes[tid-1] : 0;
+  int written = 0;
+  
+  for(int i=ngh_start + v_group; i<ngh_end; i+=v_size){
+
+    int v = device_csr_col[i];
+    LabelSet& labels_v = device_labels[v];
+    LabelSetNode& prev_labels_v = labels_v.array[d-1];
+  
+
+    if(w_tid == 0 && !should_run_next[v] && device_ranks[v] < global_max_rank){
+      should_run_next[v] = true; 
+    }
+
+    // For each neighbor check the d-1 labels in parallel
+    // For each label if the label is owned by this thread, add it to the new_labels array
+    for(int j=w_tid; j<prev_labels_v.size && written < local_size; j+=w_size){
+
+      int w = prev_labels_v.data[j];
+
+      if(owner[w] == -tid-2){
+	new_labels[offset++] = w;
+	owner[w] = -1;
+	written++;
+      }
+    
+    }
+
+  }
+
+ }
+
+ __syncwarp();
+
+
+ // Reset cache for <d nodes
+ for(int i=0; i<d; i++){
+  LabelSetNode& node = labels_u.array[i];
+
+  for(int j=tid; j<node.size; j+=ws){
+    cache[node.data[j]] = MAX_DIST;
+  }
  }
 
    
@@ -326,9 +529,23 @@ __global__ void GPSL_Main_Kernel(int d, int n, LabelSet* device_labels, int* dev
  const size_t cache_offset = wid * n;
  const size_t array_sizes_offset = wid*32;
 
+ int v_size;
+
+ if constexpr(KERNEL_MODE == 1){
+   v_size = 32;
+ } else if constexpr(KERNEL_MODE == 2){
+   v_size = 8;
+ } else if constexpr(KERNEL_MODE == 3){
+   v_size = 4;
+ }
+
  for(int u=wid; u<n; u+=nw){
    if(d == 2 || should_run_prev[u]){
-    GPSL_Pull(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next);
+    if constexpr(KERNEL_MODE == 0){
+      GPSL_Pull(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next);
+    } else { 
+      GPSL_Pull_v2(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next, v_size);
+    }
    }
  }
 
@@ -530,7 +747,9 @@ __host__ void GPSL_WriteLabelCounts(int n, int d, LabelSet* device_labels, strin
   cudaFree(device_counts);
 
   ofs << "Total Count: " << total_count << endl;
+  cout << "Total Count: " << total_count << endl;
   ofs << "Avg. Count: " << total_count / ((double) n) << endl;
+  cout << "Avg. Count: " << total_count / ((double) n) << endl;
 
   ofs.close();
 
