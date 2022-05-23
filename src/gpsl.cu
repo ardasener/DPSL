@@ -20,8 +20,11 @@
   1 -> parallelize at v only
   2 -> 8 groups for v, 4 threads for w
   3 -> 4 groups for v, 8 threads for w
+  4 -> hybrid of 0 and 1
+  5 -> hybrid of 2 and 3
+  6 -> hybrid of 0,1,2 and 3
 */
-#define KERNEL_MODE 2
+#define KERNEL_MODE 5
 
 __device__ void lock(int* mutex){
   while(atomicCAS_block(mutex, 0, 1) != 0);
@@ -411,14 +414,13 @@ __device__ void GPSL_Pull_v2(int u, int d, LabelSet* device_labels,  int n, int 
   
 
     // For each neighbor check the d-1 labels in parallel
-    // For each label if the label is owned by this thread, add it to the new_labels array
     for(int j=w_tid; j<prev_labels_v.size && local_size < temp_size; j+=w_size){
 
       int w = prev_labels_v.data[j];
 
       if(owner[w] == tid){
-	local_size++;
-	owner[w] = -tid-2;
+	local_size++; // If owned count it
+	owner[w] = -tid-2; // Change the mark to a distinct negative value to not count it twice
       }
     
     }
@@ -541,9 +543,27 @@ __global__ void GPSL_Main_Kernel(int d, int n, LabelSet* device_labels, int* dev
 
  for(int u=wid; u<n; u+=nw){
    if(d == 2 || should_run_prev[u]){
-    if constexpr(KERNEL_MODE == 0){
+    if constexpr(KERNEL_MODE == 0){ // w-32
       GPSL_Pull(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next);
-    } else { 
+    } else if constexpr(KERNEL_MODE == 4){ // hybrid w-32 and v-32
+      int degree = device_csr_row_ptr[u+1] - device_csr_row_ptr[u];
+
+      if(degree >= 128){
+	GPSL_Pull_v2(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next, 32);
+      } else {
+	GPSL_Pull(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next);
+      }
+
+    } else if constexpr(KERNEL_MODE == 5){
+      int degree = device_csr_row_ptr[u+1] - device_csr_row_ptr[u];
+
+      if(degree >= 64){
+	GPSL_Pull_v2(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next, 8);
+      } else {
+	GPSL_Pull_v2(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next, 4);
+      }
+
+    } else { // v-32 or v-8-w-4 or v-4-w-8
       GPSL_Pull_v2(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next, v_size);
     }
    }
