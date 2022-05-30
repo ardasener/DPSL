@@ -109,7 +109,7 @@ inline void DPSL::Query(int u, string filename) {
 
   char *cache = caches[0];
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+// #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for (int d = 0; d < dist_ptrs_u_size - 1; d++) {
     int start = dist_ptrs_u[d];
     int end = dist_ptrs_u[d + 1];
@@ -122,7 +122,7 @@ inline void DPSL::Query(int u, string filename) {
 
   Log("Querying locally");
   vector<int> local_dist(part_csr->n);
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+// #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for (int v = 0; v < part_csr->n; v++) {
 
     int min = MAX_DIST;
@@ -147,7 +147,7 @@ inline void DPSL::Query(int u, string filename) {
       for (int i = start; i < end; i++) {
         int w = vertices_v[i];
 
-        int dist = d + (int)cache[w];
+        int dist = d + (int) cache[w];
         if (dist < min) {
           min = dist;
         }
@@ -166,7 +166,7 @@ inline void DPSL::Query(int u, string filename) {
     fill(all_dists, all_dists + whole_csr->n, -1);
     fill(source, source + whole_csr->n, -1);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+// #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
     for (int i = 0; i < local_dist.size(); i++) {
       all_dists[i] = local_dist[i];
       source[i] = 0;
@@ -176,7 +176,7 @@ inline void DPSL::Query(int u, string filename) {
       int *dists;
       int size = RecvData(dists, 0, p);
       for (int i = 0; i < size; i++) {
-        if (all_dists[i] == -1 || all_dists[i] > dists[i]) {
+        if (all_dists[i] < 0 || all_dists[i] > dists[i]) {
           all_dists[i] = dists[i];
           source[i] = p;
         }
@@ -186,6 +186,7 @@ inline void DPSL::Query(int u, string filename) {
 
     vector<int> *bfs_results = BFSQuery(*whole_csr, u);
 
+    bool all_correct = true;
     ofstream ofs(filename);
     ofs << "Vertex\tDPSL(source)\tBFS\tCorrectness" << endl;
     for (int i = 0; i < whole_csr->n; i++) {
@@ -195,13 +196,21 @@ inline void DPSL::Query(int u, string filename) {
       }
       int bfs_res = (*bfs_results)[i];
       string correctness = (bfs_res == psl_res) ? "correct" : "wrong";
+      
+      if (bfs_res != psl_res){
+        all_correct = false;
+      }
+      
       ofs << i << "\t" << psl_res << "(" << source[i] << ")"
           << "\t" << bfs_res << "\t" << correctness << endl;
     }
+
     delete bfs_results;
-    delete all_dists;
-    delete source;
+    delete[] all_dists;
+    delete[] source;
     ofs.close();
+
+    cout << "Correctness of Query: " << all_correct << endl;
 
   } else {
     SendData(local_dist.data(), local_dist.size(), 0, 0);
