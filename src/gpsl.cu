@@ -24,7 +24,7 @@
   5 -> hybrid of 2 and 3
   6 -> hybrid of 0,1,2 and 3
 */
-#define KERNEL_MODE 5
+#define KERNEL_MODE 0
 
 __device__ void lock(int* mutex){
   while(atomicCAS_block(mutex, 0, 1) != 0);
@@ -533,31 +533,31 @@ __global__ void GPSL_Main_Kernel(int d, int n, LabelSet* device_labels, int* dev
 
  int v_size;
 
- if constexpr(KERNEL_MODE == 1){
+ if (KERNEL_MODE == 1){
    v_size = 32;
- } else if constexpr(KERNEL_MODE == 2){
+ } else if (KERNEL_MODE == 2){
    v_size = 8;
- } else if constexpr(KERNEL_MODE == 3){
+ } else if (KERNEL_MODE == 3){
    v_size = 4;
  }
 
  for(int u=wid; u<n; u+=nw){
    if(d == 2 || should_run_prev[u]){
-    if constexpr(KERNEL_MODE == 0){ // w-32
+    if (KERNEL_MODE == 0){ // w-32
       GPSL_Pull(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next);
-    } else if constexpr(KERNEL_MODE == 4){ // hybrid w-32 and v-32
+    } else if (KERNEL_MODE == 4){ // hybrid w-32 and v-32
       int degree = device_csr_row_ptr[u+1] - device_csr_row_ptr[u];
 
-      if(degree >= 128){
+      if(degree >= 256){
 	GPSL_Pull_v2(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next, 32);
       } else {
 	GPSL_Pull(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next);
       }
 
-    } else if constexpr(KERNEL_MODE == 5){
+    } else if (KERNEL_MODE == 5){ // hybrid v-8-w-4 and v-4-w-8
       int degree = device_csr_row_ptr[u+1] - device_csr_row_ptr[u];
 
-      if(degree >= 64){
+      if(degree >= 16){
 	GPSL_Pull_v2(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next, 8);
       } else {
 	GPSL_Pull_v2(u, d, device_labels, n, device_csr_row_ptr, device_csr_col, device_caches + cache_offset, device_owners + cache_offset, all_new_labels[u], &(all_new_labels_size[u]), tid, device_bp, device_ranks, array_manager, array_sizes + array_sizes_offset, should_run_prev, should_run_next, 4);
@@ -988,7 +988,7 @@ __host__ void GPSL_Index(CSR& csr, int number_of_warps){
 
 __host__ int main(int argc, char* argv[]){
   CSR csr(argv[1]);
-  cudaSetDevice(1);
+  cudaSetDevice(0);
   GPSL_Index(csr, 500);
 }
 

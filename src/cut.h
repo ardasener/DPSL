@@ -4,7 +4,7 @@
 #include "common.h"
 #include "external/order/order.hpp"
 #include "external/metis/metis.h"
-#include "external/kahypar/libkahypar.h"
+// #include "external/kahypar/libkahypar.h"
 #include "external/toml/toml.h"
 /* #include "patoh_wrap.h" */
 #include <vector>
@@ -13,47 +13,6 @@
 
 using namespace std;
 
-void KahyparPart(CSR& csr, int*& partition, int np, string config_file, double imbalance, int* vertex_weights){
-
-  kahypar_context_t* context = kahypar_context_new();
-  kahypar_configure_context_from_file(context, config_file.c_str());
-
-  const kahypar_hypernode_id_t num_vertices = csr.n;
-  const kahypar_hyperedge_id_t num_hyperedges = csr.m;
-
-  std::unique_ptr<size_t[]> hyperedge_indices = std::make_unique<size_t[]>(csr.m+1);
-  std::unique_ptr<kahypar_hyperedge_id_t[]> hyperedges = std::make_unique<kahypar_hyperedge_id_t[]>(csr.m*2);
-
-  int index=0;
-  for(int u=0; u<csr.n; u++){
-    int start = csr.row_ptr[u];
-    int end = csr.row_ptr[u+1];
-
-    for(int j=start; j<end; j++){
-      int v = csr.col[j];
-      hyperedges[index++] = u; 
-      hyperedges[index++] = v; 
-    }
-  }
-
-  for(int i=0; i<csr.m+1; i++){
-    hyperedge_indices[i] = 2*i;
-  }
-
-  const kahypar_partition_id_t k = np;
-  kahypar_hyperedge_weight_t objective = 0;
-
-  partition = new int[csr.n];
-
-  kahypar_partition(num_vertices, num_hyperedges,
-                  imbalance, k,
-                  vertex_weights, /*edge_weights*/ nullptr,
-                  hyperedge_indices.get(), hyperedges.get(),
-                  &objective, context, partition);
-
-  kahypar_context_free(context);
-
-}
 
 /*
 void PatohPart(CSR& csr, int*& partition, int np, string mode, string minimize, double imbalance){
@@ -267,10 +226,12 @@ inline VertexCut::VertexCut(CSR& csr, string order_method, int np, const toml::V
         */
     throw "Patoh is not supported at the moment";
   else if (partition_engine == "kahypar")
-    KahyparPart(csr, partition, np, 
+    /*KahyparPart(csr, partition, np, 
         config.find("kahypar.config_file")->as<string>(),
         config.find("kahypar.imbalance")->as<double>(),
-        vertex_weights);
+        vertex_weights); */
+
+    throw "Kahypar is not supported at the moment";
   else
    throw "Unsupported partition engine";
 

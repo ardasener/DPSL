@@ -13,7 +13,7 @@ partition_weight = "degree_log"
 
 [metis]
 # Determines the imbalance (30 -> 1.03)
-ufactor = 200
+ufactor = 30
 
 # Settings for patoh partitioner (ignored if partition_engine != patoh)
 [patoh]

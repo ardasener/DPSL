@@ -11,7 +11,6 @@
 #include <ostream>
 #include <string>
 #include <unordered_set>
-#include <set>
 
 using namespace std;
 
@@ -53,7 +52,7 @@ public:
   int *partition;
   vector<int> cut;
   vector<int> names;
-  VertexCut *vc_ptr = nullptr;
+  VertexCut *vc_ptr;
   int last_dist;
   const toml::Value &config;
   char **caches;
@@ -104,8 +103,6 @@ inline void DPSL::Query(int u, string filename) {
     vertices_u_size = RecvData(vertices_u, 0, MPI_ANY_SOURCE);
     dist_ptrs_u_size = RecvData(dist_ptrs_u, 1, MPI_ANY_SOURCE);
   }
-
-  Barrier();
 
   char *cache = caches[0];
 
@@ -277,9 +274,7 @@ inline void DPSL::WriteLabelCounts(string filename) {
     ofs << endl;
 
     ofs << "Total Label Count: " << total << endl;
-    cout << "Total Label Count: " << total << endl;
     ofs << "Avg. Label Count: " << total / (double)whole_csr->n << endl;
-    cout << "Avg. Label Count: " << total / (double)whole_csr->n << endl;
 
     for (int p = 0; p < np; p++) {
       ofs << "Total for P" << p << ": " << total_per_source[p] << endl;
@@ -297,134 +292,163 @@ inline void DPSL::WriteLabelCounts(string filename) {
   }
 }
 
-
 inline bool DPSL::MergeCut(vector<vector<int> *> new_labels, PSL &psl) {
 
   bool updated = false;
-  
-  vector<int> compressed_labels;
-  vector<int> compressed_label_indices;
-  compressed_label_indices.reserve(cut.size()+1);
-  compressed_label_indices.push_back(0);
-  int last_index = 0;
-  for(int i=0; i<cut.size(); i++){
-    int u = cut[i];
-    auto* new_labels_u = new_labels[u];
 
-    if(new_labels_u != nullptr){
-      sort(new_labels_u->begin(), new_labels_u->end());
-      compressed_labels.insert(compressed_labels.end(), new_labels_u->begin(), new_labels_u->end());
-      last_index += new_labels_u->size();
-      compressed_label_indices.push_back(last_index);
-    } else {
-      compressed_label_indices.push_back(last_index);
-    }
-  }
+  if(pid != 0){
+    Log("Compressing labels for merge");
+    // First compress the labels into a CSR like format
+    vector<int> new_label_indices(cut.size()+1);
+    new_label_indices[0] = 0;
+    vector<int> new_labels_compressed;
 
-  int * compressed_merged;
-  int * compressed_merged_indices;
-  int compressed_size = 0;
+    for(int i=0; i < cut.size(); i++){
+      int u = cut[i];
+      auto* labels_u = new_labels[u];
 
-  if(pid == 0){ // ONLY P0
-    vector<int*> all_compressed_labels(np);
-    vector<int*> all_compressed_label_indices(np);
-
-    all_compressed_labels[0] = compressed_labels.data();
-    all_compressed_label_indices[0] = compressed_label_indices.data();
-
-    for(int p=1; p<np; p++){
-      RecvData(all_compressed_label_indices[p], MPI_LABEL_INDICES, p);
-      RecvData(all_compressed_labels[p], MPI_LABELS, p);
-    }
-
-    vector<vector<int>*> sorted_vecs(cut.size());
-#pragma omp parallel default(shared) num_threads(NUM_THREADS) reduction(+ : compressed_size)
-    for(int i=0; i<cut.size(); i++){
-
-      vector<int>* sorted_vec = new vector<int>;
+      if(labels_u != nullptr){
+        new_labels_compressed.insert(new_labels_compressed.end(), labels_u->begin(), labels_u->end());
+        new_label_indices[i+1] = labels_u->size();
+      } else {
+        new_label_indices[i+1] = 0;
+      }
       
-      for(int p=0; p<np; p++){
-        
+    }
 
-        int start = all_compressed_label_indices[p][i];
-        int end = all_compressed_label_indices[p][i+1];
+    // Make the indices cumilative (like a CSR row_ptr array)
+    for(int i=1; i<cut.size()+1; i++){
+      new_label_indices[i] += new_label_indices[i-1];
+    }
 
-        if(start == end){
+    Log("Sending labels for merge");
+    SendData(new_label_indices.data(), new_label_indices.size(), MPI_LABEL_INDICES, 0);
+    SendData(new_labels_compressed.data(), new_labels_compressed.size(), MPI_LABELS, 0);
+
+    int* merged_labels;
+    int* merged_label_indices;
+    RecvData(merged_label_indices, MPI_LABEL_INDICES, 0);
+    int merged_size = RecvData(merged_labels, MPI_LABELS, 0);
+
+    if(merged_size > 0){
+      updated = true;
+     
+      Log("Inserting merged labels");
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
+      for(int i=0; i<cut.size(); i++){
+        int u = cut[i];
+        auto &labels_u = psl.labels[u].vertices;
+
+        int start = merged_label_indices[i];
+        int end = merged_label_indices[i+1];
+
+
+        if(start == end) {
           continue;
         }
 
-        int prev_size = sorted_vec->size();
-        sorted_vec->insert(sorted_vec->end(), all_compressed_labels[p] + start, all_compressed_labels[p] + end);
-
-        if(sorted_vec->size() > prev_size){
-          inplace_merge(sorted_vec->begin(), sorted_vec->begin() + prev_size, sorted_vec->end());
-        }
-      }
-
-      auto unique_it = unique(sorted_vec->begin(), sorted_vec->end());
-      sorted_vec->erase(unique_it, sorted_vec->end());
-      compressed_size += sorted_vec->size(); 
-      sorted_vecs[i] = sorted_vec;
-    }
-
-    for(int p=1; p<np; p++){
-      delete[] all_compressed_labels[p];
-      delete[] all_compressed_label_indices[p];
-    }
-
-    compressed_merged = new int[compressed_size];
-    compressed_merged_indices = new int[cut.size()+1];
-    compressed_merged_indices[0] = 0;
-    int index = 0;
-
-    for(int i=0; i<cut.size(); i++){
-      if(sorted_vecs[i]->size() > 0)
-        copy(sorted_vecs[i]->begin(), sorted_vecs[i]->end(), compressed_merged + index);
+        labels_u.insert(labels_u.end(), merged_labels + start, merged_labels + end);
       
-      index += sorted_vecs[i]->size();
-      compressed_merged_indices[i+1] = index;
-      delete sorted_vecs[i];
+      }   
+
+      delete[] merged_labels;
+      delete[] merged_label_indices;
     }
-
-
-    BroadcastData(compressed_merged_indices, cut.size()+1, MPI_LABEL_INDICES);
-    BroadcastData(compressed_merged, compressed_size, MPI_LABELS);
-    
-  } else { // ALL EXCEPT P0
-    SendData(compressed_label_indices.data(), compressed_label_indices.size(), MPI_LABEL_INDICES, 0);
-    SendData(compressed_labels.data(), compressed_labels.size(), MPI_LABELS, 0);
-    RecvData(compressed_merged_indices, MPI_LABEL_INDICES, 0);
-    compressed_size = RecvData(compressed_merged, MPI_LABELS, 0);
   }
 
-  if(compressed_size > 0){
-    updated = true;
+  else{
+    vector<int*> other_new_labels(np-1);
+    vector<int*> other_new_label_indices(np-1);
+    
+    Log("Recv labels for merge");
+    for(int p=1; p<np; p++){
+      RecvData(other_new_label_indices[p-1], MPI_LABEL_INDICES, p);
+      RecvData(other_new_labels[p-1], MPI_LABELS, p);
+    }
 
-// #pragma omp parallel default(shared) num_threads(NUM_THREADS)
+    Log("Performing the merge");
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
     for(int i=0; i<cut.size(); i++){
       int u = cut[i];
-      auto& labels_u = psl.labels[u].vertices;
-      
-      int start = compressed_merged_indices[i];
-      int end = compressed_merged_indices[i+1];
+      for(int p=1; p<np; p++){
+        int start = other_new_label_indices[p-1][i];
+        int end = other_new_label_indices[p-1][i+1];
 
-      if(start != end){
-        labels_u.insert(labels_u.end(), compressed_merged + start, compressed_merged + end);
+        if(start == end){
+          continue;
+        } 
+
+        if(new_labels[u] == nullptr){
+          new_labels[u] = new vector<int>();
+        }
+
+        new_labels[u]->insert(new_labels[u]->end(), other_new_labels[p-1] + start, other_new_labels[p-1] + end);
+        /* delete[] other_new_labels[p-1]; */
+        /* delete[] other_new_label_indices[p-1]; */
+      }
+
+      if(new_labels[u] != nullptr && new_labels[u]->size() > 0){
+        sort(new_labels[u]->begin(), new_labels[u]->end());
+
+        auto unique_it = unique(new_labels[u]->begin(), new_labels[u]->end());
+        new_labels[u]->erase(unique_it, new_labels[u]->end());     
       }
 
     }
 
-  }
+    vector<int> merged_label_indices(cut.size()+1);
+    merged_label_indices[0] = 0;
+    vector<int> merged_labels_compressed;
+    
+    Log("Compressing the merged labels");
+    for(int i=0; i<cut.size(); i++){
+      int u = cut[i];
+      auto* new_labels_u = new_labels[u];
+      
+      if(new_labels_u != nullptr){
+        merged_labels_compressed.insert(merged_labels_compressed.end(), new_labels_u->begin(), new_labels_u->end());
+        merged_label_indices[i+1] = new_labels_u->size();
+      } else {
+        merged_label_indices[i+1] = 0;
+      }
+      
+    }
 
-  if(pid == 0){
-    delete[] compressed_merged;
-    delete[] compressed_merged_indices;
-  }
 
+    // Make the indices cumilative (like a CSR row_ptr array)
+    for(int i=1; i<cut.size()+1; i++){
+      merged_label_indices[i] += merged_label_indices[i-1];
+    }
+
+    Log("Broadcasting the merged labels");
+    BroadcastData(merged_label_indices.data(), merged_label_indices.size(), MPI_LABEL_INDICES);
+    BroadcastData(merged_labels_compressed.data(), merged_labels_compressed.size(), MPI_LABELS);
+
+    Log("Inserting the merged labels");
+
+    if(merged_labels_compressed.size() > 0){
+      updated = true;
+
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
+      for(int i=0; i<cut.size(); i++){
+        int u = cut[i];
+        auto &labels_u = psl.labels[u].vertices;
+
+        int start = merged_label_indices[i];
+        int end = merged_label_indices[i+1];
+
+        if(start == end){
+          continue;
+        } 
+
+        labels_u.insert(labels_u.end(), merged_labels_compressed.data() + start, merged_labels_compressed.data() + end);
+    
+      }   
+    }
+  } 
 
   return updated;
 }
-
 
 inline void DPSL::Barrier() { MPI_Barrier(MPI_COMM_WORLD); }
 
@@ -440,6 +464,7 @@ inline void DPSL::SendData(T *data, int size, int vertex, int to,
     MPI_Send(data, size, type, to, tag, MPI_COMM_WORLD);
 }
 
+// TODO: Replace this with MPI_Bcast
 template <typename T>
 inline void DPSL::BroadcastData(T *data, int size, int vertex,
                                 MPI_Datatype type) {
