@@ -4,6 +4,9 @@
 #include <iostream>
 #include <string>
 #include <assert.h>
+#include <omp.h>
+
+#define NUM_THREADS 16
 
 enum MPI_CONSTS {
   MPI_GLOBAL_N,
@@ -86,26 +89,59 @@ bool MergeCut(vector<vector<int> *> new_labels, PSL &psl, int pid, int np) {
   bool updated = false;
   
   vector<int> compressed_labels;
-  vector<int> compressed_label_indices;
+  vector<int> compressed_label_indices(cut.size()+1, 0);
   compressed_label_indices.reserve(cut.size()+1);
   compressed_label_indices.push_back(0);
   int last_index = 0;
-  for(int i=0; i<cut.size(); i++){
-    int u = cut[i];
-    auto* new_labels_u = new_labels[u];
+  
+  vector<int> sizes(NUM_THREADS, 0);
 
-    if(new_labels_u != nullptr){
-      sort(new_labels_u->begin(), new_labels_u->end());
-      compressed_labels.insert(compressed_labels.end(), new_labels_u->begin(), new_labels_u->end());
-      last_index += new_labels_u->size();
-      compressed_label_indices.push_back(last_index);
-    } else {
-      compressed_label_indices.push_back(last_index);
+#pragma omp parallel default(shared) num_threads(NUM_THREADS)
+{
+  int tid = omp_get_thread_num();
+  for(int i=tid; i<cut.size(); i+=NUM_THREADS){
+    int u = cut[i];
+
+    if(new_labels[u] != nullptr){
+      int size = new_labels[u]->size();
+      sizes[tid] += size;
+      compressed_label_indices[i+1] = size;
+      sort(new_labels[u]->begin(), new_labels[u]->end());
     }
   }
+}
 
-  assert(compressed_labels.size() == compressed_label_indices[cut.size()]);
-  Log("Compressed labels to size=" + to_string(compressed_labels.size()), pid);
+  for(int i=1; i<NUM_THREADS; i++){
+    sizes[i] += sizes[i-1];
+  }
+  
+  for(int i=1; i<cut.size()+1; i++){
+    compressed_label_indices[i] += compressed_label_indices[i-1];
+  }
+
+
+  int total_size = sizes[NUM_THREADS-1];
+  cout << "P" << pid << " Total Size=" << total_size << endl;
+
+  if(total_size > 0){
+    compressed_labels.resize(total_size, -1);
+   
+#pragma omp parallel default(shared) num_threads(NUM_THREADS)
+    {
+      int tid = omp_get_thread_num();
+      int offset = (tid > 0) ? sizes[tid-1] : 0; 
+
+      for(int i=tid; i<cut.size() && offset < sizes[tid]; i+=NUM_THREADS){
+        int u = cut[i];
+
+        if(new_labels[u] != nullptr)
+          for(int v : *new_labels[u]){
+            compressed_labels[offset++] = v;
+          }
+      }
+
+    }
+  } 
 
   int * compressed_merged;
   int * compressed_merged_indices;
@@ -124,7 +160,7 @@ bool MergeCut(vector<vector<int> *> new_labels, PSL &psl, int pid, int np) {
     }
 
     vector<vector<int>*> sorted_vecs(cut.size());
-#pragma omp parallel default(shared) num_threads(NUM_THREADS) reduction(+ : compressed_size)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(+ : compressed_size)
     for(int i=0; i<cut.size(); i++){
 
       vector<int>* sorted_vec = new vector<int>;
@@ -172,24 +208,21 @@ bool MergeCut(vector<vector<int> *> new_labels, PSL &psl, int pid, int np) {
       delete sorted_vecs[i];
     }
 
-    assert(compressed_merged_indices[cut.size()] == compressed_size);
 
     BroadcastData(compressed_merged_indices, cut.size()+1, MPI_LABEL_INDICES, pid, np);
     BroadcastData(compressed_merged, compressed_size, MPI_LABELS, pid, np);
-    Log("Sent merged labels with size=" + to_string(compressed_size), pid);
     
   } else { // ALL EXCEPT P0
     SendData(compressed_label_indices.data(), compressed_label_indices.size(), MPI_LABEL_INDICES, 0);
     SendData(compressed_labels.data(), compressed_labels.size(), MPI_LABELS, 0);
     RecvData(compressed_merged_indices, MPI_LABEL_INDICES, 0);
     compressed_size = RecvData(compressed_merged, MPI_LABELS, 0);
-    Log("Recieved merged labels with size=" + to_string(compressed_size), pid);
   }
 
   if(compressed_size > 0){
     updated = true;
 
-#pragma omp parallel default(shared) num_threads(NUM_THREADS)
+// #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
     for(int i=0; i<cut.size(); i++){
       int u = cut[i];
       auto& labels_u = psl.labels[u].vertices;
@@ -198,7 +231,6 @@ bool MergeCut(vector<vector<int> *> new_labels, PSL &psl, int pid, int np) {
       int end = compressed_merged_indices[i+1];
 
       if(start != end){
-	Log("Inserting to=" + to_string(u), pid);
         labels_u.insert(labels_u.end(), compressed_merged + start, compressed_merged + end);
       }
 
@@ -207,6 +239,7 @@ bool MergeCut(vector<vector<int> *> new_labels, PSL &psl, int pid, int np) {
   }
 
   if(pid == 0){
+    cout << "Compressed Size=" << compressed_size << endl;
     delete[] compressed_merged;
     delete[] compressed_merged_indices;
   }
@@ -246,15 +279,22 @@ int main(int argc, char** argv){
 	vector<vector<int>*> new_labels(n, nullptr);
 
 	new_labels[0] = new vector<int>;
-	if(pid == 0)
-		new_labels[0]->push_back(3);
-	else
+	if(pid == 0){
+		new_labels[0]->push_back(5);
+                new_labels[0]->push_back(3);
+                new_labels[0]->push_back(4);
+        } else {
+		new_labels[0]->push_back(7);
 		new_labels[0]->push_back(6);
+                new_labels[0]->push_back(5);
+        }
 
 
-	new_labels[6] = new vector<int>;
-	if(pid == 0)
-		new_labels[6]->push_back(8);
+	new_labels[9] = new vector<int>;
+	if(pid == 0){
+		new_labels[9]->push_back(8);
+		new_labels[9]->push_back(7);
+        }
 
 
 

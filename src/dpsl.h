@@ -79,6 +79,7 @@ inline void DPSL::PrintTime(string tag, double time) {
   cout << "P" << pid << ": " << tag << ", " << time << " seconds" << endl;
 }
 
+
 inline void DPSL::Query(int u, string filename) {
 
   Log("Starting Query");
@@ -107,7 +108,8 @@ inline void DPSL::Query(int u, string filename) {
 
   Barrier();
 
-  char *cache = caches[0];
+  char *cache = new char[part_csr->n];
+  fill(cache, cache + part_csr->n, MAX_DIST);
 
 // #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for (int d = 0; d < dist_ptrs_u_size - 1; d++) {
@@ -121,11 +123,12 @@ inline void DPSL::Query(int u, string filename) {
   }
 
   Log("Querying locally");
-  vector<int> local_dist(part_csr->n);
+  vector<int> local_dist(part_csr->n, MAX_DIST);
 // #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for (int v = 0; v < part_csr->n; v++) {
 
     int min = MAX_DIST;
+
     if constexpr (USE_GLOBAL_BP) {
       min = global_bp->QueryByBp(u, v);
     }
@@ -312,23 +315,51 @@ inline bool DPSL::MergeCut(vector<vector<int> *> new_labels, PSL &psl) {
   bool updated = false;
   
   vector<int> compressed_labels;
-  vector<int> compressed_label_indices;
-  compressed_label_indices.reserve(cut.size()+1);
-  compressed_label_indices.push_back(0);
-  int last_index = 0;
-  for(int i=0; i<cut.size(); i++){
+  vector<int> compressed_label_indices(cut.size()+1, 0);
+  // compressed_label_indices[0] = 0;
+  
+#pragma omp parallel default(shared) num_threads(NUM_THREADS)
+{
+  int tid = omp_get_thread_num();
+  for(int i=tid; i<cut.size(); i+=NUM_THREADS){
     int u = cut[i];
-    auto* new_labels_u = new_labels[u];
 
-    if(new_labels_u != nullptr){
-      sort(new_labels_u->begin(), new_labels_u->end());
-      compressed_labels.insert(compressed_labels.end(), new_labels_u->begin(), new_labels_u->end());
-      last_index += new_labels_u->size();
-      compressed_label_indices.push_back(last_index);
+    if(new_labels[u] != nullptr){
+      int size = new_labels[u]->size();
+      compressed_label_indices[i+1] = size;
+      sort(new_labels[u]->begin(), new_labels[u]->end());
     } else {
-      compressed_label_indices.push_back(last_index);
+      compressed_label_indices[i+1] = 0;
     }
   }
+}
+
+  
+  for(int i=1; i<cut.size()+1; i++){
+    compressed_label_indices[i] += compressed_label_indices[i-1];
+  }
+
+  int total_size = compressed_label_indices[cut.size()];
+
+  if(total_size > 0){
+    compressed_labels.resize(total_size, -1);
+   
+#pragma omp parallel default(shared) num_threads(NUM_THREADS)
+    {
+      int tid = omp_get_thread_num();
+
+      for(int i=tid; i<cut.size(); i+=NUM_THREADS){
+        int u = cut[i];
+
+        int index = compressed_label_indices[i];
+        
+        if(new_labels[u] != nullptr)
+          for(int j=0; j < new_labels[u]->size(); j++){
+            compressed_labels[index++] = (*new_labels[u])[j];
+          }
+      }
+    }
+  } 
 
   int * compressed_merged;
   int * compressed_merged_indices;
@@ -347,7 +378,7 @@ inline bool DPSL::MergeCut(vector<vector<int> *> new_labels, PSL &psl) {
     }
 
     vector<vector<int>*> sorted_vecs(cut.size());
-#pragma omp parallel default(shared) num_threads(NUM_THREADS) reduction(+ : compressed_size)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(+ : compressed_size)
     for(int i=0; i<cut.size(); i++){
 
       vector<int>* sorted_vec = new vector<int>;
@@ -409,7 +440,7 @@ inline bool DPSL::MergeCut(vector<vector<int> *> new_labels, PSL &psl) {
   if(compressed_size > 0){
     updated = true;
 
-// #pragma omp parallel default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
     for(int i=0; i<cut.size(); i++){
       int u = cut[i];
       auto& labels_u = psl.labels[u].vertices;
@@ -679,8 +710,7 @@ inline void DPSL::Index() {
     updated = false;
     Log("Pulling...");
 #pragma omp parallel default(shared) num_threads(NUM_THREADS)                  \
-    reduction(||                                                               \
-              : updated)
+    reduction(|| : updated)
     {
       int tid = omp_get_thread_num();
       int nt = NUM_THREADS;
@@ -726,12 +756,15 @@ inline void DPSL::Index() {
 
       if (new_labels[u] != nullptr) {
         delete new_labels[u];
-
+      }
+     
+      int labels_u_dist_size = labels_u.dist_ptrs.size(); 
+      if(labels_u.dist_ptrs[labels_u_dist_size-2] != labels_u.dist_ptrs[labels_u_dist_size-1]){
         int start_neighbors = csr.row_ptr[u];
         int end_neighbors = csr.row_ptr[u + 1];
         for (int i = start_neighbors; i < end_neighbors; i++) {
           int v = csr.col[i];
-          if (psl.ranks[v] < psl.max_ranks[u]) {
+          if (psl.ranks[v] < psl.max_ranks[u] || psl.ranks[u] >= psl.min_cut_rank) {
             should_run[v] = true;
           }
         }

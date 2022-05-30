@@ -1,0 +1,91 @@
+{
+    "extension": "ncu-proj",
+    "files": [
+        {
+            "is_open": true,
+            "path": "../../../../../root/Documents/NVIDIA Nsight Compute/gpsl_academia_prof.ncu-rep"
+        },
+        {
+            "is_open": true,
+            "path": "../../../../../root/Documents/NVIDIA Nsight Compute/gpsl_academia_prof2.ncu-rep"
+        },
+        {
+            "is_open": true,
+            "path": "../../../../../root/Documents/NVIDIA Nsight Compute/gpsl_academia_prof3.ncu-rep"
+        }
+    ],
+    "launcher": {
+        "activity/interactiveprofile/cachecontrol": "Flush All",
+        "activity/interactiveprofile/clockcontrol": "Base",
+        "activity/interactiveprofile/disableprofilingstartstop": false,
+        "activity/interactiveprofile/enablecpustacksupport": true,
+        "activity/interactiveprofile/enablenvtxsupport": true,
+        "activity/interactiveprofile/enableprofilingfromstart": true,
+        "activity/interactiveprofile/importsource": false,
+        "activity/occupancycalculator/file": "",
+        "activity/profile/applyrules": true,
+        "activity/profile/appreplaybuffer": "File",
+        "activity/profile/appreplaymatch": "Grid",
+        "activity/profile/cachecontrol": "Flush All",
+        "activity/profile/checkexitcode": true,
+        "activity/profile/clockcontrol": "Base",
+        "activity/profile/devices": "",
+        "activity/profile/disableprofilingstartstop": false,
+        "activity/profile/enablecpustacksupport": true,
+        "activity/profile/enablenvtxsupport": true,
+        "activity/profile/enableprofilingfromstart": true,
+        "activity/profile/forceoverwrite": true,
+        "activity/profile/importsource": false,
+        "activity/profile/kernelid": "",
+        "activity/profile/kernelname": "",
+        "activity/profile/kernelnamebase": "Function",
+        "activity/profile/kill": false,
+        "activity/profile/launchcapturecount": "0",
+        "activity/profile/launchskipbeforematchcount": "0",
+        "activity/profile/launchskipcount": "0",
+        "activity/profile/metrics": "",
+        "activity/profile/nvtxincludeexcludeoptions": "",
+        "activity/profile/outputfile": "gpsl_academia_prof3",
+        "activity/profile/replaymode": "Kernel",
+        "activity/profile/samplingBufferSize": "33554432",
+        "activity/profile/samplingInterval": "5",
+        "activity/profile/samplingIntervalAuto": true,
+        "activity/profile/samplingMaxPasses": "5",
+        "activity/profile/targetprocesses": "Application Only",
+        "platform/armserver/arguments": "",
+        "platform/armserver/autoconnect": true,
+        "platform/armserver/environment": "",
+        "platform/armserver/executable": "",
+        "platform/armserver/workingdir": "",
+        "platform/linux (aarch64 sbsa)/device": "",
+        "platform/linux (ppc64le)/device": "",
+        "platform/linux (x86_64)/device": "localhost",
+        "platform/linux/arguments": "large_graphs/soc-academia.edges",
+        "platform/linux/arguments/history": [
+            "large_graphs/soc-academia.edges"
+        ],
+        "platform/linux/autoconnect": true,
+        "platform/linux/environment": "",
+        "platform/linux/executable": "gpsl",
+        "platform/linux/executable/history": [
+            "gpsl"
+        ],
+        "platform/linux/workingdir": "/home/asener/Projects/DPSL",
+        "platform/linux/workingdir/history": [
+            "/home/asener/Projects/DPSL"
+        ],
+        "platform/ppc/arguments": "",
+        "platform/ppc/autoconnect": true,
+        "platform/ppc/environment": "",
+        "platform/ppc/executable": "",
+        "platform/ppc/workingdir": "",
+        "platform/win32/arguments": "",
+        "platform/win32/autoconnect": true,
+        "platform/win32/environment": "",
+        "platform/win32/executable": "",
+        "platform/win32/workingdir": "",
+        "platform/windows/device": ""
+    },
+    "uuid": "{551c9fd4-113b-4581-baed-7f2117961285}",
+    "version": "1.0"
+}

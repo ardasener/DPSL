@@ -25,7 +25,7 @@
   6 -> hybrid of 0,1,2 and 3
   7 -> parallel prune (32 threads at x)
 */
-#define KERNEL_MODE 7
+#define KERNEL_MODE 3
 
 __device__ void lock(int* mutex){
   while(atomicCAS_block(mutex, 0, 1) != 0);
