@@ -28,6 +28,7 @@ enum MPI_CONSTS {
   MPI_BP_SET,
   MPI_LABEL_INDICES,
   MPI_LABELS,
+  MPI_VERTEX_RANKS,
 };
 
 class DPSL {
@@ -52,7 +53,9 @@ public:
   BP *global_bp = nullptr;
   int *partition;
   vector<int> cut;
+  vector<bool> in_cut;
   vector<int> names;
+  vector<int> ranks;
   VertexCut *vc_ptr = nullptr;
   int last_dist;
   const toml::Value &config;
@@ -269,7 +272,7 @@ inline void DPSL::WriteLabelCounts(string filename) {
     long long *total_per_source = new long long[np];
     fill(total_per_source, total_per_source + np, 0);
     for (int i = 0; i < part_csr->n; i++) {
-      if (psl_ptr->min_cut_rank > i) {
+      if (!in_cut[i]) {
         total_per_source[source[i]] += all_counts[i];
       } else {
         for (int j = 0; j < np; j++)
@@ -452,6 +455,16 @@ inline bool DPSL::MergeCut(vector<vector<int> *> new_labels, PSL &psl) {
         labels_u.insert(labels_u.end(), compressed_merged + start, compressed_merged + end);
       }
 
+      int max = -1;
+      for(int j=start; j<end; j++){
+        int v = compressed_merged[j];
+        if(psl.ranks[v] > max){
+          max = psl.ranks[v];
+        }
+      }
+
+      psl.max_ranks[u] = max;
+
     }
 
   }
@@ -528,11 +541,17 @@ inline void DPSL::InitP0() {
 
   Log("Creating All Cut");
   cut.insert(cut.end(), vc.cut.begin(), vc.cut.end());
-  auto &ranks = vc.ranks;
+
+  in_cut.resize(global_n, false);
+  for(int u : cut){
+    in_cut[u] = true;
+  }
+
+  ranks = vc.ranks;
 
   Log("Ordering Cut By Rank");
   sort(cut.begin(), cut.end(),
-       [ranks](int u, int v) { return ranks[u] > ranks[v]; });
+       [this](int u, int v) { return ranks[u] > ranks[v]; });
 
   auto &csrs = vc.csrs;
   part_csr = csrs[0];
@@ -545,6 +564,7 @@ inline void DPSL::InitP0() {
     SendData(csrs[i]->col, csrs[i]->m, MPI_CSR_COL, i);
     SendData(vc.partition, csr.n, MPI_PARTITION, i);
     SendData(cut.data(), cut.size(), MPI_CUT, i);
+    SendData(ranks.data(), ranks.size(), MPI_VERTEX_RANKS, i);
     delete csrs[i];
     csrs[i] = nullptr;
   }
@@ -586,6 +606,7 @@ inline void DPSL::Init() {
   int *row_ptr;
   int *col;
   int *cut_ptr;
+  int *ranks_ptr;
 
   Log("Initial Barrier Region");
   Barrier();
@@ -599,8 +620,11 @@ inline void DPSL::Init() {
   int size_col = RecvData(col, MPI_CSR_COL, 0);
   int size_partition = RecvData(partition, MPI_PARTITION, 0);
   int size_cut = RecvData(cut_ptr, MPI_CUT, 0);
+  int size_ranks = RecvData(ranks_ptr, MPI_VERTEX_RANKS, 0);
   Barrier();
   Log("Initial Barrier Region End");
+
+  ranks.insert(ranks.end(), ranks_ptr, ranks_ptr + size_ranks);
 
   if constexpr (USE_GLOBAL_BP) {
     Log("Global BP Barrier Region");
@@ -633,6 +657,11 @@ inline void DPSL::Init() {
 
   cut.insert(cut.end(), cut_ptr, cut_ptr + size_cut);
 
+  in_cut.resize(global_n, false);
+  for(int u : cut){
+    in_cut[u] = true;
+  }
+
   part_csr = new CSR(row_ptr, col, size_row_ptr - 1, size_col);
   Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
   delete[] cut_ptr;
@@ -652,7 +681,11 @@ inline void DPSL::Index() {
   }
 
   string order_method = config.find("order_method")->as<string>();
-  psl_ptr = new PSL(*part_csr, order_method, &cut, global_bp);
+
+  vector<int>* ranks_ptr = nullptr;
+  if(GLOBAL_RANKS)
+    ranks_ptr = &ranks;
+  psl_ptr = new PSL(*part_csr, order_method, &cut, global_bp, ranks_ptr);
   PSL &psl = *psl_ptr;
 
   start = omp_get_wtime();
@@ -666,7 +699,7 @@ inline void DPSL::Index() {
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for (int u = 0; u < csr.n; u++) {
-    if (psl.ranks[u] < psl.min_cut_rank && init_labels[u] != nullptr &&
+    if (!in_cut[u] && init_labels[u] != nullptr &&
         !init_labels[u]->empty()) {
       auto &labels = psl.labels[u].vertices;
       labels.insert(labels.end(), init_labels[u]->begin(),
@@ -718,8 +751,7 @@ inline void DPSL::Index() {
         /* cout << "Pulling for u=" << u << endl; */
         if (should_run[u]) {
           new_labels[u] = psl.Pull(u, d, caches[tid]);
-          if (psl.ranks[u] < psl.min_cut_rank && new_labels[u] != nullptr &&
-              !new_labels[u]->empty()) {
+          if (new_labels[u] != nullptr && !new_labels[u]->empty()) {
             updated = updated || true;
           }
         }
@@ -756,6 +788,7 @@ inline void DPSL::Index() {
 
       if (new_labels[u] != nullptr) {
         delete new_labels[u];
+        new_labels[u] = nullptr;
       }
      
       int labels_u_dist_size = labels_u.dist_ptrs.size(); 
@@ -764,11 +797,13 @@ inline void DPSL::Index() {
         int end_neighbors = csr.row_ptr[u + 1];
         for (int i = start_neighbors; i < end_neighbors; i++) {
           int v = csr.col[i];
-          if (psl.ranks[v] < psl.max_ranks[u] || psl.ranks[u] >= psl.min_cut_rank) {
+          if (psl.ranks[v] < psl.max_ranks[u]) {
             should_run[v] = true;
           }
         }
       }
+
+      psl.max_ranks[u] = -1;
     }
 
     // Stops the execution once all processes agree that they are done

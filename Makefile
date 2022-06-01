@@ -1,21 +1,37 @@
-release:
-	mpic++ src/main.cpp -o dpsl -O3 -fopenmp -std=c++17 -L./libs -l:libmetis.so   -Wl,-rpath ./libs -no-pie
-slow-release:
-	mpic++ src/main.cpp -o dpsl -O0 -g -fopenmp -std=c++17 -L./libs -l:libmetis.so   -Wl,-rpath ./libs -no-pie
-profile:
-	mpic++ src/main.cpp -o dpsl -O3 -pg -fopenmp -std=c++17 -L./libs -l:libmetis.so   -Wl,-rpath ./libs -no-pie -DDEBUG
-debug:
-	mpic++ src/main.cpp -o dpsl -O0 -g -fopenmp -std=c++17 -L./libs -l:libmetis.so   -Wl,-rpath ./libs -no-pie -DDEBUG
-fast-debug:
-	mpic++ src/main.cpp -o dpsl -O3 -g -fopenmp -std=c++17 -L./libs -l:libmetis.so   -Wl,-rpath ./libs -no-pie -DDEBUG
-fast-silent-debug:
-	mpic++ src/main.cpp -o dpsl -O3 -g -fopenmp -std=c++17 -L./libs -l:libmetis.so   -Wl,-rpath ./libs -no-pie
-cutter:
-	g++ src/cutter.cpp -o cutter -O3 -g -fopenmp -std=c++17 -L./libs -l:libmetis.so   -Wl,-rpath ./libs -no-pie
+MODE=Release
+NUM_THREADS=16
+USE_BP=true
 
-gpu:
-	nvcc src/gpsl.cu -o gpsl -O3 -std=c++14 -Xcompiler -fopenmp -Xcompiler -L./libs -Xcompiler -l:libmetis.so   -Xcompiler -no-pie -arch=sm_60
-gpu-debug:
-	nvcc src/gpsl.cu -o gpsl -O0 -g -G -std=c++14 -Xcompiler -fopenmp -Xcompiler -L./libs -Xcompiler -l:libmetis.so   -Xcompiler -no-pie -arch=sm_60
-gpu-profile:
-	nvcc src/gpsl.cu -o gpsl -O0 --generate-line-info -std=c++14 -Xcompiler -fopenmp -Xcompiler -L./libs -Xcompiler -l:libmetis.so   -Xcompiler -no-pie -arch=sm_60
+CXX_COMPILER=mpic++
+CXX_FLAGS= -fopenmp -std=c++17 -L./libs -l:libmetis.so -Wl,-rpath ./libs -no-pie -DNUM_THREADS=$(NUM_THREADS)
+CXX_RELEASE_FLAGS= -O3
+CXX_DEBUG_FLAGS= -O0 -g
+CXX_SOURCE_FILES=src/main.cpp
+
+DPSL_FLAGS= -DUSE_GLOBAL_BP=$(USE_BP) -DUSE_LOCAL_BP=false 
+PSL_FLAGS= -DUSE_GLOBAL_BP=false -DUSE_LOCAL_BP=$(USE_BP) 
+
+CUDA_COMPILER=nvcc
+CUDA_KERNEL_MODE=0
+CUDA_ARCH=sm_60
+CUDA_FLAGS= -DKERNEL_MODE=$(CUDA_KERNEL_MODE) -arch=$(CUDA_ARCH)
+CUDA_RELEASE_FLAGS= -O3 -std=c++14 -Xcompiler fopenmp
+CUDA_DEBUG_FLAGS= -O0 -g --generate-line-info
+CUDA_SOURCE_FILES=src/gpsl.cu
+
+ifeq ($(MODE) , Debug)
+$(info Building in Debug mode...)
+CXX_MODE_FLAGS = $(CXX_DEBUG_FLAGS)
+CUDA_MODE_FLAGS = $(CUDA_DEBUG_FLAGS)
+else
+$(info Building in Release mode...)
+CXX_MODE_FLAGS = $(CXX_RELEASE_FLAGS)
+CUDA_MODE_FLAGS = $(CUDA_RELEASE_FLAGS)
+endif
+
+dpsl:
+	$(CXX_COMPILER) $(CXX_SOURCE_FILES) $(CXX_FLAGS) $(CXX_MODE_FLAGS) $(DPSL_FLAGS) -o dpsl
+psl:
+	$(CXX_COMPILER) $(CXX_SOURCE_FILES) $(CXX_FLAGS) $(CXX_MODE_FLAGS) $(PSL_FLAGS) -o psl
+gpsl:
+	$(CUDA_COMPILER) $(CUDA_SOURCE_FILES) $(CUDA_FLAGS) $(CUDA_COND_FLAGS) -o gpsl

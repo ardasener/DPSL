@@ -4,6 +4,7 @@
 #include "common.h"
 #include "bp.h"
 #include "external/order/order.hpp"
+#include "external/cub/cub.cuh"
 
 
 // IN GBs
@@ -11,8 +12,6 @@
 #define GBS_TO_BYTES (1024ULL*1024ULL*1024ULL);
 
 
-#define HEAP_SIZE (1ULL << 32)
-#define REALLOCATE false
 /* #define DEBUG */
 
 /*
@@ -25,7 +24,11 @@
   6 -> hybrid of 0,1,2 and 3
   7 -> parallel prune (32 threads at x)
 */
-#define KERNEL_MODE 3
+#ifndef KERNEL_MODE
+#define KERNEL_MODE 0
+#endif
+
+#define SORT_CUT_OFF 32
 
 __device__ void lock(int* mutex){
   while(atomicCAS_block(mutex, 0, 1) != 0);

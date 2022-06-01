@@ -34,12 +34,14 @@ int main(int argc, char* argv[]){
 	VertexCut vc2(csr, "degree", 2, config);
 	end = omp_get_wtime();
 	cout << "DONE " << end-start << " seconds" << endl;
+	cout << "Cut Size=" << vc2.cut.size() << endl;
 
 	cout << "Cutting k=4 ..." << endl;
 	start = omp_get_wtime();
 	VertexCut vc4(csr, "degree", 4, config);
 	end = omp_get_wtime();
 	cout << "DONE " << end-start << " seconds" << endl;
+	cout << "Cut Size=" << vc4.cut.size() << endl;
 
 	cout << "Writing the cuts to file..." << endl;
 	start = omp_get_wtime();

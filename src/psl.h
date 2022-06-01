@@ -46,7 +46,6 @@ public:
   BP* local_bp = nullptr;
   BP* global_bp = nullptr;
   int last_dist = 2;
-  int min_cut_rank = 0;
   long long prune_rank = 0;
   long long prune_labels = 0;
   long long prune_local_bp = 0;
@@ -58,7 +57,7 @@ public:
   vector<Stats> stats_vec;
   vector<int> max_ranks;
   char** caches = nullptr;
-  PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr, BP* global_bp=nullptr);
+  PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr, BP* global_bp=nullptr, vector<int>* ranks_ptr=nullptr);
   ~PSL();
   vector<int>* Pull(int u, int d, char* cache);
   vector<int>* Init(int u);
@@ -121,31 +120,33 @@ inline void PSL::CountPrune(int i){
 }
 
 
-inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp) : csr(csr_),  labels(csr.n), global_bp(global_bp) {
+inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp, vector<int>* ranks_ptr) : csr(csr_),  labels(csr.n), global_bp(global_bp) {
 
-  order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
 
-  ranks.resize(csr.n);
-	for(int i=0; i<csr.n; i++){
-		ranks[order[i]] = i;
-	}
-
-  min_cut_rank = INT_MAX;
-
-  if(cut != nullptr && !cut->empty()){
-    int high_rank = INT_MAX;
-    for(int u : *cut){
-      ranks[u] = high_rank--;
-    }
-    min_cut_rank = high_rank;
+  if(ranks_ptr == nullptr){
+    order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
+    ranks.resize(csr.n);
+    for(int i=0; i<csr.n; i++){
+          ranks[order[i]] = i;
+    } 
+  } else {
+    ranks.insert(ranks.end(), ranks_ptr->begin(), ranks_ptr->end());
   }
-  
+
+
+  if constexpr(RERANK_CUT){
+    if(cut != nullptr && !cut->empty()){
+      int temp_rank = INT_MAX;
+      for(int u : *cut){
+        ranks[u] = temp_rank--;
+      }
+    }
+  }
+
   
   if constexpr(USE_LOCAL_BP){
     local_bp = new BP(csr, ranks, order, cut, LOCAL_BP_MODE);
   }
-
-
 
   max_ranks.resize(csr.n, -1);
 }
@@ -176,7 +177,9 @@ inline void PSL::WriteLabelCounts(string filename){
   ofs << endl;
 
   ofs << "Total Label Count: " << total << endl;
+  cout << "Total Label Count: " << total << endl;
   ofs << "Avg. Label Count: " << total/(double) csr.n << endl;
+  cout << "Avg. Label Count: " << total/(double) csr.n << endl;
   
   ofs << endl;
 
@@ -191,12 +194,20 @@ inline void PSL::Query(int u, string filename){
 
   ofs << "Source: " << u << endl;
   ofs << "Target\tPSL_Distance\tBFS_Distance\tCorrectness" << endl;
+
+  bool all_correct = true;
   for(int i=0; i<csr.n; i++){
     int psl_res = results->at(i);
     int bfs_res = bfs_results->at(i);
     string correctness = (bfs_res == psl_res) ? "correct" : "wrong";
+
+    if(bfs_res != psl_res){
+      all_correct = false;
+    }
     ofs << i << "\t" << psl_res << "\t" << bfs_res << "\t" << correctness << endl;
   }
+
+  cout << "Correctness: " << all_correct << endl;
 
   ofs.close();
   delete results;
@@ -338,14 +349,14 @@ inline vector<int>* PSL::Pull(int u, int d, char* cache) {
       }
 
       if constexpr(USE_GLOBAL_BP){
-        if(global_bp != nullptr && global_bp->PruneByBp(u, w, d)){
+        if(global_bp->PruneByBp(u, w, d)){
           CountPrune(PRUNE_GLOBAL_BP);
           continue;
         }
       }
 
       if constexpr(USE_LOCAL_BP){
-        if(ranks[w] < min_cut_rank && local_bp->PruneByBp(u, w, d)){
+        if(local_bp->PruneByBp(u, w, d)){
           CountPrune(PRUNE_LOCAL_BP);
           continue;
         }

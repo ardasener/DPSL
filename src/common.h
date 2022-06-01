@@ -10,9 +10,19 @@
 #include <fstream>
 
 #define N_ROOTS 16
+
+#define RERANK_CUT false
+
+#define GLOBAL_RANKS true
+
 /* #define MAX_BP_THREADS 1 */
+#ifndef USE_LOCAL_BP
 #define USE_LOCAL_BP false
+#endif
+
+#ifndef USE_GLOBAL_BP
 #define USE_GLOBAL_BP false
+#endif
 
 #ifndef NUM_THREADS
 #define NUM_THREADS 16

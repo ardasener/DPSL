@@ -5,3 +5,6 @@ output*
 cutter
 dpsl
 gpsl
+psl
+parts
+*.tar*
