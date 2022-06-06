@@ -29,6 +29,7 @@ enum MPI_CONSTS {
   MPI_LABEL_INDICES,
   MPI_LABELS,
   MPI_VERTEX_RANKS,
+  MPI_VERTEX_ORDER,
 };
 
 class DPSL {
@@ -56,6 +57,7 @@ public:
   vector<bool> in_cut;
   vector<int> names;
   vector<int> ranks;
+  vector<int> order;
   VertexCut *vc_ptr = nullptr;
   int last_dist;
   const toml::Value &config;
@@ -548,6 +550,7 @@ inline void DPSL::InitP0() {
   }
 
   ranks = vc.ranks;
+  order = vc.order;
 
   Log("Ordering Cut By Rank");
   sort(cut.begin(), cut.end(),
@@ -565,6 +568,7 @@ inline void DPSL::InitP0() {
     SendData(vc.partition, csr.n, MPI_PARTITION, i);
     SendData(cut.data(), cut.size(), MPI_CUT, i);
     SendData(ranks.data(), ranks.size(), MPI_VERTEX_RANKS, i);
+    SendData(order.data(), order.size(), MPI_VERTEX_ORDER, i);
     delete csrs[i];
     csrs[i] = nullptr;
   }
@@ -607,6 +611,7 @@ inline void DPSL::Init() {
   int *col;
   int *cut_ptr;
   int *ranks_ptr;
+  int *order_ptr;
 
   Log("Initial Barrier Region");
   Barrier();
@@ -621,10 +626,12 @@ inline void DPSL::Init() {
   int size_partition = RecvData(partition, MPI_PARTITION, 0);
   int size_cut = RecvData(cut_ptr, MPI_CUT, 0);
   int size_ranks = RecvData(ranks_ptr, MPI_VERTEX_RANKS, 0);
+  int size_order = RecvData(order_ptr, MPI_VERTEX_ORDER, 0);
   Barrier();
   Log("Initial Barrier Region End");
 
   ranks.insert(ranks.end(), ranks_ptr, ranks_ptr + size_ranks);
+  order.insert(order.end(), order_ptr, order_ptr + size_order);
 
   if constexpr (USE_GLOBAL_BP) {
     Log("Global BP Barrier Region");
@@ -671,6 +678,7 @@ inline void DPSL::Index() {
 
   Barrier();
   double start, end, alg_start, alg_end;
+  double total_merge_time = 0;
   Log("Indexing Start");
   CSR &csr = *part_csr;
 
@@ -683,9 +691,12 @@ inline void DPSL::Index() {
   string order_method = config.find("order_method")->as<string>();
 
   vector<int>* ranks_ptr = nullptr;
-  if(GLOBAL_RANKS)
+  vector<int>* order_ptr = nullptr;
+  if(GLOBAL_RANKS) {
     ranks_ptr = &ranks;
-  psl_ptr = new PSL(*part_csr, order_method, &cut, global_bp, ranks_ptr);
+    order_ptr = &order;
+  }
+  psl_ptr = new PSL(*part_csr, order_method, &cut, global_bp, ranks_ptr, order_ptr);
   PSL &psl = *psl_ptr;
 
   start = omp_get_wtime();
@@ -714,6 +725,7 @@ inline void DPSL::Index() {
   MergeCut(init_labels, psl);
   end = omp_get_wtime();
   PrintTime("Merge 0&1", end - start);
+  total_merge_time += end-start;
   Log("Merging Initial Labels End");
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
@@ -776,6 +788,7 @@ inline void DPSL::Index() {
     bool merge_res = MergeCut(new_labels, psl);
     updated = updated || merge_res;
     end = omp_get_wtime();
+    total_merge_time += end-start;
     PrintTime("Merge " + to_string(d), end - start);
     Log("Merging Labels for d=" + to_string(d) + " End");
 
@@ -827,6 +840,8 @@ inline void DPSL::Index() {
 
   alg_end = omp_get_wtime();
   PrintTime("Total", alg_end - alg_start);
+  PrintTime("Total Merge Time", total_merge_time);
+  PrintTime("Total Index Time", alg_end - alg_start - total_merge_time);
 
 #ifdef DEBUG
   Log("Prune by Rank: " + to_string(psl_ptr->prune_rank));

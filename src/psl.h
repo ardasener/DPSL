@@ -56,8 +56,9 @@ public:
   vector<LabelSet> labels;
   vector<Stats> stats_vec;
   vector<int> max_ranks;
+  vector<bool> in_cut;
   char** caches = nullptr;
-  PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr, BP* global_bp=nullptr, vector<int>* ranks_ptr=nullptr);
+  PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr, BP* global_bp=nullptr, vector<int>* ranks_ptr=nullptr, vector<int>* order_ptr = nullptr);
   ~PSL();
   vector<int>* Pull(int u, int d, char* cache);
   vector<int>* Init(int u);
@@ -120,7 +121,7 @@ inline void PSL::CountPrune(int i){
 }
 
 
-inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp, vector<int>* ranks_ptr) : csr(csr_),  labels(csr.n), global_bp(global_bp) {
+inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp, vector<int>* ranks_ptr, vector<int>* order_ptr) : csr(csr_),  labels(csr.n), global_bp(global_bp) {
 
 
   if(ranks_ptr == nullptr){
@@ -131,7 +132,16 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp,
     } 
   } else {
     ranks.insert(ranks.end(), ranks_ptr->begin(), ranks_ptr->end());
+    order.insert(order.end(), order_ptr->begin(), order_ptr->end());
   }
+
+
+  // in_cut.resize(csr.n, false);
+  // if(cut != nullptr && !cut->empty()){
+  //   for(int u : *cut){
+  //     in_cut[u] = true;
+  //   }
+  // }
 
 
   if constexpr(RERANK_CUT){
@@ -145,7 +155,11 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp,
 
   
   if constexpr(USE_LOCAL_BP){
-    local_bp = new BP(csr, ranks, order, cut, LOCAL_BP_MODE);
+    if constexpr(USE_GLOBAL_BP){
+      local_bp = new BP(csr, ranks, order, cut, LOCAL_BP_MODE);
+    } else {
+      local_bp = new BP(csr, ranks, order, nullptr, LOCAL_BP_MODE);
+    }
   }
 
   max_ranks.resize(csr.n, -1);

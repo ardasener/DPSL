@@ -11,9 +11,9 @@
 
 #define N_ROOTS 16
 
-#define RERANK_CUT false
+#define RERANK_CUT true
 
-#define GLOBAL_RANKS true
+#define GLOBAL_RANKS false
 
 /* #define MAX_BP_THREADS 1 */
 #ifndef USE_LOCAL_BP
