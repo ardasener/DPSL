@@ -62,7 +62,7 @@ public:
   int last_dist;
   const toml::Value &config;
   char **caches;
-  void InitP0();
+  void InitP0(string vsep_file="");
   void Init();
   void Index();
   void WriteLabelCounts(string filename);
@@ -70,7 +70,7 @@ public:
   void Log(string msg);
   void PrintTime(string tag, double time);
   PSL *psl_ptr;
-  DPSL(int pid, CSR *csr, const toml::Value &config, int np);
+  DPSL(int pid, CSR *csr, const toml::Value &config, int np, string vsep_file = "");
   ~DPSL();
 };
 
@@ -96,7 +96,7 @@ inline void DPSL::Query(int u, string filename) {
   int dist_ptrs_u_size;
   int vertices_u_size;
 
-  if (partition[u] == pid) {
+  if (partition[u] == pid || (partition[u] == np && pid == 0)) {
     Log("Broadcasting u's labels");
     auto &labels_u = psl_ptr->labels[u];
     BroadcastData(labels_u.vertices.data(), labels_u.vertices.size(), 0);
@@ -116,7 +116,7 @@ inline void DPSL::Query(int u, string filename) {
   char *cache = new char[part_csr->n];
   fill(cache, cache + part_csr->n, MAX_DIST);
 
-// #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
   for (int d = 0; d < dist_ptrs_u_size - 1; d++) {
     int start = dist_ptrs_u[d];
     int end = dist_ptrs_u[d + 1];
@@ -129,7 +129,7 @@ inline void DPSL::Query(int u, string filename) {
 
   Log("Querying locally");
   vector<int> local_dist(part_csr->n, MAX_DIST);
-// #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
   for (int v = 0; v < part_csr->n; v++) {
 
     int min = MAX_DIST;
@@ -174,7 +174,7 @@ inline void DPSL::Query(int u, string filename) {
     fill(all_dists, all_dists + whole_csr->n, -1);
     fill(source, source + whole_csr->n, -1);
 
-// #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
     for (int i = 0; i < local_dist.size(); i++) {
       all_dists[i] = local_dist[i];
       source[i] = 0;
@@ -383,7 +383,7 @@ inline bool DPSL::MergeCut(vector<vector<int> *> new_labels, PSL &psl) {
     }
 
     vector<vector<int>*> sorted_vecs(cut.size());
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(+ : compressed_size)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(+ : compressed_size) schedule(runtime)
     for(int i=0; i<cut.size(); i++){
 
       vector<int>* sorted_vec = new vector<int>;
@@ -445,7 +445,7 @@ inline bool DPSL::MergeCut(vector<vector<int> *> new_labels, PSL &psl) {
   if(compressed_size > 0){
     updated = true;
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
     for(int i=0; i<cut.size(); i++){
       int u = cut[i];
       auto& labels_u = psl.labels[u].vertices;
@@ -529,7 +529,7 @@ inline int DPSL::RecvData(T *&data, int vertex, int from, MPI_Datatype type) {
   return size;
 }
 
-inline void DPSL::InitP0() {
+inline void DPSL::InitP0(string vsep_file) {
 
   double init_start = omp_get_wtime();
 
@@ -537,7 +537,10 @@ inline void DPSL::InitP0() {
   CSR &csr = *whole_csr;
   global_n = csr.n;
 
-  vc_ptr = new VertexCut(csr, order_method, np, config);
+  if(vsep_file == "")
+    vc_ptr = new VertexCut(csr, order_method, np, config);
+  else
+    vc_ptr = new VertexCut(csr, vsep_file, order_method);
 
   VertexCut &vc = *vc_ptr;
 
@@ -702,13 +705,13 @@ inline void DPSL::Index() {
   start = omp_get_wtime();
   alg_start = omp_get_wtime();
   vector<vector<int> *> init_labels(csr.n, nullptr);
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
   for (int u = 0; u < csr.n; u++) {
     psl.labels[u].vertices.push_back(u);
     init_labels[u] = psl.Init(u);
   }
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
   for (int u = 0; u < csr.n; u++) {
     if (!in_cut[u] && init_labels[u] != nullptr &&
         !init_labels[u]->empty()) {
@@ -728,7 +731,7 @@ inline void DPSL::Index() {
   total_merge_time += end-start;
   Log("Merging Initial Labels End");
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
   for (int u = 0; u < csr.n; u++) {
     auto &labels = psl.labels[u];
     labels.dist_ptrs.push_back(0);
@@ -754,25 +757,20 @@ inline void DPSL::Index() {
     last_dist = d;
     updated = false;
     Log("Pulling...");
-#pragma omp parallel default(shared) num_threads(NUM_THREADS)                  \
-    reduction(|| : updated)
-    {
-      int tid = omp_get_thread_num();
-      int nt = NUM_THREADS;
-      for (int u = tid; u < csr.n; u += nt) {
-        /* cout << "Pulling for u=" << u << endl; */
-        if (should_run[u]) {
-          new_labels[u] = psl.Pull(u, d, caches[tid]);
-          if (new_labels[u] != nullptr && !new_labels[u]->empty()) {
-            updated = updated || true;
-          }
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(|| : updated) schedule(runtime)
+    for (int u = 0; u < csr.n; u++) {
+      /* cout << "Pulling for u=" << u << endl; */
+      if (should_run[u]) {
+        new_labels[u] = psl.Pull(u, d, caches[omp_get_thread_num()]);
+        if (new_labels[u] != nullptr && !new_labels[u]->empty()) {
+          updated = updated || true;
         }
       }
     }
     end = omp_get_wtime();
     PrintTime("Level " + to_string(d), end - start);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
     for (int u = 0; u < csr.n; u++) {
       if (new_labels[u] != nullptr && !new_labels[u]->empty()) {
         auto &labels = psl.labels[u].vertices;
@@ -794,7 +792,7 @@ inline void DPSL::Index() {
 
     fill(should_run, should_run + csr.n, false);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
     for (int u = 0; u < csr.n; u++) {
       auto &labels_u = psl.labels[u];
       labels_u.dist_ptrs.push_back(labels_u.vertices.size());
@@ -852,10 +850,10 @@ inline void DPSL::Index() {
 #endif
 }
 
-inline DPSL::DPSL(int pid, CSR *csr, const toml::Value &config, int np)
+inline DPSL::DPSL(int pid, CSR *csr, const toml::Value &config, int np, string vsep_file)
     : whole_csr(csr), pid(pid), config(config), np(np) {
   if (pid == 0) {
-    InitP0();
+    InitP0(vsep_file);
   } else {
     Init();
   }

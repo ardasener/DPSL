@@ -58,6 +58,7 @@ public:
   vector<int> max_ranks;
   vector<bool> in_cut;
   char** caches = nullptr;
+  bool** used = nullptr;
   PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr, BP* global_bp=nullptr, vector<int>* ranks_ptr=nullptr, vector<int>* order_ptr = nullptr);
   ~PSL();
   vector<int>* Pull(int u, int d, char* cache);
@@ -103,6 +104,15 @@ inline PSL::~PSL(){
    }
    delete[] caches; 
   }
+
+  if(used != nullptr){
+   
+   for(int i=0; i<NUM_THREADS; i++){
+    delete [] used[i];
+   }
+   delete[] used; 
+  }
+
 
 }
 
@@ -306,22 +316,10 @@ inline bool PSL::Prune(int u, int v, int d, char* cache) {
 
 inline vector<int>* PSL::Pull(int u, int d, char* cache) {
 
-  /* int pull_start_time = omp_get_wtime(); */
-
-  /* cout << "Pulling u=" << u << endl; */
-
-
-/*   for(int i=0; i<csr.n; i++){ */
-/*     int w = labels[i].vertices[0]; */
-/*     if(w != i){ */
-/*       cout << "Invalid in Pull i=" << i << " w=" << w << endl; */
-/*     } */
-/*   } */
-
   int start = csr.row_ptr[u];
   int end = csr.row_ptr[u + 1];
   
-  if(end-start == 0){
+  if(end == start){
     return nullptr;
   }
 
@@ -333,15 +331,11 @@ inline vector<int>* PSL::Pull(int u, int d, char* cache) {
 
     for (int j = dist_start; j < dist_end; j++) {
       int w = labels_u.vertices[j];
-      /* if(!(w >= 0 && csr.n > w)) */
-        /* cout << "Invalid w=" << w << endl; */
-
       cache[w] = (char) i;
     }
   }
 
-  vector<bool> used(csr.n, false);
-  vector<int> candidates;
+  vector<int>* new_labels = nullptr;
 
   for (int i = start; i < end; i++) {
     int v = csr.col[i];
@@ -353,7 +347,7 @@ inline vector<int>* PSL::Pull(int u, int d, char* cache) {
     for (int j = labels_start; j < labels_end; j++) {
       int w = labels_v.vertices[j];
 
-      if(used[w]){
+      if(cache[w] <= d){
         continue;
       }
 
@@ -376,32 +370,25 @@ inline vector<int>* PSL::Pull(int u, int d, char* cache) {
         }
       }
 
+      if(Prune(u, w, d, cache)){
+        CountPrune(PRUNE_LABEL);
+        continue;
+      }
 
-      candidates.push_back(w);
-      used[w] = true;
+      if(new_labels == nullptr){
+        new_labels = new vector<int>;
+      }
+
+      new_labels->push_back(w);
+
+      if(ranks[w] > max_ranks[u]){
+        max_ranks[u] = ranks[w];
+      }
+
+      cache[w] = d;
     
     }
   }
-
-  vector<int>* new_labels = nullptr;
-  if(!candidates.empty()){
-    new_labels = new vector<int>;
-  }
-  
-
-  for(int w : candidates){
-
-    if(Prune(u, w, d, cache)){
-      CountPrune(PRUNE_LABEL);
-      continue;
-    }
-
-    new_labels->push_back(w);
-    if(ranks[w] > max_ranks[u]){
-      max_ranks[u] = ranks[w];
-    }
-  }
-
 
   for (int i = 0; i < d; i++) {
     int dist_start = labels_u.dist_ptrs[i];
@@ -412,6 +399,11 @@ inline vector<int>* PSL::Pull(int u, int d, char* cache) {
       cache[w] = (char) MAX_DIST;
     }
   }
+
+  if(new_labels != nullptr)
+    for(int w : *new_labels){
+      cache[w] = (char) MAX_DIST;
+    }
   
   return new_labels;
 }
@@ -451,7 +443,7 @@ inline void PSL::Index() {
   // Level 0: vertex to itself
   // Level 1: vertex to neighbors
   start_time = omp_get_wtime();
-  #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
   for (int u = 0; u < csr.n; u++) {
     auto init_labels = Init(u);
     labels[u].vertices.push_back(u);
@@ -476,17 +468,13 @@ inline void PSL::Index() {
     fill(max_ranks.begin(), max_ranks.end(), -1);
 
     pull_start_time = omp_get_wtime();
-    #pragma omp parallel default(shared) num_threads(NUM_THREADS) reduction(||:updated)
-    {
-      int tid = omp_get_thread_num();
-      int nt = NUM_THREADS;
-      for (int u = tid; u < csr.n; u+=nt) {
-        if(should_run[u]){
-          new_labels[u] =  Pull(u, d, caches[tid]);
-          updated = updated || (new_labels[u] != nullptr && !new_labels[u]->empty());
-        }
-      }   
-    }
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated) schedule(runtime)
+    for (int u = 0; u < csr.n; u++) {
+      if(should_run[u]){
+        new_labels[u] =  Pull(u, d, caches[omp_get_thread_num()]);
+        updated = updated || (new_labels[u] != nullptr && !new_labels[u]->empty());
+      }
+    }   
     pull_end_time = omp_get_wtime();
 
 
@@ -494,7 +482,7 @@ inline void PSL::Index() {
 
     fill(should_run, should_run+csr.n, false);
     
-    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
     for (int u = 0; u < csr.n; u++) {
       
       auto& labels_u = labels[u];

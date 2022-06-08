@@ -57,8 +57,8 @@ void MetisPart(CSR& csr, int*& partition, int np, int* vertex_weights, int ufact
   partition = new int[csr.n];
 
   idx_t options[METIS_NOPTIONS];
-  options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_CUT; // Try others
-  options[METIS_OPTION_CTYPE] = METIS_CTYPE_RM;
+  options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_VOL;
+  options[METIS_OPTION_CTYPE] = METIS_CTYPE_SHEM;
   options[METIS_OPTION_IPTYPE] = METIS_IPTYPE_NODE;
   options[METIS_OPTION_RTYPE] = METIS_RTYPE_GREEDY;
   options[METIS_OPTION_NO2HOP] = 1;
@@ -89,11 +89,110 @@ public:
   vector<int> order;
 
   VertexCut(CSR& csr, string order_method, int np, const toml::Value& config);
+  VertexCut(CSR& csr, string vsep_file, string order_method);
   VertexCut(string filename);
   ~VertexCut();
 
   void Write(string filename);
 };
+
+inline VertexCut::VertexCut(CSR& csr, string vsep_file, string order_method) {
+ 
+  cout << "Ordering..." << endl;
+  order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
+
+  cout << "Ranking..." << endl;
+  ranks.resize(csr.n);
+  for(int i=0; i<csr.n; i++){
+    ranks[order[i]] = i;
+  }
+
+  int np = 2;
+
+  ifstream ifs(vsep_file);
+
+  partition = new int[csr.n];
+  int part_num;
+  for(int i=0; i<csr.n; i++){
+    ifs >> part_num;
+    partition[i] = part_num;
+    
+    if(part_num == 2){
+      cut.insert(i);
+    }
+  }
+
+  cout << "Calculating edges and nodes..." << endl;
+  vector<vector<pair<int,int>>> edges(np);
+  for(int u=0; u<csr.n; u++){
+    int start = csr.row_ptr[u];
+    int end = csr.row_ptr[u+1];
+
+    bool u_in_cut = (partition[u] == 2);
+
+    for(int j=start; j<end; j++){
+      int v = csr.col[j];
+
+      bool v_in_cut = (partition[v] == 2);
+
+      if(u_in_cut && v_in_cut){
+        for(int i=0; i<np; i++){
+          edges[i].emplace_back(u,v);
+        }
+      } else if(partition[u] == partition[v] || v_in_cut){
+        if(partition[u] != 2)
+          edges[partition[u]].emplace_back(u,v);
+      } else if(u_in_cut){
+        if(partition[v] != 2)
+          edges[partition[v]].emplace_back(u,v);
+      }
+    }
+  }
+
+
+  for(int i=0; i<np; i++) {
+    sort(edges[i].begin(), edges[i].end(), less<pair<int, int>>());
+    auto unique_it = unique(edges[i].begin(), edges[i].end(), [](const pair<int,int>& p1, const pair<int,int>& p2){
+	    return (p1.first == p2.first) && (p1.second == p2.second);
+	  });
+    edges[i].erase(unique_it, edges[i].end());
+  }
+
+  cout << "Constructing csrs..." << endl;
+  csrs.resize(np, nullptr);
+  for(int i=0; i<np; i++){
+    int n = csr.n;
+    int m = edges[i].size();
+    int *row_ptr = new int[n+1];
+    int *col = new int[m];
+    int *csr_nodes = new int[n];
+
+    fill(row_ptr, row_ptr+n+1, 0);
+
+    row_ptr[0] = 0;
+
+    int edge_index = 0;
+    for(int j=0; j<n; j++){
+      int count = 0;
+      while(edge_index < m && edges[i][edge_index].first == j){
+        auto& edge = edges[i][edge_index];
+        col[edge_index] = edge.second;
+        count++;
+        edge_index++;
+      }
+      row_ptr[j+1] = count + row_ptr[j];
+    }
+
+    csrs[i] = new CSR(row_ptr, col, n, m);
+  }
+
+  int index = 0;
+  for(auto csr : csrs){
+    cout << "P" << index << " N:" << csr->n << endl;
+    cout << "P" << index << " M:" << csr->m << endl;
+    index++;
+  }
+}
 
 inline void VertexCut::Write(string filename){
   ofstream ofs(filename, ios::out | ios::binary);

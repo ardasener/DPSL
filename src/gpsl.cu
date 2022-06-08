@@ -4,11 +4,10 @@
 #include "common.h"
 #include "bp.h"
 #include "external/order/order.hpp"
-#include "external/cub/cub.cuh"
 
 
 // IN GBs
-#define ARRAY_MANAGER_ALLOC_SIZE 6
+#define ARRAY_MANAGER_ALLOC_SIZE 1
 #define GBS_TO_BYTES (1024ULL*1024ULL*1024ULL);
 
 
@@ -239,7 +238,6 @@ __device__ void GPSL_Pull_v3(int u, int d, LabelSet* device_labels,  int n, int 
     }
 
     // Standard prune but in parallel
-    __syncwarp();
     GPSL_Prune_Parallel(u,w,d,cache,device_labels,prune_result,tid);
     __syncwarp();
 
@@ -354,14 +352,25 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
  const int ws = 32;
 
  __shared__ int global_max_rank;
+ __shared__ int cache_time;
+ __shared__ int prune_time;
+ __shared__ int alloc_time;
+ __shared__ int write_time;
 
- if(tid == 0)
+ if(tid == 0){
    global_max_rank = 0;
+   cache_time = 0;
+   prune_time = 0;
+   alloc_time = 0;
+   write_time = 0;
+ }
 
+ __syncwarp();
  
  // Fill the cache using <d labels
  LabelSet& labels_u = device_labels[u];
 
+ int start = clock();
  for(int i=0; i<d; i++){
   LabelSetNode& node = labels_u.array[i];
 
@@ -371,6 +380,8 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
 
   __syncwarp();
  }
+ int end = clock();
+ atomicMax_block(&cache_time, end-start);
 
  int rank_u = device_ranks[u];
 
@@ -383,6 +394,8 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
  // Iterate through the neighbors
  int ngh_start = device_csr_row_ptr[u];
  int ngh_end = device_csr_row_ptr[u+1];
+
+ start = clock();
  for(int i=ngh_start; i<ngh_end; i++){
 
   int v = device_csr_col[i];
@@ -393,27 +406,14 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
   // For each label if all the pruning stages are passed increment local size
   for(int j=tid; j<prev_labels_v.size; j+=ws){
     int w = prev_labels_v.data[j];
-
-    /* printf("tid=%d w=%d u=%d \n", tid, w, u); */
-
-    if(owner[w] >= 0){ // If the vertex is marked already
-      continue;
-    }
-
-    if(cache[w] < d){ // If the vertex is already labelled with a lower distance
-      continue;
-    }
-
     int rank_w = device_ranks[w];
-    if(rank_u > rank_w){ // Rank based prune
-      continue;
-    }
 
-    if(GPSL_PruneByBp(u, w, d, device_bp)){ // Bit parallel prune
-      continue;
-    }
 
-    if(GPSL_Prune(u, w, d, cache, device_labels)){ // Standard prune
+    if(owner[w] >= 0 || 
+	cache[w] < d ||
+	rank_u > rank_w ||
+	GPSL_PruneByBp(u, w, d, device_bp) ||
+	GPSL_Prune(u, w, d, cache, device_labels)){
       continue;
     }
    
@@ -431,6 +431,9 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
  
  }
 
+ end = clock();
+ atomicMax_block(&prune_time, end-start);
+
  // Write local size to shared memory
  array_sizes[tid] = local_size;
  atomicMax_block(&global_max_rank, local_max_rank);
@@ -439,6 +442,7 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
 
  if(tid == 0){
  
+  start = clock();
  
   // Make sizes cumilative
   // So size[i-1], size[i] indicates the region thread i will write to
@@ -461,6 +465,9 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
 
   // Set the size for the AddLabels kernel
   *new_labels_size = global_size;
+
+  end = clock();
+  alloc_time = end-start;
  }
  
  __syncwarp();
@@ -469,6 +476,7 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
  // Repeats the loops in the local size calculation part
  // Instead of pruning, it will just check the owner array for marks
  // If the vertex was marked by the current thread, it will be written to the array 
+ start = clock();
  int global_size = array_sizes[ws-1];
  if(global_size > 0){
   int offset = (tid > 0) ? array_sizes[tid-1] : 0;
@@ -505,6 +513,9 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
 
  __syncwarp();
 
+ end = clock();
+ atomicMax_block(&write_time, end-start);
+
 
  // Reset cache for <d nodes
  for(int i=0; i<d; i++){
@@ -513,6 +524,10 @@ __device__ void GPSL_Pull(int u, int d, LabelSet* device_labels,  int n, int *de
   for(int j=tid; j<node.size; j+=ws){
     cache[node.data[j]] = MAX_DIST;
   }
+ }
+
+ if(tid == 0){
+  printf("u=%d, cache_time=%d, prune_time=%d, alloc_time=%d, write_time=%d \n", u, cache_time, prune_time, alloc_time, write_time);
  }
 
    

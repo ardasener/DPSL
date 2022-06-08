@@ -29,7 +29,7 @@ void RunPSL(const toml::Value& config, string filename){
 	psl.Query(11, "output_psl_query.txt");
 }
 
-void RunDPSL(const toml::Value& config, int pid, int np, string filename){
+void RunDPSL(const toml::Value& config, int pid, int np, string filename, string vsep_filename){
 	
 	string order_method = config.find("order_method")->as<string>();
 	
@@ -37,12 +37,12 @@ void RunDPSL(const toml::Value& config, int pid, int np, string filename){
 		cout << "Reading " << filename << "..." << endl;
 		CSR csr(filename);
 		cout << "Number of Processes:" << np << endl;
-		DPSL dpsl(pid, &csr, config ,np);
+		DPSL dpsl(pid, &csr, config ,np, vsep_filename);
 		dpsl.Index();
 		dpsl.WriteLabelCounts("output_dpsl_label_counts.txt");
 		dpsl.Query(11, "output_dpsl_query.txt");
 	} else {
-		DPSL dpsl(pid, nullptr, config, np);
+		DPSL dpsl(pid, nullptr, config, np, "");
 		dpsl.Index();
 		dpsl.WriteLabelCounts("");
 		dpsl.Query(11, "");
@@ -53,7 +53,7 @@ void RunDPSL(const toml::Value& config, int pid, int np, string filename){
 int main(int argc, char* argv[]){
 
 	if(argc < 3){
-		cerr << "Usage: <exe> config_file graph_file" << endl;
+		cerr << "Usage: <exe> config_file graph_file [vsep_file (optional)]" << endl;
 		return 1;
 	}
 
@@ -67,6 +67,12 @@ int main(int argc, char* argv[]){
 	const toml::Value& config = pr.value;
 	string filename(argv[2]);
 
+	string vsep_filename = "";
+
+	if(argc >= 4){
+		vsep_filename = argv[3];
+	}
+
 	if(!(config.find("mpi")->as<bool>())){
 		RunPSL(config, filename);
 	} else {
@@ -74,7 +80,7 @@ int main(int argc, char* argv[]){
 		int pid, np;
 		MPI_Comm_rank(MPI_COMM_WORLD,&pid);
 		MPI_Comm_size(MPI_COMM_WORLD,&np);
-		RunDPSL(config, pid, np, filename);
+		RunDPSL(config, pid, np, filename, vsep_filename);
 		MPI_Finalize();
 	}
 
