@@ -9,13 +9,14 @@
 #include <iostream>
 #include <fstream>
 
+#ifndef N_ROOTS
 #define N_ROOTS 16
+#endif
 
 #define RERANK_CUT true
 
 #define GLOBAL_RANKS false
 
-/* #define MAX_BP_THREADS 1 */
 #ifndef USE_LOCAL_BP
 #define USE_LOCAL_BP false
 #endif

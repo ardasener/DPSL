@@ -146,13 +146,12 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp,
   }
 
 
-  // in_cut.resize(csr.n, false);
-  // if(cut != nullptr && !cut->empty()){
-  //   for(int u : *cut){
-  //     in_cut[u] = true;
-  //   }
-  // }
-
+  in_cut.resize(csr.n, false);
+  if(cut != nullptr && !cut->empty()){
+    for(int u : *cut){
+      in_cut[u] = true;
+    }
+  }
 
   if constexpr(RERANK_CUT){
     if(cut != nullptr && !cut->empty()){

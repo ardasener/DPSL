@@ -422,15 +422,31 @@ inline bool DPSL::MergeCut(vector<vector<int> *> new_labels, PSL &psl) {
     compressed_merged_indices[0] = 0;
     int index = 0;
 
-    for(int i=0; i<cut.size(); i++){
-      if(sorted_vecs[i]->size() > 0)
-        copy(sorted_vecs[i]->begin(), sorted_vecs[i]->end(), compressed_merged + index);
-      
-      index += sorted_vecs[i]->size();
-      compressed_merged_indices[i+1] = index;
-      delete sorted_vecs[i];
+#pragma omp parallel default(shared) num_threads(NUM_THREADS)
+{
+    int tid = omp_get_thread_num();
+    for(int i=tid; i<cut.size(); i+=NUM_THREADS){
+      compressed_merged_indices[i+1] = sorted_vecs[i]->size();
+    }
+}
+
+
+    for(int i=1; i<cut.size()+1; i++){
+      compressed_merged_indices[i] += compressed_merged_indices[i-1];
     }
 
+
+
+#pragma omp parallel default(shared) num_threads(NUM_THREADS)
+{
+    int tid = omp_get_thread_num();
+    for(int i=tid; i<cut.size(); i+=NUM_THREADS){
+      if(sorted_vecs[i]->size() > 0)
+        copy(sorted_vecs[i]->begin(), sorted_vecs[i]->end(), compressed_merged + compressed_merged_indices[i]);
+      delete sorted_vecs[i];
+      sorted_vecs[i] = nullptr;
+    }
+}
 
     BroadcastData(compressed_merged_indices, cut.size()+1, MPI_LABEL_INDICES);
     BroadcastData(compressed_merged, compressed_size, MPI_LABELS);
