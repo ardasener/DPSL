@@ -1,4 +1,7 @@
 large_graphs/*
+new_graphs/*
+vsep/*
+vsep_output/*
 *.out
 output*
 *.part*

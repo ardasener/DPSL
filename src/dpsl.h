@@ -387,6 +387,7 @@ inline bool DPSL::MergeCut(vector<vector<int> *> new_labels, PSL &psl) {
     for(int i=0; i<cut.size(); i++){
 
       vector<int>* sorted_vec = new vector<int>;
+      //TODO: Reserve
       
       for(int p=0; p<np; p++){
         
@@ -401,9 +402,7 @@ inline bool DPSL::MergeCut(vector<vector<int> *> new_labels, PSL &psl) {
         int prev_size = sorted_vec->size();
         sorted_vec->insert(sorted_vec->end(), all_compressed_labels[p] + start, all_compressed_labels[p] + end);
 
-        if(sorted_vec->size() > prev_size){
-          inplace_merge(sorted_vec->begin(), sorted_vec->begin() + prev_size, sorted_vec->end());
-        }
+        inplace_merge(sorted_vec->begin(), sorted_vec->begin() + prev_size, sorted_vec->end());
       }
 
       auto unique_it = unique(sorted_vec->begin(), sorted_vec->end());
@@ -761,6 +760,15 @@ inline void DPSL::Index() {
   bool should_run[csr.n];
   fill(should_run, should_run + csr.n, true);
 
+
+  int* nodes_to_process = new int[csr.n];
+  int num_nodes = 0;
+  for(int u=0; u<csr.n; u++){
+    if(csr.row_ptr[u] != csr.row_ptr[u+1]){
+      nodes_to_process[num_nodes++] = u;
+    }
+  }
+
   Log("Starting DN Loop");
   bool updated = true;
   last_dist = 1;
@@ -774,8 +782,10 @@ inline void DPSL::Index() {
     updated = false;
     Log("Pulling...");
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(|| : updated) schedule(runtime)
-    for (int u = 0; u < csr.n; u++) {
+    for (int i = 0; i < num_nodes; i++) {
+      int u = nodes_to_process[i];
       /* cout << "Pulling for u=" << u << endl; */
+
       if (should_run[u]) {
         new_labels[u] = psl.Pull(u, d, caches[omp_get_thread_num()]);
         if (new_labels[u] != nullptr && !new_labels[u]->empty()) {
@@ -787,7 +797,8 @@ inline void DPSL::Index() {
     PrintTime("Level " + to_string(d), end - start);
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
-    for (int u = 0; u < csr.n; u++) {
+    for (int i = 0; i < num_nodes; i++) {
+      int u = nodes_to_process[i];
       if (new_labels[u] != nullptr && !new_labels[u]->empty()) {
         auto &labels = psl.labels[u].vertices;
         labels.insert(labels.end(), new_labels[u]->begin(),
@@ -809,7 +820,7 @@ inline void DPSL::Index() {
     fill(should_run, should_run + csr.n, false);
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
-    for (int u = 0; u < csr.n; u++) {
+    for (int u = 0; u < csr.n;  u++) {
       auto &labels_u = psl.labels[u];
       labels_u.dist_ptrs.push_back(labels_u.vertices.size());
 

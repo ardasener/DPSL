@@ -99,6 +99,9 @@ struct CSR {
     row_ptr(row_ptr), col(col), n(n), m(m) {}
 
   CSR(string filename) {
+
+    bool is_mtx = true;
+
     PigoCOO pigo_coo(filename);
 
     int *coo_row = pigo_coo.x();
@@ -108,16 +111,12 @@ struct CSR {
     cout << "N:" << n << endl;
     cout << "M:" << m << endl;
 
-    int min1 = *min_element(coo_row, coo_row+m, less<int>());
-    int min2 = *min_element(coo_col, coo_col+m, less<int>());
-    int min = (min1 < min2) ? min1 : min2;
-
-    if(min != 0){
-      cout << "Fixing indices with minimum=" << min << endl;
+    if(is_mtx){
+      cout << "Changing mtx indices to zero-based" << endl;
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
       for(int i=0; i<m; i++){
-        coo_row[i] -= min;
-        coo_col[i] -= min;
+        coo_row[i]--;
+        coo_col[i]--;
       }
     }
 
