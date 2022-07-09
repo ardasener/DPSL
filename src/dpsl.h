@@ -799,7 +799,7 @@ inline void DPSL::Index() {
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
     for (int i = 0; i < num_nodes; i++) {
       int u = nodes_to_process[i];
-      if (new_labels[u] != nullptr && !new_labels[u]->empty()) {
+      if (!in_cut[u] && new_labels[u] != nullptr && !new_labels[u]->empty()) {
         auto &labels = psl.labels[u].vertices;
         labels.insert(labels.end(), new_labels[u]->begin(),
                       new_labels[u]->end());
