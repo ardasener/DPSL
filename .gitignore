@@ -2,6 +2,8 @@ large_graphs/*
 new_graphs/*
 vsep/*
 vsep_output/*
+part_graphs/*
+part_output/*
 *.out
 output*
 *.part*
@@ -12,3 +14,4 @@ psl
 parts
 *.tar*
 mtmetis
+*.swp

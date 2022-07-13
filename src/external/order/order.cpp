@@ -6,7 +6,8 @@
 
 using namespace std;
 
-bool sortedge(const pair<int, int> &a, const pair<int, int> &b) {
+template <typename T>
+bool sortedge(const pair<T, T> &a, const pair<T, T> &b) {
   if (a.first == b.first) {
     return (a.second < b.second);
   } else {
@@ -14,29 +15,30 @@ bool sortedge(const pair<int, int> &a, const pair<int, int> &b) {
   }
 }
 
-void computeBCandCC(int *xadj, int *adj, int n, int noBFS, int **que,
-                    int **level, int **pred, int **endpred, float **sigma,
+template <typename T>
+void computeBCandCC(T *xadj, T *adj, T n, int noBFS, T **que,
+                    T **level, T **pred, T **endpred, float **sigma,
                     float **delta, float **b_cent, float **c_cent,
                     int maxlevel) {
-  int i, j, v, w, qeptr, cur, ptr;
+  T i, j, v, w, qeptr, cur, ptr;
   long int sum;
   int nthreads = omp_get_max_threads();
 
 #pragma omp parallel
   {
     int tid = omp_get_thread_num();
-    int *pque = que[tid];
-    int *plevel = level[tid];
-    int *ppred = pred[tid];
-    int *pendpred = endpred[tid];
+    T *pque = que[tid];
+    T *plevel = level[tid];
+    T *ppred = pred[tid];
+    T *pendpred = endpred[tid];
     float *psigma = sigma[tid];
     float *pdelta = delta[tid];
     float *pb_cent = b_cent[tid];
     float *pc_cent = c_cent[tid];
-    int pi;
+    T pi;
 
     std::mt19937 mt(tid * 1111);
-    std::uniform_int_distribution<int> dist(0, n - 1);
+    std::uniform_int_distribution<T> dist(0, n - 1);
 
     for (pi = 0; pi < n; pi++) {
       pb_cent[pi] = 0.0f;
@@ -112,8 +114,9 @@ void computeBCandCC(int *xadj, int *adj, int n, int noBFS, int **que,
 }
 
 // this is just to avoid repetitive computations in passes
-void computeRWprobs(int *xadj, int *adj, int n, float *probs) {
-  int i, j, ptr;
+template <typename T>
+void computeRWprobs(T *xadj, T *adj, T n, float *probs) {
+  T i, j, ptr;
 #pragma omp parallel for private(ptr) schedule(dynamic, 64)
   for (i = 0; i < n; i++) {
     for (ptr = xadj[i]; ptr < xadj[i + 1]; ptr++) {
@@ -123,9 +126,10 @@ void computeRWprobs(int *xadj, int *adj, int n, float *probs) {
   }
 }
 
-void computeRWCent(int *xadj, int *adj, int n, float *probs, float *curr_vals,
+template <typename T>
+void computeRWCent(T *xadj, T *adj, T n, float *probs, float *curr_vals,
                    float *next_vals, int iter) {
-  int i, j, ptr;
+  T i, j, ptr;
 #pragma omp parallel for
   for (j = 0; j < n; j++) {
     curr_vals[j] = 1.0f;
@@ -146,9 +150,10 @@ void computeRWCent(int *xadj, int *adj, int n, float *probs, float *curr_vals,
   }
 }
 
-void computeEVCent(int *xadj, int *adj, int n, float *probs, float *curr_vals,
+template <typename T>
+void computeEVCent(T *xadj, T *adj, T n, float *probs, float *curr_vals,
                    float *next_vals, int iter) {
-  int i, j, ptr;
+  T i, j, ptr;
   float sum;
 #pragma omp parallel for
   for (j = 0; j < n; j++) {
@@ -176,8 +181,9 @@ void computeEVCent(int *xadj, int *adj, int n, float *probs, float *curr_vals,
   }
 }
 
-float pearson(float *x, float *y, int n) {
-  int i;
+template <typename T>
+float pearson(float *x, float *y, T n) {
+  T i;
   float ex, ey, xt, yt, sxx, syy, sxy;
 
   ex = ey = 0;
@@ -199,86 +205,87 @@ float pearson(float *x, float *y, int n) {
   return sxy / (sqrt(sxx * syy));
 }
 
-vector<int> gen_order(int *xadj, int *adj, int n, int m, string method) {
+template <typename T>
+vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
 
   cout << "Generating order..." << endl;
-  int max_deg = 0, min_deg = n, deg, degs[n];
-  memset(degs, 0, sizeof(int) * n);
+  // T max_deg = 0, min_deg = n, deg, degs[n];
+  // memset(degs, 0, sizeof(T) * n);
 
-  for (int u = 0; u < n; u++) {
-    deg = (xadj[u + 1] - xadj[u]);
-    degs[deg]++;
-    if (deg < min_deg) {
-      min_deg = deg;
-    }
-    if (deg > max_deg) {
-      max_deg = deg;
-    }
-  }
+  // for (T u = 0; u < n; u++) {
+  //   deg = (xadj[u + 1] - xadj[u]);
+  //   degs[deg]++;
+  //   if (deg < min_deg) {
+  //     min_deg = deg;
+  //   }
+  //   if (deg > max_deg) {
+  //     max_deg = deg;
+  //   }
+  // }
 
-  cout << "---------------------------" << endl;
-  cout << "No vertices is " << n << endl;
-  cout << "No edges is " << m << endl;
-  cout << "---------------------------" << endl;
-  cout << "Min deg: " << min_deg << endl;
-  cout << "Max deg: " << max_deg << endl;
-  cout << "Avg deg: " << ((float)m) / n << endl;
-  cout << "---------------------------" << endl;
-  cout << "# deg 0: " << degs[0] << endl;
-  cout << "# deg 1: " << degs[1] << endl;
-  cout << "# deg 2: " << degs[2] << endl;
-  cout << "# deg 3: " << degs[3] << endl;
+  // cout << "---------------------------" << endl;
+  // cout << "No vertices is " << n << endl;
+  // cout << "No edges is " << m << endl;
+  // cout << "---------------------------" << endl;
+  // cout << "Min deg: " << min_deg << endl;
+  // cout << "Max deg: " << max_deg << endl;
+  // cout << "Avg deg: " << ((float)m) / n << endl;
+  // cout << "---------------------------" << endl;
+  // cout << "# deg 0: " << degs[0] << endl;
+  // cout << "# deg 1: " << degs[1] << endl;
+  // cout << "# deg 2: " << degs[2] << endl;
+  // cout << "# deg 3: " << degs[3] << endl;
 
-  for (int i = n - 2; i > 0; i--) {
-    degs[i] += degs[i + 1];
-  }
+  // for (T i = n - 2; i > 0; i--) {
+  //   degs[i] += degs[i + 1];
+  // }
 
-  cout << "---------------------------" << endl;
-  cout << "# deg>=32: " << degs[32] << endl;
-  cout << "# deg>=64: " << degs[64] << endl;
-  cout << "# deg>=128: " << degs[128] << endl;
-  cout << "# deg>=256: " << degs[256] << endl;
-  cout << "# deg>=512: " << degs[512] << endl;
-  cout << "# deg>=1024: " << degs[1024] << endl;
-  cout << "---------------------------" << endl << endl;
+  // cout << "---------------------------" << endl;
+  // cout << "# deg>=32: " << degs[32] << endl;
+  // cout << "# deg>=64: " << degs[64] << endl;
+  // cout << "# deg>=128: " << degs[128] << endl;
+  // cout << "# deg>=256: " << degs[256] << endl;
+  // cout << "# deg>=512: " << degs[512] << endl;
+  // cout << "# deg>=1024: " << degs[1024] << endl;
+  // cout << "---------------------------" << endl << endl;
 
   int nthreads = omp_get_max_threads();
   cout << "Running with " << nthreads << " threads \n";
-  int *pque[nthreads], *plevel[nthreads], *ppred[nthreads], *pendpred[nthreads];
+  T *pque[nthreads], *plevel[nthreads], *ppred[nthreads], *pendpred[nthreads];
   float *psigma[nthreads], *pdelta[nthreads], *pb_cent[nthreads],
       *pc_cent[nthreads];
   for (int i = 0; i < nthreads; i++) {
-    pque[i] = new int[n];
-    plevel[i] = new int[n];
-    ppred[i] = new int[xadj[n]];
-    pendpred[i] = new int[n];
+    pque[i] = new T[n];
+    plevel[i] = new T[n];
+    ppred[i] = new T[xadj[n]];
+    pendpred[i] = new T[n];
     psigma[i] = new float[n];
     pdelta[i] = new float[n];
     pb_cent[i] = new float[n];
     pc_cent[i] = new float[n];
   }
 
-  int *compid = new int[n];
-  int *que = new int[n];
+  T *compid = new T[n];
+  T *que = new T[n];
 
-  int nocomp, qptr, qeptr, largestSize;
+  T nocomp, qptr, qeptr, largestSize;
   nocomp = qptr = qeptr = largestSize = 0;
 
-  for (int i = 0; i < n; i++) {
+  for (T i = 0; i < n; i++) {
     compid[i] = -1;
   }
 
-  int compsize, lcompid;
-  for (int i = 0; i < n; i++) {
+  T compsize, lcompid;
+  for (T i = 0; i < n; i++) {
     if (compid[i] == -1) {
       compsize = 1;
       compid[i] = nocomp;
       que[qptr++] = i;
 
       while (qeptr < qptr) {
-        int u = que[qeptr++];
-        for (int p = xadj[u]; p < xadj[u + 1]; p++) {
-          int v = adj[p];
+        T u = que[qeptr++];
+        for (T p = xadj[u]; p < xadj[u + 1]; p++) {
+          T v = adj[p];
           if (compid[v] == -1) {
             compid[v] = nocomp;
             que[qptr++] = v;
@@ -294,29 +301,29 @@ vector<int> gen_order(int *xadj, int *adj, int n, int m, string method) {
     }
   }
 
-  int vcount, ecount;
+  T vcount, ecount;
   ecount = vcount = 0;
-  for (int i = 0; i < n; i++) {
+  for (T i = 0; i < n; i++) {
     if (compid[i] == lcompid) {
       que[i] = vcount++;
-      for (int p = xadj[i]; p < xadj[i + 1]; p++) {
+      for (T p = xadj[i]; p < xadj[i + 1]; p++) {
         if (compid[adj[p]] == lcompid)
           ecount++;
       }
     }
   }
 
-  int *lxadj = new int[vcount + 1];
-  int *ladj = new int[ecount];
-  int *ltadj = new int[ecount];
+  T *lxadj = new T[vcount + 1];
+  T *ladj = new T[ecount];
+  T *ltadj = new T[ecount];
   vcount = 0;
   ecount = 0;
   lxadj[0] = 0;
-  for (int i = 0; i < n; i++) {
+  for (T i = 0; i < n; i++) {
     if (compid[i] == lcompid) {
       vcount++;
 
-      for (int p = xadj[i]; p < xadj[i + 1]; p++) {
+      for (T p = xadj[i]; p < xadj[i + 1]; p++) {
         if (compid[adj[p]] == lcompid) {
           ladj[ecount++] = que[adj[p]];
         }
@@ -324,8 +331,9 @@ vector<int> gen_order(int *xadj, int *adj, int n, int m, string method) {
       lxadj[vcount] = ecount;
     }
   }
-  printf("largest component graph obtained with %d vertices %d edges -- %d\n",
-         vcount, ecount, lxadj[vcount]);
+  // printf("largest component graph obtained with %ld vertices %ld edges -- %d\n",
+         // vcount, ecount, lxadj[vcount]);
+  cout << "Largest comp. graph: " << vcount << "," << ecount << endl;
 
   float *cent = new float[n];
   // float* one_btwn = new float[n];
@@ -346,7 +354,7 @@ vector<int> gen_order(int *xadj, int *adj, int n, int m, string method) {
   if (method == "degree") {
     cout << "starting degree computation\n";
     start = omp_get_wtime();
-    for (int i = 0; i < vcount; i++) {
+    for (T i = 0; i < vcount; i++) {
       cent[i] = lxadj[i + 1] - lxadj[i];
     }
     end = omp_get_wtime();
@@ -380,7 +388,7 @@ vector<int> gen_order(int *xadj, int *adj, int n, int m, string method) {
     computeBCandCC(lxadj, ladj, vcount, noBFS, pque, plevel, ppred, pendpred,
                    psigma, pdelta, pb_cent, pc_cent, -1);
     end = omp_get_wtime();
-    for (int i = 0; i < n; i++)
+    for (T i = 0; i < n; i++)
       cent[i] = pb_cent[0][i];
     cout << "BC-all is computed in " << end - start << " seconds\n";
 
@@ -392,7 +400,7 @@ vector<int> gen_order(int *xadj, int *adj, int n, int m, string method) {
     computeBCandCC(lxadj, ladj, vcount, noBFS, pque, plevel, ppred, pendpred,
                    psigma, pdelta, pb_cent, pc_cent, -1);
     end = omp_get_wtime();
-    for (int i = 0; i < n; i++)
+    for (T i = 0; i < n; i++)
       cent[i] = pc_cent[0][i];
     cout << "BC-all is computed in " << end - start << " seconds\n";
   }
@@ -417,17 +425,17 @@ vector<int> gen_order(int *xadj, int *adj, int n, int m, string method) {
   }
 
   cout << "Ordering based on " << method << "..." << endl;
-  vector<pair<float, int>> sort_vec;
-  int li = 0;
-  for (int i = 0; i < n; i++) {
+  vector<pair<float, T>> sort_vec;
+  T li = 0;
+  for (T i = 0; i < n; i++) {
     if(compid[i] == lcompid)
       sort_vec.emplace_back(cent[li++], i);
     else
       sort_vec.emplace_back(FLT_MIN,i);
   }
-  sort(sort_vec.begin(), sort_vec.end(), less<pair<float, int>>());
+  sort(sort_vec.begin(), sort_vec.end(), less<pair<float, T>>());
 
-  vector<int> order;
+  vector<T> order;
   for (auto const &p : sort_vec) {
     order.push_back(p.second);
   }

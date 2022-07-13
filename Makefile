@@ -1,11 +1,12 @@
 MODE=Release
 NUM_THREADS=16
 USE_BP=true
+USE_64_BIT=false
 
 KERNEL_MODE=0
 
 CXX_COMPILER=mpic++
-CXX_FLAGS= -fopenmp -std=c++17 -L./libs -l:libmetis.so -Wl,-rpath ./libs -no-pie -DNUM_THREADS=$(NUM_THREADS)
+CXX_FLAGS= -fopenmp -std=c++17 -DNUM_THREADS=$(NUM_THREADS) 
 CXX_RELEASE_FLAGS= -O3
 CXX_DEBUG_FLAGS= -O0 -g -DDEBUG
 CXX_SOURCE_FILES=src/main.cpp
@@ -27,6 +28,10 @@ else
 $(info Building in Release mode...)
 CXX_MODE_FLAGS = $(CXX_RELEASE_FLAGS)
 CUDA_MODE_FLAGS = $(CUDA_RELEASE_FLAGS)
+endif
+
+ifeq ($(USE_64_BIT) , true)
+	CXX_FLAGS := $(CXX_FLAGS) -DUSE_64_BIT
 endif
 
 dpsl:

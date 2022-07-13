@@ -19,16 +19,16 @@ class BP {
 public:
     vector<BPLabel> bp_labels;
   
-    BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut = nullptr, Mode mode=GLOBAL_BP_MODE);
+    BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* cut = nullptr, Mode mode=GLOBAL_BP_MODE);
     BP(vector<BPLabel>& bp_labels);
-    void InitBPForRoot(int r, vector<int>& Sr, int root_index, CSR& csr);
-    bool PruneByBp(int u, int v, int d);
-    int QueryByBp(int u, int v);
+    void InitBPForRoot(IDType r, vector<IDType>& Sr, int root_index, CSR& csr);
+    bool PruneByBp(IDType u, IDType v, int d);
+    int QueryByBp(IDType u, IDType v);
 };
 
 inline BP::BP(vector<BPLabel>& bp_labels) : bp_labels(bp_labels){}
 
-inline bool BP::PruneByBp(int u, int v, int d){
+inline bool BP::PruneByBp(IDType u, IDType v, int d){
 
   BPLabel &idx_u = bp_labels[u], &idx_v = bp_labels[v];
 
@@ -51,7 +51,7 @@ inline bool BP::PruneByBp(int u, int v, int d){
 
 }
 
-inline int BP::QueryByBp(int u, int v){
+inline int BP::QueryByBp(IDType u, IDType v){
 
   BPLabel &idx_u = bp_labels[u], &idx_v = bp_labels[v];
 
@@ -74,40 +74,40 @@ inline int BP::QueryByBp(int u, int v){
     return d;
 }
 
-inline void BP::InitBPForRoot(int r, vector<int>& Sr, int bp_index, CSR& csr){
+inline void BP::InitBPForRoot(IDType r, vector<IDType>& Sr, int bp_index, CSR& csr){
 
   vector<pair<uint64_t,uint64_t>> bp_sets(csr.n, make_pair((uint64_t) 0, (uint64_t) 0));
   vector<uint8_t> bp_dists(csr.n, (uint8_t) MAX_DIST);
 
-  int* Q0 = new int[csr.n];
-  int* Q1 = new int[csr.n];
-  int Q0_size = 0;
-  int Q0_ptr = 0;
-  int Q1_size = 0;
-  int Q1_ptr = 0;
+  IDType* Q0 = new IDType[csr.n];
+  IDType* Q1 = new IDType[csr.n];
+  IDType Q0_size = 0;
+  IDType Q0_ptr = 0;
+  IDType Q1_size = 0;
+  IDType Q1_ptr = 0;
 
   Q0[Q0_size++] = r;
   bp_dists[r] = (uint8_t) 0;
 
-  for(int i=0; i<Sr.size(); i++){
-    int v = Sr[i];
+  for(IDType i=0; i<Sr.size(); i++){
+    IDType v = Sr[i];
     Q1[Q1_size++] = v;
     bp_dists[v] = (uint8_t) 1;
     bp_sets[v].first |= 1ULL << i;
   }
 
   while(Q0_ptr < Q0_size){
-    vector<pair<int,int>> E0;
-    vector<pair<int,int>> E1;
+    vector<pair<IDType,IDType>> E0;
+    vector<pair<IDType,IDType>> E1;
 
     while(Q0_ptr < Q0_size){
-      int v = Q0[Q0_ptr++];
+      IDType v = Q0[Q0_ptr++];
 
-      int start = csr.row_ptr[v];
-      int end = csr.row_ptr[v+1];
+      IDType start = csr.row_ptr[v];
+      IDType end = csr.row_ptr[v+1];
 
-      for(int i=start; i<end; i++){
-	int u = csr.col[i];
+      for(IDType i=start; i<end; i++){
+	IDType u = csr.col[i];
 
 	if(bp_dists[u] == (uint8_t) MAX_DIST){
 	  E1.emplace_back(v,u);
@@ -122,15 +122,15 @@ inline void BP::InitBPForRoot(int r, vector<int>& Sr, int bp_index, CSR& csr){
     }
 
     for(auto& p : E0){
-      int v = p.first;
-      int u = p.second;
+      IDType v = p.first;
+      IDType u = p.second;
       bp_sets[v].second |= bp_sets[u].first;
       bp_sets[u].second |= bp_sets[v].first;
     }
 
     for(auto& p : E1){
-      int v = p.first;
-      int u = p.second;
+      IDType v = p.first;
+      IDType u = p.second;
       bp_sets[u].first |= bp_sets[v].first;
       bp_sets[u].second |= bp_sets[v].second & ~bp_sets[v].first;
       /* bp_sets[u].second |= bp_sets[v].second; */
@@ -144,7 +144,7 @@ inline void BP::InitBPForRoot(int r, vector<int>& Sr, int bp_index, CSR& csr){
   }
 
 
-  for(int i=0; i<csr.n; i++){
+  for(IDType i=0; i<csr.n; i++){
     auto& bp = bp_labels[i];
     bp.bp_dists[bp_index] = bp_dists[i];
     bp.bp_sets[bp_index][0] = bp_sets[i].first;
@@ -156,12 +156,12 @@ inline void BP::InitBPForRoot(int r, vector<int>& Sr, int bp_index, CSR& csr){
 
 }
 
-BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode mode) {
+BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* cut, Mode mode) {
 
   double start_time = omp_get_wtime();
 
   bp_labels.resize(csr.n);
-  for(int i=0; i<csr.n; i++){
+  for(IDType i=0; i<csr.n; i++){
     for(int j=0; j<N_ROOTS; j++){
       bp_labels[i].bp_dists[j] = (uint8_t) MAX_DIST;
       bp_labels[i].bp_sets[j][0] = (uint64_t) 0;
@@ -171,18 +171,18 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode 
 
 
   vector<bool> used(csr.n, false);
-  vector<int> roots;
+  vector<IDType> roots;
 
-  for(int i=0; i<csr.n; i++){
-    int start = csr.row_ptr[i];
-    int end = csr.row_ptr[i+1];
+  for(IDType i=0; i<csr.n; i++){
+    IDType start = csr.row_ptr[i];
+    IDType end = csr.row_ptr[i+1];
 
-    sort(csr.col+start, csr.col+end, [&ranks](int u, int v){
+    sort(csr.col+start, csr.col+end, [&ranks](IDType u, IDType v){
 	return ranks[u] > ranks[v];
       });
   }
 
-  vector<int> candidates = order;
+  vector<IDType> candidates = order;
 
 
 
@@ -193,22 +193,22 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode 
     if(mode == GLOBAL_BP_MODE){
       candidates.insert(candidates.end(), cut->rbegin(), cut->rend());
     } else {
-      for(int cut_node : *cut){
+      for(IDType cut_node : *cut){
 	used[cut_node] = true;
       }
     }
 
   } 
 
-  vector<vector<int>> Srs(N_ROOTS);
+  vector<vector<IDType>> Srs(N_ROOTS);
 
-  int root_index = candidates.size()-1;
-  int number_of_roots_used = 0;
-  for(int i=0; i<N_ROOTS; i++){
+  IDType root_index = candidates.size()-1;
+  IDType number_of_roots_used = 0;
+  for(IDType i=0; i<N_ROOTS; i++){
 
 
     while(root_index >= 0){
-      int root = candidates[root_index]; 
+      IDType root = candidates[root_index]; 
       if(!used[root]){
 	number_of_roots_used++;
 	break;
@@ -221,7 +221,7 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode 
       break;
     }
 
-    int root = candidates[root_index];
+    IDType root = candidates[root_index];
     roots.push_back(root);
     /* cout << "Chosen root=" << root << endl; */
     /* cout << "Chosen root rank=" << ranks[root] << endl; */
@@ -229,11 +229,11 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode 
     
     Srs[i].reserve(64);
 
-    int start = csr.row_ptr[root];
-    int end = csr.row_ptr[root+1];
+    IDType start = csr.row_ptr[root];
+    IDType end = csr.row_ptr[root+1];
 
-    for(int j=start; j<end && j-start < 64; j++){
-      int v = csr.col[j];
+    for(IDType j=start; j<end && j-start < 64; j++){
+      IDType v = csr.col[j];
       Srs[i].push_back(v);
       used[v] = true;
     }
@@ -241,8 +241,8 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode 
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for(int i=0; i<number_of_roots_used; i++){
-    vector<int>& Sr = Srs[i];
-    int root = roots[i];
+    vector<IDType>& Sr = Srs[i];
+    IDType root = roots[i];
     InitBPForRoot(root, Sr, i, csr);    
   }
 
@@ -258,7 +258,7 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode 
   }
   ofs << endl;
   ofs << "__Dists__" << endl;
-  for(int v=0; v<csr.n; v++){
+  for(IDType v=0; v<csr.n; v++){
 	  ofs << v << ": ";
 	  for(int i=0; i<N_ROOTS; i++){
 		  ofs << (int) bp_labels[v].bp_dists[i] << ", ";	
@@ -267,7 +267,7 @@ BP::BP(CSR& csr, vector<int>& ranks, vector<int>& order, vector<int>* cut, Mode 
   }
   
   ofs << "__Sets__" << endl;
-  for(int v=0; v<csr.n; v++){
+  for(IDType v=0; v<csr.n; v++){
 	  ofs << v << ": ";
 	  for(int i=0; i<N_ROOTS; i++){
 		  ofs << "(" << bp_labels[v].bp_sets[i][0] << "," << bp_labels[v].bp_sets[i][1] << ")" << ", ";	

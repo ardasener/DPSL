@@ -16,7 +16,8 @@
 
 using namespace std;
 
-vector<int> gen_order(int *xadj, int *adj, int n, int m, string method); 
+template <typename T>
+vector<T> gen_order(T *xadj, T *adj, T n, T m, string method); 
 
 // Makes it header only
 #include "order.cpp"

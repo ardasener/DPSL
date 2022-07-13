@@ -24,8 +24,8 @@ using namespace std;
 
 // Stores the labels for each vertex
 struct LabelSet {
-  vector<int> vertices; // global vertex ids in order of distances - log(n) 
-  vector<int> dist_ptrs; // indices for the vertices vector denoting distance starts - max_dist
+  vector<IDType> vertices; // global vertex ids in order of distances - log(n) 
+  vector<IDType> dist_ptrs; // indices for the vertices vector denoting distance starts - max_dist
 };
 
 enum PruneIDs {
@@ -41,8 +41,8 @@ class PSL {
 public:
   
   CSR &csr;
-  vector<int> ranks;
-  vector<int> order;
+  vector<IDType> ranks;
+  vector<IDType> order;
   BP* local_bp = nullptr;
   BP* global_bp = nullptr;
   int last_dist = 2;
@@ -55,27 +55,27 @@ public:
 
   vector<LabelSet> labels;
   vector<Stats> stats_vec;
-  vector<int> max_ranks;
+  vector<IDType> max_ranks;
   vector<bool> in_cut;
   char** caches = nullptr;
   bool** used = nullptr;
-  PSL(CSR &csr_, string order_method, vector<int>* cut=nullptr, BP* global_bp=nullptr, vector<int>* ranks_ptr=nullptr, vector<int>* order_ptr = nullptr);
+  PSL(CSR &csr_, string order_method, vector<IDType>* cut=nullptr, BP* global_bp=nullptr, vector<IDType>* ranks_ptr=nullptr, vector<IDType>* order_ptr = nullptr);
   ~PSL();
-  vector<int>* Pull(int u, int d, char* cache);
-  vector<int>* Init(int u);
+  vector<IDType>* Pull(IDType u, int d, char* cache);
+  vector<IDType>* Init(IDType u);
   void Index();
   void WriteLabelCounts(string filename);
-  vector<int>* Query(int u);
+  vector<IDType>* Query(IDType u);
   void CountPrune(int i);
-  bool Prune(int u, int v, int d, char* cache);
-  void Query(int u, string filename);
+  bool Prune(IDType u, IDType v, int d, char* cache);
+  void Query(IDType u, string filename);
   void CountStats(double time);
 };
 
 inline void PSL::CountStats(double time){
 
   long long total_label_count = 0;
-  for(int u=0; u<csr.n; u++){
+  for(IDType u=0; u<csr.n; u++){
     total_label_count += labels[u].vertices.size();
   }
   double avg_label_count = total_label_count / (double) csr.n;
@@ -131,13 +131,13 @@ inline void PSL::CountPrune(int i){
 }
 
 
-inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp, vector<int>* ranks_ptr, vector<int>* order_ptr) : csr(csr_),  labels(csr.n), global_bp(global_bp) {
+inline PSL::PSL(CSR &csr_, string order_method, vector<IDType>* cut, BP* global_bp, vector<IDType>* ranks_ptr, vector<IDType>* order_ptr) : csr(csr_),  labels(csr.n), global_bp(global_bp) {
 
 
   if(ranks_ptr == nullptr){
-    order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
+    order = gen_order<IDType>(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
     ranks.resize(csr.n);
-    for(int i=0; i<csr.n; i++){
+    for(IDType i=0; i<csr.n; i++){
           ranks[order[i]] = i;
     } 
   } else {
@@ -148,15 +148,15 @@ inline PSL::PSL(CSR &csr_, string order_method, vector<int>* cut, BP* global_bp,
 
   in_cut.resize(csr.n, false);
   if(cut != nullptr && !cut->empty()){
-    for(int u : *cut){
+    for(IDType u : *cut){
       in_cut[u] = true;
     }
   }
 
   if constexpr(RERANK_CUT){
     if(cut != nullptr && !cut->empty()){
-      int temp_rank = INT_MAX;
-      for(int u : *cut){
+      IDType temp_rank = MAX_ID;
+      for(IDType u : *cut){
         ranks[u] = temp_rank--;
       }
     }
@@ -184,14 +184,14 @@ inline void PSL::WriteLabelCounts(string filename){
   ofs << endl;
 
   long long total = 0;
-  for(int u=0; u<csr.n; u++){
+  for(IDType u=0; u<csr.n; u++){
     ofs << u << ":\t";
     auto& labels_u = labels[u];
     total += labels_u.vertices.size();
 
     for(int d=0; d<last_dist; d++){
-      int dist_start = labels_u.dist_ptrs[d];
-      int dist_end = labels_u.dist_ptrs[d+1];
+      IDType dist_start = labels_u.dist_ptrs[d];
+      IDType dist_end = labels_u.dist_ptrs[d+1];
 
       ofs << dist_end - dist_start << "\t";
     }
@@ -209,7 +209,7 @@ inline void PSL::WriteLabelCounts(string filename){
   ofs.close();
 }
 
-inline void PSL::Query(int u, string filename){
+inline void PSL::Query(IDType u, string filename){
   auto results = Query(u);
   auto bfs_results = BFSQuery(csr, u);
   
@@ -219,7 +219,7 @@ inline void PSL::Query(int u, string filename){
   ofs << "Target\tPSL_Distance\tBFS_Distance\tCorrectness" << endl;
 
   bool all_correct = true;
-  for(int i=0; i<csr.n; i++){
+  for(IDType i=0; i<csr.n; i++){
     int psl_res = results->at(i);
     int bfs_res = bfs_results->at(i);
     string correctness = (bfs_res == psl_res) ? "correct" : "wrong";
@@ -237,26 +237,26 @@ inline void PSL::Query(int u, string filename){
   delete bfs_results;
 }
 
-inline vector<int>* PSL::Query(int u) {
+inline vector<IDType>* PSL::Query(IDType u) {
 
 
-  vector<int>* results = new vector<int>(csr.n, MAX_DIST);
+  vector<IDType>* results = new vector<IDType>(csr.n, MAX_DIST);
 
   auto &labels_u = labels[u];
 
   vector<char> cache(csr.n, -1);
 
   for (int d = 0; d < last_dist; d++) {
-    int dist_start = labels_u.dist_ptrs[d];
-    int dist_end = labels_u.dist_ptrs[d + 1];
+    IDType dist_start = labels_u.dist_ptrs[d];
+    IDType dist_end = labels_u.dist_ptrs[d + 1];
 
-    for (int i = dist_start; i < dist_end; i++) {
-      int w = labels_u.vertices[i]; 
+    for (IDType i = dist_start; i < dist_end; i++) {
+      IDType w = labels_u.vertices[i]; 
       cache[w] = (char) d;
     }
   }
 
-  for (int v = 0; v < csr.n; v++) {
+  for (IDType v = 0; v < csr.n; v++) {
 
     auto& labels_v = labels[v];
 
@@ -266,11 +266,11 @@ inline vector<int>* PSL::Query(int u) {
       min = local_bp->QueryByBp(u,v);
 
     for (int d = 0; d < min && d < last_dist; d++) {
-      int dist_start = labels_v.dist_ptrs[d];
-      int dist_end = labels_v.dist_ptrs[d + 1];
+      IDType dist_start = labels_v.dist_ptrs[d];
+      IDType dist_end = labels_v.dist_ptrs[d + 1];
 
-      for (int i = dist_start; i < dist_end; i++) {
-        int w = labels_v.vertices[i];
+      for (IDType i = dist_start; i < dist_end; i++) {
+        IDType w = labels_v.vertices[i];
 
         if(cache[w] == -1){
           continue;
@@ -290,16 +290,16 @@ inline vector<int>* PSL::Query(int u) {
   return results;
 }
 
-inline bool PSL::Prune(int u, int v, int d, char* cache) {
+inline bool PSL::Prune(IDType u, IDType v, int d, char* cache) {
 
   auto &labels_v = labels[v];
 
   for (int i = 0; i < d; i++) {
-    int dist_start = labels_v.dist_ptrs[i];
-    int dist_end = labels_v.dist_ptrs[i + 1];
+    IDType dist_start = labels_v.dist_ptrs[i];
+    IDType dist_end = labels_v.dist_ptrs[i + 1];
 
-    for (int j = dist_start; j < dist_end; j++) {
-      int w = labels_v.vertices[j];
+    for (IDType j = dist_start; j < dist_end; j++) {
+      IDType w = labels_v.vertices[j];
       
       int cache_dist = cache[w];
 
@@ -313,10 +313,10 @@ inline bool PSL::Prune(int u, int v, int d, char* cache) {
   return false;
 }
 
-inline vector<int>* PSL::Pull(int u, int d, char* cache) {
+inline vector<IDType>* PSL::Pull(IDType u, int d, char* cache) {
 
-  int start = csr.row_ptr[u];
-  int end = csr.row_ptr[u + 1];
+  IDType start = csr.row_ptr[u];
+  IDType end = csr.row_ptr[u + 1];
   
   if(end == start){
     return nullptr;
@@ -325,26 +325,26 @@ inline vector<int>* PSL::Pull(int u, int d, char* cache) {
   auto &labels_u = labels[u];
 
   for (int i = 0; i < d; i++) {
-    int dist_start = labels_u.dist_ptrs[i];
-    int dist_end = labels_u.dist_ptrs[i + 1];
+    IDType dist_start = labels_u.dist_ptrs[i];
+    IDType dist_end = labels_u.dist_ptrs[i + 1];
 
-    for (int j = dist_start; j < dist_end; j++) {
-      int w = labels_u.vertices[j];
+    for (IDType j = dist_start; j < dist_end; j++) {
+      IDType w = labels_u.vertices[j];
       cache[w] = (char) i;
     }
   }
 
-  vector<int>* new_labels = nullptr;
+  vector<IDType>* new_labels = nullptr;
 
-  for (int i = start; i < end; i++) {
-    int v = csr.col[i];
+  for (IDType i = start; i < end; i++) {
+    IDType v = csr.col[i];
     auto &labels_v = labels[v];
 
-    int labels_start = labels_v.dist_ptrs[d-1];
-    int labels_end = labels_v.dist_ptrs[d];
+    IDType labels_start = labels_v.dist_ptrs[d-1];
+    IDType labels_end = labels_v.dist_ptrs[d];
 
-    for (int j = labels_start; j < labels_end; j++) {
-      int w = labels_v.vertices[j];
+    for (IDType j = labels_start; j < labels_end; j++) {
+      IDType w = labels_v.vertices[j];
 
       if(cache[w] <= d){
         continue;
@@ -375,7 +375,7 @@ inline vector<int>* PSL::Pull(int u, int d, char* cache) {
       }
 
       if(new_labels == nullptr){
-        new_labels = new vector<int>;
+        new_labels = new vector<IDType>;
       }
 
       new_labels->push_back(w);
@@ -390,32 +390,32 @@ inline vector<int>* PSL::Pull(int u, int d, char* cache) {
   }
 
   for (int i = 0; i < d; i++) {
-    int dist_start = labels_u.dist_ptrs[i];
-    int dist_end = labels_u.dist_ptrs[i + 1];
+    IDType dist_start = labels_u.dist_ptrs[i];
+    IDType dist_end = labels_u.dist_ptrs[i + 1];
 
-    for (int j = dist_start; j < dist_end; j++) {
-      int w = labels_u.vertices[j];
+    for (IDType j = dist_start; j < dist_end; j++) {
+      IDType w = labels_u.vertices[j];
       cache[w] = (char) MAX_DIST;
     }
   }
 
   if(new_labels != nullptr)
-    for(int w : *new_labels){
+    for(IDType w : *new_labels){
       cache[w] = (char) MAX_DIST;
     }
   
   return new_labels;
 }
 
-inline vector<int>* PSL::Init(int u){
+inline vector<IDType>* PSL::Init(IDType u){
   
-  vector<int>* init_labels = new vector<int>;
+  vector<IDType>* init_labels = new vector<IDType>;
 
-  int start = csr.row_ptr[u];
-  int end = csr.row_ptr[u + 1];
+  IDType start = csr.row_ptr[u];
+  IDType end = csr.row_ptr[u + 1];
 
-  for (int j = start; j < end; j++) {
-    int v = csr.col[j];
+  for (IDType j = start; j < end; j++) {
+    IDType v = csr.col[j];
 
     if (ranks[v] > ranks[u]) {
       init_labels->push_back(v);
@@ -443,7 +443,7 @@ inline void PSL::Index() {
   // Level 1: vertex to neighbors
   start_time = omp_get_wtime();
   #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
-  for (int u = 0; u < csr.n; u++) {
+  for (IDType u = 0; u < csr.n; u++) {
     auto init_labels = Init(u);
     labels[u].vertices.push_back(u);
     labels[u].vertices.insert(labels[u].vertices.end(), init_labels->begin(), init_labels->end());
@@ -458,7 +458,7 @@ inline void PSL::Index() {
   bool should_run[csr.n];
   fill(should_run, should_run+csr.n, true);
 
-  vector<vector<int>*> new_labels(csr.n, nullptr);
+  vector<vector<IDType>*> new_labels(csr.n, nullptr);
   bool updated = true;
   for (int d = 2; d < MAX_DIST && updated; d++) {
     
@@ -468,7 +468,7 @@ inline void PSL::Index() {
 
     pull_start_time = omp_get_wtime();
     #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated) schedule(runtime)
-    for (int u = 0; u < csr.n; u++) {
+    for (IDType u = 0; u < csr.n; u++) {
       if(should_run[u]){
         new_labels[u] =  Pull(u, d, caches[omp_get_thread_num()]);
         updated = updated || (new_labels[u] != nullptr && !new_labels[u]->empty());
@@ -482,7 +482,7 @@ inline void PSL::Index() {
     fill(should_run, should_run+csr.n, false);
     
     #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
-    for (int u = 0; u < csr.n; u++) {
+    for (IDType u = 0; u < csr.n; u++) {
       
       auto& labels_u = labels[u];
       
@@ -500,11 +500,11 @@ inline void PSL::Index() {
       delete new_labels[u];
       new_labels[u] = nullptr;
 
-      int start = csr.row_ptr[u]; 
-      int end = csr.row_ptr[u+1];
+      IDType start = csr.row_ptr[u]; 
+      IDType end = csr.row_ptr[u+1];
 
-      for(int i=start; i<end; i++){
-        int v = csr.col[i];
+      for(IDType i=start; i<end; i++){
+        IDType v = csr.col[i];
         if(ranks[v] < max_ranks[u]){
           should_run[v] = true;
         }
