@@ -339,12 +339,14 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
   // float* one_btwn = new float[n];
   // float* two_btwn = new float[n];
   // float* thr_btwn = new float[n];
-  // float* all_btwn = new float[n];
+  float* cent2 = new float[n];
   // float* rw_cent = new float[n];
   // float* eigen_cent = new float[n];
   // float* c_cent = new float[n];
   float *probs = new float[xadj[n]];
   float *next_vals = new float[n];
+
+  fill(cent2, cent2 + n, 0);
 
   int noBFS = 256;
   int iter = 20;
@@ -382,26 +384,36 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
   // i < n; i++) thr_btwn[i] = pb_cent[0][i]; cout << "BC-3 is computed in " <<
   // end - start << " seconds\n";
 
-  else if (method == "betweenness") {
+  else if (method == "b_cent" || method == "degree_b_cent") {
     cout << "starting BC-all computation\n";
     start = omp_get_wtime();
     computeBCandCC(lxadj, ladj, vcount, noBFS, pque, plevel, ppred, pendpred,
                    psigma, pdelta, pb_cent, pc_cent, -1);
     end = omp_get_wtime();
-    for (T i = 0; i < n; i++)
-      cent[i] = pb_cent[0][i];
+    if(method == "degree_b_cent")
+      for (T i = 0; i < n; i++)
+        cent2[i] = pb_cent[0][i];
+    else
+      for (T i = 0; i < n; i++)
+        cent[i] = pb_cent[0][i];
+
     cout << "BC-all is computed in " << end - start << " seconds\n";
 
   }
 
-  else if (method == "closeness") {
+  else if (method == "c_cent" || method == "degree_c_cent") {
     cout << "starting BC-all computation\n";
     start = omp_get_wtime();
     computeBCandCC(lxadj, ladj, vcount, noBFS, pque, plevel, ppred, pendpred,
                    psigma, pdelta, pb_cent, pc_cent, -1);
     end = omp_get_wtime();
-    for (T i = 0; i < n; i++)
-      cent[i] = pc_cent[0][i];
+    if(method == "degree_b_cent")
+      for (T i = 0; i < n; i++)
+        cent2[i] = pb_cent[0][i];
+    else
+      for (T i = 0; i < n; i++)
+        cent[i] = pb_cent[0][i];
+
     cout << "BC-all is computed in " << end - start << " seconds\n";
   }
 
@@ -409,35 +421,54 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
     // to compute edge probabilities
     computeRWprobs(xadj, adj, n, probs);
 
-    if (method == "rw") {
+    if (method == "rw_cent" || method == "degree_rw_cent") {
       cout << "starting RW cent computation\n";
       start = omp_get_wtime();
-      computeRWCent(lxadj, ladj, vcount, probs, cent, next_vals, iter);
+      if(method == "rw_cent")
+        computeRWCent(lxadj, ladj, vcount, probs, cent, next_vals, iter);
+      else
+        computeRWCent(lxadj, ladj, vcount, probs, cent2, next_vals, iter);
       end = omp_get_wtime();
       cout << "RW cent is computed in " << end - start << " secs\n";
-    } else if (method == "eigen") {
+
+    } else if (method == "eigen_cent" || method == "degree_eigen_cent") {
       cout << "starting EV cent computation\n";
       start = omp_get_wtime();
-      computeEVCent(lxadj, ladj, vcount, probs, cent, next_vals, iter);
+      if(method == "eigen_cent")
+        computeEVCent(lxadj, ladj, vcount, probs, cent, next_vals, iter);
+      else
+        computeEVCent(lxadj, ladj, vcount, probs, cent2, next_vals, iter);
       end = omp_get_wtime();
       cout << "EV cent is computed in " << end - start << " secs\n";
     }
   }
 
   cout << "Ordering based on " << method << "..." << endl;
-  vector<pair<float, T>> sort_vec;
+  vector<tuple<float, float, T>> sort_vec;
   T li = 0;
   for (T i = 0; i < n; i++) {
-    if(compid[i] == lcompid)
-      sort_vec.emplace_back(cent[li++], i);
-    else
-      sort_vec.emplace_back(FLT_MIN,i);
+    if(compid[i] == lcompid){
+      sort_vec.emplace_back(cent[li], cent2[li], i);
+      li++;
+    } else {
+      sort_vec.emplace_back(FLT_MIN, FLT_MIN,i);
+    }
   }
-  sort(sort_vec.begin(), sort_vec.end(), less<pair<float, T>>());
+
+  sort(sort_vec.begin(), sort_vec.end(), [](tuple<float,float,T>& t1, tuple<float,float,T>& t2){
+          float c_t1 = get<0>(t1); 
+          float c_t2 = get<0>(t2); 
+
+          if(c_t1 == c_t2){
+            return get<1>(t1) < get<1>(t2);
+          }
+
+          return c_t1 < c_t2;
+        });
 
   vector<T> order;
-  for (auto const &p : sort_vec) {
-    order.push_back(p.second);
+  for (auto const &t : sort_vec) {
+    order.push_back(get<2>(t));
   }
 
   for (int i = 0; i < nthreads; i++) {
@@ -452,6 +483,7 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
   }
 
   delete[] cent;
+  delete[] cent2;
   delete[] probs;
   delete[] next_vals;
 

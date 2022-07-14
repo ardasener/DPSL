@@ -16,11 +16,11 @@ echo "Running with: $GRAPHS"
 mkdir -p run_outputs
 
 function run_psl {
-	./psl config_psl.toml $1 | tee $2
+	./psl $1 | tee $2
 }
 
 function run_dpsl {
-	mpirun -np 2 --bind-to none ./dpsl config_dpsl.toml $1 $2 | tee $3
+	mpirun -np 2 --bind-to none ./dpsl $1 $2 | tee $3
 }
 
 for GRAPH in ${GRAPHS[@]}; do
@@ -28,7 +28,7 @@ for GRAPH in ${GRAPHS[@]}; do
 	if [ -d $2 ]; then
 		GRAPH_PATH=${2}/${GRAPH}
 	else
-		GRAPH_PATH=vsep_graphs/${GRAPH}.mtx
+		GRAPH_PATH=part_graphs/${GRAPH}.mtx
 		GRAPH=${GRAPH}.mtx
 	fi
 
@@ -64,6 +64,14 @@ for GRAPH in ${GRAPHS[@]}; do
 				run_dpsl $GRAPH_PATH $VSEP_UNIFORM_PATH run_outputs/${GRAPH}.${RANKS_INFO}.dpsl.uniform.out
 			done
 		done	
+	fi
+
+	if [[ $MODE == "order_method" ]]; then
+		for METHOD in degree b_cent c_cent rw_cent eigen_cent degree_b_cent degree_c_cent degree_rw_cent degree_eigen_cent
+		do
+			make psl -B NUM_THREADS=20 ORDER_METHOD=${METHOD}
+			run_psl $GRAPH_PATH run_outputs/${GRAPH}.${METHOD}.psl.out
+		done
 	fi
 
 	if [[ $MODE == "opt_bp" ]]; then

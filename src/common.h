@@ -17,7 +17,7 @@
 #endif
 
 #ifndef ORDER_METHOD
-#define ORDER_METHOD "degree"
+#define ORDER_METHOD "b_cent"
 #endif
 
 #ifndef RERANK_CUT

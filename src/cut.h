@@ -142,31 +142,33 @@ inline VertexCut::VertexCut(CSR& csr, string part_file, string order_method, int
  
   partition = new IDType[csr.n];
   int x;
-  int i = 0;
+  IDType i = 0;
   while(part_ifs >> x){
     partition[i++] = x;
   }
 
   vector<bool> in_cut(csr.n, false);
   cout << "Calculating cut..." << endl;
-  for(int u=0; u<csr.n; u++){
-    int start = csr.row_ptr[u];
-    int end = csr.row_ptr[u+1];
+  for(IDType i=csr.n-1; i>=0; i--){
+    IDType u = order[i];
+    IDType start = csr.row_ptr[u];
+    IDType end = csr.row_ptr[u+1];
 
-    for(int j=start; j<end; j++){
-      int v = csr.col[j];
+    for(IDType j=start; j<end; j++){
+      IDType v = csr.col[j];
 
       if(partition[u] != partition[v]){
+
+        if(in_cut[v] || in_cut[u]){
+          continue;
+        }
+
         if (ranks[u] > ranks[v]){
-          if(!in_cut[v]){
-            cut.insert(u);
-            in_cut[u] = true;
-          }
+          cut.insert(u);
+          in_cut[u] = true;
         } else {
-          if(!in_cut[u]){
-            cut.insert(v);
-            in_cut[v] = true;
-          }
+          cut.insert(v);
+          in_cut[v] = true;
         }
       }
     }
