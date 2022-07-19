@@ -210,8 +210,17 @@ inline void PSL::WriteLabelCounts(string filename){
 }
 
 inline void PSL::Query(IDType u, string filename){
+  double start_time = omp_get_wtime();
   auto results = Query(u);
+  double end_time = omp_get_wtime();
+
+  cout << "Avg. Query Time: " << (end_time-start_time) / csr.n << " seconds" << endl;
+
+  start_time = omp_get_wtime();
   auto bfs_results = BFSQuery(csr, u);
+  end_time = omp_get_wtime();
+  
+  cout << "Avg. BFS Time: " << (end_time-start_time) / csr.n << " seconds" << endl;
   
   ofstream ofs(filename);
 

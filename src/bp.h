@@ -117,6 +117,7 @@ inline void BP::InitBPForRoot(IDType r, vector<IDType>& Sr, int bp_index, CSR& c
 	  E1.emplace_back(v,u);
 	} else if (bp_dists[u] == bp_dists[v]){
 	  E0.emplace_back(v,u);
+
 	} 
       } 
     }
@@ -133,7 +134,7 @@ inline void BP::InitBPForRoot(IDType r, vector<IDType>& Sr, int bp_index, CSR& c
       IDType u = p.second;
       bp_sets[u].first |= bp_sets[v].first;
       bp_sets[u].second |= bp_sets[v].second & ~bp_sets[v].first;
-      /* bp_sets[u].second |= bp_sets[v].second; */
+      //bp_sets[u].second |= bp_sets[v].second;
     }
 
     swap(Q0, Q1);
@@ -161,6 +162,7 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
   double start_time = omp_get_wtime();
 
   bp_labels.resize(csr.n);
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
   for(IDType i=0; i<csr.n; i++){
     for(int j=0; j<N_ROOTS; j++){
       bp_labels[i].bp_dists[j] = (uint8_t) MAX_DIST;
@@ -172,14 +174,17 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
 
   vector<bool> used(csr.n, false);
   vector<IDType> roots;
+  roots.reserve(N_ROOTS);
 
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
   for(IDType i=0; i<csr.n; i++){
     IDType start = csr.row_ptr[i];
     IDType end = csr.row_ptr[i+1];
 
-    sort(csr.col+start, csr.col+end, [&ranks](IDType u, IDType v){
-	return ranks[u] > ranks[v];
-      });
+    if(end-start > 64)
+      sort(csr.col+start, csr.col+end, [&ranks](IDType u, IDType v){
+	  return ranks[u] > ranks[v];
+	});
   }
 
   vector<IDType> candidates = order;
@@ -234,12 +239,14 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
 
     for(IDType j=start; j<end && j-start < 64; j++){
       IDType v = csr.col[j];
-      Srs[i].push_back(v);
-      used[v] = true;
+      if(!used[v]){
+	Srs[i].push_back(v);
+	used[v] = true;
+      }
     }
   }
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(dynamic)
   for(int i=0; i<number_of_roots_used; i++){
     vector<IDType>& Sr = Srs[i];
     IDType root = roots[i];

@@ -75,7 +75,12 @@ for GRAPH in ${GRAPHS[@]}; do
 	fi
 
 	if [[ $MODE == "opt_bp" ]]; then
-		for N_ROOTS in 16 32 64 128 256 512 1024
+
+		echo "__PSL:BP0__"
+		make psl -B NUM_THREADS=60 USE_BP=false
+		run_psl $GRAPH_PATH run_outputs/${GRAPH}.bp_0.psl.out
+		
+		for N_ROOTS in 16 32 64 128 256
 		do
 			echo "__PSL:BP${N_ROOTS}__"
 			make psl -B NUM_THREADS=60 N_ROOTS=${N_ROOTS}

@@ -445,6 +445,7 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
 
   cout << "Ordering based on " << method << "..." << endl;
   vector<tuple<float, float, T>> sort_vec;
+  sort_vec.reserve(n);
   T li = 0;
   for (T i = 0; i < n; i++) {
     if(compid[i] == lcompid){
@@ -467,6 +468,7 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
         });
 
   vector<T> order;
+  order.reserve(n);
   for (auto const &t : sort_vec) {
     order.push_back(get<2>(t));
   }
