@@ -205,8 +205,12 @@ inline void DPSL::Query(IDType u, string filename) {
     cout << "Avg. BFS Time: " << (end_time-start_time) / whole_csr->n << " seconds" << endl;;
 
     bool all_correct = true;
+    
+#ifdef DEBUG
     ofstream ofs(filename);
     ofs << "Vertex\tDPSL(source)\tBFS\tCorrectness" << endl;
+#endif
+    
     for (IDType i = 0; i < whole_csr->n; i++) {
       int psl_res = all_dists[i];
       if (psl_res == MAX_DIST) {
@@ -219,14 +223,20 @@ inline void DPSL::Query(IDType u, string filename) {
         all_correct = false;
       }
       
+#ifdef DEBUG
       ofs << i << "\t" << psl_res << "(" << source[i] << ")"
           << "\t" << bfs_res << "\t" << correctness << endl;
+#endif
+
     }
 
     delete bfs_results;
     delete[] all_dists;
     delete[] source;
+
+#ifdef DEBUG
     ofs.close();
+#endif
 
     cout << "Correctness of Query: " << all_correct << endl;
 

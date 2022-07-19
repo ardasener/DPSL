@@ -222,10 +222,12 @@ inline void PSL::Query(IDType u, string filename){
   
   cout << "Avg. BFS Time: " << (end_time-start_time) / csr.n << " seconds" << endl;
   
-  ofstream ofs(filename);
 
+#ifdef DEBUG
+  ofstream ofs(filename);
   ofs << "Source: " << u << endl;
   ofs << "Target\tPSL_Distance\tBFS_Distance\tCorrectness" << endl;
+#endif
 
   bool all_correct = true;
   for(IDType i=0; i<csr.n; i++){
@@ -236,12 +238,18 @@ inline void PSL::Query(IDType u, string filename){
     if(bfs_res != psl_res){
       all_correct = false;
     }
+
+#ifdef DEBUG
     ofs << i << "\t" << psl_res << "\t" << bfs_res << "\t" << correctness << endl;
+#endif
   }
 
   cout << "Correctness: " << all_correct << endl;
 
+#ifdef DEBUG
   ofs.close();
+#endif
+
   delete results;
   delete bfs_results;
 }
