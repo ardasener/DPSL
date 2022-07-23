@@ -112,7 +112,8 @@ void PSL::WriteLabelCounts(string filename){
   ofs << endl;
 
   long long total = 0;
-  for(IDType u=0; u<csr.n; u++){
+  for(IDType i=0; i<csr.n; i++){
+    IDType u = order[csr.n-i-1];
     ofs << u << ":\t";
     auto& labels_u = labels[u];
     total += labels_u.vertices.size();
@@ -260,6 +261,15 @@ bool PSL::Prune(IDType u, IDType v, int d, char* cache) {
 
 vector<IDType>* PSL::Pull(IDType u, int d, char* cache) {
 
+  if constexpr(USE_LOCAL_BP)
+    if(local_bp->used[u])
+      return nullptr;
+    
+
+  if constexpr(USE_GLOBAL_BP)
+    if(global_bp->used[u])
+      return nullptr;
+
   IDType start = csr.row_ptr[u];
   IDType end = csr.row_ptr[u + 1];
   
@@ -291,12 +301,16 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache) {
     for (IDType j = labels_start; j < labels_end; j++) {
       IDType w = labels_v.vertices[j];
 
+      if(w == u){
+        continue;
+      }
+
       if(cache[w] <= d){
         continue;
       }
 
       if (ranks[u] > ranks[w]) {
-	CountPrune(PRUNE_RANK);
+	      CountPrune(PRUNE_RANK);
         continue;
       }
 
@@ -363,6 +377,16 @@ vector<IDType>* PSL::Init(IDType u){
     IDType v = csr.col[j];
 
     if (ranks[v] > ranks[u]) {
+      if constexpr(USE_LOCAL_BP)
+        if(local_bp->used[v]){
+          continue;
+        }
+
+      if constexpr(USE_GLOBAL_BP)
+        if(global_bp->used[v]){
+          continue;
+        }
+
       init_labels->push_back(v);
     }
   }
@@ -374,7 +398,7 @@ vector<IDType>* PSL::Init(IDType u){
 
 void PSL::Index() {
 
-  double start_time, end_time, all_start_time, all_end_time, pull_start_time, pull_end_time;
+  double start_time, end_time, all_start_time, all_end_time;
   all_start_time = omp_get_wtime();
 
   caches = new char*[NUM_THREADS];
@@ -386,19 +410,40 @@ void PSL::Index() {
   // Adds the first two level of vertices
   // Level 0: vertex to itself
   // Level 1: vertex to neighbors
+  long long l01_count = 0;
   start_time = omp_get_wtime();
-  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime) reduction(+ : l01_count)
   for (IDType u = 0; u < csr.n; u++) {
-    auto init_labels = Init(u);
-    labels[u].vertices.push_back(u);
-    labels[u].vertices.insert(labels[u].vertices.end(), init_labels->begin(), init_labels->end());
-    delete init_labels;
-    labels[u].dist_ptrs.push_back(0);
-    labels[u].dist_ptrs.push_back(1);
-    labels[u].dist_ptrs.push_back(labels[u].vertices.size());
+
+    bool should_init = true;
+    if constexpr(USE_LOCAL_BP)
+      if(local_bp->used[u])
+        should_init = false;
+     
+     if constexpr(USE_GLOBAL_BP)
+      if(global_bp->used[u])
+        should_init = false;
+
+    if(should_init){
+      labels[u].vertices.push_back(u);
+      auto init_labels = Init(u);
+      labels[u].vertices.insert(labels[u].vertices.end(), init_labels->begin(), init_labels->end());
+      delete init_labels;
+
+      labels[u].dist_ptrs.push_back(0);
+      labels[u].dist_ptrs.push_back(1);
+      labels[u].dist_ptrs.push_back(labels[u].vertices.size());
+    } else {
+      labels[u].dist_ptrs.push_back(0);
+      labels[u].dist_ptrs.push_back(0);
+      labels[u].dist_ptrs.push_back(0);
+    }
+   
+    l01_count += labels[u].vertices.size();
   }
   end_time = omp_get_wtime();
-  cout << "Level 0 & 1: " << end_time-start_time << " seconds" << endl;
+  cout << "Level 0 & 1 Time: " << end_time-start_time << " seconds" << endl;
+  cout << "Level 0 & 1 Count: " << l01_count << endl;
 
   bool should_run[csr.n];
   fill(should_run, should_run+csr.n, true);
@@ -411,7 +456,6 @@ void PSL::Index() {
     updated = false;
     fill(max_ranks.begin(), max_ranks.end(), -1);
 
-    pull_start_time = omp_get_wtime();
     #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated) schedule(runtime)
     for (IDType u = 0; u < csr.n; u++) {
       if(should_run[u]){
@@ -419,18 +463,17 @@ void PSL::Index() {
         updated = updated || (new_labels[u] != nullptr && !new_labels[u]->empty());
       }
     }   
-    pull_end_time = omp_get_wtime();
-
 
     last_dist++;
 
     fill(should_run, should_run+csr.n, false);
     
-    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+    long long level_count = 0;      
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime) reduction(+ : level_count)
     for (IDType u = 0; u < csr.n; u++) {
       
       auto& labels_u = labels[u];
-      
+
       if(new_labels[u] == nullptr){
         labels_u.dist_ptrs.push_back(labels_u.vertices.size());
         continue;
@@ -442,6 +485,7 @@ void PSL::Index() {
 
       labels_u.vertices.insert(labels_u.vertices.end(), new_labels[u]->begin(), new_labels[u]->end());
       labels_u.dist_ptrs.push_back(labels_u.vertices.size());
+      level_count += (labels_u.vertices.size() - labels_u.dist_ptrs[d]);
       delete new_labels[u];
       new_labels[u] = nullptr;
 
@@ -461,12 +505,13 @@ void PSL::Index() {
 #endif
 
     end_time = omp_get_wtime();
-    cout << "Level " << d << ": " << end_time-start_time << " seconds" << endl;
-    cout << "Level " << d << " Pull: " << pull_end_time - pull_start_time << " seconds" << endl;
+    cout << "Level " << d << " Time: " << end_time-start_time << " seconds" << endl;
+    cout << "Level " << d << " Count: " << level_count << endl;
   }
 
   all_end_time = omp_get_wtime();
   cout << "Indexing: " << all_end_time-all_start_time << " seconds" << endl;
+
 
 #ifdef DEBUG
   cout << "Prune by Rank: " << prune_rank << endl; 

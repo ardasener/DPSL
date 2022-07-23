@@ -3,6 +3,8 @@
 
 #include "bp.h"
 #include "common.h"
+#include "cut.h"
+#include <typeid>
 
 struct ArrayManager {
   int* buffer;
@@ -13,12 +15,12 @@ struct ArrayManager {
 struct LabelSetNode {
   int* data;
   int size;
+  int dist;
 };
 
 struct LabelSet {
   LabelSetNode* array;
 };
-
 
 struct GPSL {
   // Input Parameters
@@ -26,7 +28,7 @@ struct GPSL {
   int device;
   int number_of_warps;
   
-  // Device pointers
+  // Device Variables
   int* device_init_buffer;
   int* device_dist0_buffer;
   int* device_array_sizes;
@@ -44,9 +46,20 @@ struct GPSL {
   ArrayManager* device_array_manager;
   bool* device_should_run_prev;
   bool* device_should_run_next;
+
+  // Host Variables
+  BP* bp_ptr;
+  VertexCut* cut_ptr;
+  vector<int> order;
+  vector<int> ranks;
  
-  GPSL(CSR& csr_, int device_, int number_of_warps_): csr(csr_), device(device_), number_of_warps(number_of_warps_) {}
-  void Init(); 
+
+  GPSL(CSR& csr_, int device_, int number_of_warps_, BP* bp_ptr_ = nullptr, vector<IDType>* ranks_ptr = nullptr, vector<IDType>* order_ptr = nullptr, vector<IDType>* cut_ptr_ = nullptr);
+  void Init();
+  vector<int>* Level0();
+  vector<int>* Level1();
+  vector<int>* LevelN(int n);
+  void AddLabels(int** labels, int* label_sizes);
   void Index(); 
 };
 

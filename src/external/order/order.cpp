@@ -452,7 +452,7 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
       sort_vec.emplace_back(cent[li], cent2[li], i);
       li++;
     } else {
-      sort_vec.emplace_back(FLT_MIN, FLT_MIN,i);
+      sort_vec.emplace_back(-FLT_MAX, -FLT_MAX,i);
     }
   }
 

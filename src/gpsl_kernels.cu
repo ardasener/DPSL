@@ -792,9 +792,7 @@ __global__ void GPSL_Dist0(int n, int** new_labels, int* new_labels_size, int* d
   }
 }
 
-__host__ void GPSL_Dist0_Host(int n, int** new_labels, int* new_labels_size, int* dist0_buffer, int number_of_wa){
-  
-}
+
 
 
 __global__ void GPSL_Dist1(int n, int* device_csr_row_ptr, int* device_csr_col, int* device_ranks, int** new_labels, int* new_labels_size, ArrayManager* array_manager, int* array_sizes, char* device_owners){

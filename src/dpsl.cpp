@@ -569,6 +569,16 @@ void DPSL::InitP0(string part_file) {
 
     BroadcastData(bp_dists.data(), bp_dists.size(), MPI_BP_DIST, MPI_UINT8_T);
     BroadcastData(bp_sets.data(), bp_sets.size(), MPI_BP_SET, MPI_UINT64_T);
+
+    int* bp_used = new int[global_n];
+
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+    for(int i=0; i<global_n; i++){
+      bp_used[i] = (int) global_bp->used[i];
+    }
+    BroadcastData(bp_used, global_n, MPI_BP_USED);
+    delete[] bp_used;
+
     Barrier();
     Log("Global BP Barrier Region End");
   }
@@ -621,7 +631,7 @@ void DPSL::Init() {
     uint64_t *bp_sets;
     size_t bp_sets_size = RecvData(bp_sets, MPI_BP_SET, 0, MPI_UINT64_T);
 
-#pragma omp parallel default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
     for (IDType i = 0; i < global_n; i++) {
       int offset1 = i*N_ROOTS;
       int offset2 = i*N_ROOTS*2;
@@ -635,10 +645,22 @@ void DPSL::Init() {
 
     delete[] bp_dists;
     delete[] bp_sets;
+
+    int* bp_used; 
+    size_t bp_used_size = RecvData(bp_used, MPI_BP_USED, 0);
+
+    vector<bool> bp_used_vec(global_n);
+
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+    for(int i=0; i<global_n; i++){
+      bp_used_vec[i] = (bool) bp_used[i];
+    } 
+
+    delete[] bp_used;
     Barrier();
     Log("Global BP Barrier Region End");
 
-    global_bp = new BP(bp_labels);
+    global_bp = new BP(bp_labels, bp_used_vec);
   }
 
   cut.insert(cut.end(), cut_ptr, cut_ptr + size_cut);

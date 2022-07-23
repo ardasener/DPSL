@@ -66,11 +66,7 @@ int main(int argc, char* argv[]){
 
 	cout << "PSL Indexing..." << endl;
 	psl.Index();
-
-#ifdef DEBUG
 	psl.WriteLabelCounts("output_psl_label_counts.txt");
-#endif
-
 	cout << "PSL Querying..." << endl;
 	psl.Query(11, "output_psl_query.txt"); // Writes to file only in Debug mode
 #endif
@@ -87,21 +83,13 @@ int main(int argc, char* argv[]){
 			cout << "Number of Processes:" << np << endl;
 			DPSL dpsl(pid, &csr, np, vsep_filename);
 			dpsl.Index();
-
-#ifdef DEBUG
 			dpsl.WriteLabelCounts("output_dpsl_label_counts.txt");
-#endif
-
 			dpsl.Query(11, "output_dpsl_query.txt"); // Writes to file only in Debug mode
 	
 		} else {
 			DPSL dpsl(pid, nullptr, np, "");
 			dpsl.Index();
-
-#ifdef DEBUG
 			dpsl.WriteLabelCounts(""); // Only P0 writes to the file, so filename is empty here
-#endif
-
 			dpsl.Query(11, ""); // Again only P0 writes to the file
 		}
 		MPI_Finalize();

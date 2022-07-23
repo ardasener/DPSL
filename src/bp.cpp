@@ -1,7 +1,7 @@
 #include "bp.h"
 
 
-BP::BP(vector<BPLabel>& bp_labels) : bp_labels(bp_labels){}
+BP::BP(vector<BPLabel>& bp_labels, vector<bool>& used) : bp_labels(bp_labels), used(used){}
 
 bool BP::PruneByBp(IDType u, IDType v, int d){
 
@@ -147,7 +147,7 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
   }
 
 
-  vector<bool> used(csr.n, false);
+  used.resize(csr.n, false);
   vector<IDType> roots;
   roots.reserve(N_ROOTS);
 
@@ -174,7 +174,7 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
       candidates.insert(candidates.end(), cut->rbegin(), cut->rend());
     } else {
       for(IDType cut_node : *cut){
-	used[cut_node] = true;
+	      used[cut_node] = true;
       }
     }
 
@@ -190,8 +190,8 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
     while(root_index >= 0){
       IDType root = candidates[root_index]; 
       if(!used[root]){
-	number_of_roots_used++;
-	break;
+        number_of_roots_used++;
+        break;
       }
       root_index--;
     }
@@ -215,8 +215,8 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
     for(IDType j=start; j<end && j-start < 64; j++){
       IDType v = csr.col[j];
       if(!used[v]){
-	Srs[i].push_back(v);
-	used[v] = true;
+        Srs[i].push_back(v);
+        used[v] = true;
       }
     }
   }
