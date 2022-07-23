@@ -402,6 +402,7 @@ void PSL::Index() {
   all_start_time = omp_get_wtime();
 
   caches = new char*[NUM_THREADS];
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for(int i=0; i<NUM_THREADS; i++){
     caches[i] = new char[csr.n];
     fill(caches[i], caches[i] + csr.n, MAX_DIST);
@@ -410,9 +411,10 @@ void PSL::Index() {
   // Adds the first two level of vertices
   // Level 0: vertex to itself
   // Level 1: vertex to neighbors
-  long long l01_count = 0;
+  long long l1_count = 0;
+  long long l0_count = 0;
   start_time = omp_get_wtime();
-  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime) reduction(+ : l01_count)
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime) reduction(+ : l0_count, l1_count)
   for (IDType u = 0; u < csr.n; u++) {
 
     bool should_init = true;
@@ -426,8 +428,10 @@ void PSL::Index() {
 
     if(should_init){
       labels[u].vertices.push_back(u);
+      l0_count++;
       auto init_labels = Init(u);
       labels[u].vertices.insert(labels[u].vertices.end(), init_labels->begin(), init_labels->end());
+      l1_count += init_labels->size();
       delete init_labels;
 
       labels[u].dist_ptrs.push_back(0);
@@ -439,11 +443,10 @@ void PSL::Index() {
       labels[u].dist_ptrs.push_back(0);
     }
    
-    l01_count += labels[u].vertices.size();
   }
   end_time = omp_get_wtime();
   cout << "Level 0 & 1 Time: " << end_time-start_time << " seconds" << endl;
-  cout << "Level 0 & 1 Count: " << l01_count << endl;
+  cout << "Level 0 & 1 Count: " << l0_count << "," << l1_count << endl;
 
   bool should_run[csr.n];
   fill(should_run, should_run+csr.n, true);

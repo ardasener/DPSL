@@ -212,14 +212,19 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
     IDType start = csr.row_ptr[root];
     IDType end = csr.row_ptr[root+1];
 
-    for(IDType j=start; j<end && j-start < 64; j++){
+    for(IDType j=start; j<end; j++){
       IDType v = csr.col[j];
       if(!used[v]){
         Srs[i].push_back(v);
         used[v] = true;
+        if(Srs[i].size() == 64){
+          break;
+        }
       }
     }
   }
+
+  cout << "BP Root Count: " << roots.size() << endl;
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(dynamic)
   for(int i=0; i<number_of_roots_used; i++){
