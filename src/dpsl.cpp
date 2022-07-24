@@ -705,8 +705,17 @@ void DPSL::Index() {
   vector<vector<IDType> *> init_labels(csr.n, nullptr);
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
   for (IDType u = 0; u < csr.n; u++) {
-    psl.labels[u].vertices.push_back(u);
-    init_labels[u] = psl.Init(u);
+
+    bool should_init = true; 
+    if constexpr(USE_GLOBAL_BP){
+      if(global_bp->used[u])
+        should_init = false;
+    }
+
+    if(should_init){
+      psl.labels[u].vertices.push_back(u);
+      init_labels[u] = psl.Init(u);
+    }
   }
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
@@ -732,10 +741,24 @@ void DPSL::Index() {
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
   for (IDType u = 0; u < csr.n; u++) {
     auto &labels = psl.labels[u];
-    labels.dist_ptrs.push_back(0);
-    labels.dist_ptrs.push_back(1);
-    labels.dist_ptrs.push_back(labels.vertices.size());
-    delete init_labels[u];
+
+    bool should_init = true; 
+    if constexpr(USE_GLOBAL_BP){
+      if(global_bp->used[u])
+        should_init = false;
+    }
+
+    if(should_init){
+      labels.dist_ptrs.push_back(0);
+      labels.dist_ptrs.push_back(1);
+      labels.dist_ptrs.push_back(labels.vertices.size());
+      delete init_labels[u];
+    } else {
+      labels.dist_ptrs.push_back(0);
+      labels.dist_ptrs.push_back(0);
+      labels.dist_ptrs.push_back(0);
+    }
+
   }
 
   Barrier();
