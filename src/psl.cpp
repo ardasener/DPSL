@@ -59,7 +59,7 @@ void PSL::CountPrune(int i){
 }
 
 
-PSL::PSL(CSR &csr_, string order_method, vector<IDType>* cut, BP* global_bp, vector<IDType>* ranks_ptr, vector<IDType>* order_ptr) : csr(csr_),  labels(csr.n), global_bp(global_bp) {
+PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vector<IDType>* ranks_ptr, vector<IDType>* order_ptr) : csr(csr_),  labels(csr.n), global_bp(global_bp) {
 
 
   if(ranks_ptr == nullptr){
@@ -87,9 +87,37 @@ PSL::PSL(CSR &csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
       for(IDType u : *cut){
         ranks[u] = temp_rank--;
       }
-    }
+
+      // sort(order.begin(), order.end(), [this](int i, int j){
+      //   this->ranks[i] < this->ranks[j];
+      // });
+    }    
   }
 
+  cout << "Reordering the CSR..." << endl;
+  IDType* new_row_ptr = new IDType[csr.n+1];
+  new_row_ptr[0] = 0;
+  IDType* new_col = new IDType[csr.m];
+
+  size_t last_index = 0;
+  for(IDType i=0; i<csr.n; i++){
+    IDType u = order[i];
+    IDType start = csr.row_ptr[u];
+    IDType end = csr.row_ptr[u+1];
+    IDType size = end-start;
+
+    copy(csr.col + start, csr.col + end, new_col + last_index);
+    last_index += size;
+    new_row_ptr[i+1] = last_index;
+  }
+
+#pragma omp parallel for default(shared) schedule(runtime) num_threads(NUM_THREADS)
+  for(IDType i=0; i<csr.m; i++){
+    new_col[i] = ranks[new_col[i]];
+  }
+
+  CSR* reordered_csr = new CSR(new_row_ptr, new_col, csr.n, csr.m);
+  csr = *reordered_csr;
   
   if constexpr(USE_LOCAL_BP){
     if constexpr(USE_GLOBAL_BP){
@@ -247,6 +275,8 @@ bool PSL::Prune(IDType u, IDType v, int d, char* cache) {
     for (IDType j = dist_start; j < dist_end; j++) {
       IDType w = labels_v.vertices[j];
       
+      //TODO: Bitwise cache check
+
       int cache_dist = cache[w];
 
 
@@ -301,15 +331,18 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache) {
     for (IDType j = labels_start; j < labels_end; j++) {
       IDType w = labels_v.vertices[j];
 
-      if(w == u){
-        continue;
-      }
+      // TODO: Bitwise cache check
+      
+      // if(w == u){
+      //   continue;
+      // }
 
       if(cache[w] <= d){
+        // TODO: Count this
         continue;
       }
 
-      if (ranks[u] > ranks[w]) {
+      if (u > w) {
 	      CountPrune(PRUNE_RANK);
         continue;
       }
@@ -339,8 +372,8 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache) {
 
       new_labels->push_back(w);
 
-      if(ranks[w] > max_ranks[u]){
-        max_ranks[u] = ranks[w];
+      if(w > max_ranks[u]){
+        max_ranks[u] = w;
       }
 
       cache[w] = d;
@@ -348,6 +381,7 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache) {
     }
   }
 
+  // TODO: If you do bitwise, this may be unnessary
   for (int i = 0; i < d; i++) {
     IDType dist_start = labels_u.dist_ptrs[i];
     IDType dist_end = labels_u.dist_ptrs[i + 1];
@@ -376,7 +410,7 @@ vector<IDType>* PSL::Init(IDType u){
   for (IDType j = start; j < end; j++) {
     IDType v = csr.col[j];
 
-    if (ranks[v] > ranks[u]) {
+    if (v > u) {
       if constexpr(USE_LOCAL_BP)
         if(local_bp->used[v]){
           continue;
@@ -430,6 +464,7 @@ void PSL::Index() {
       labels[u].vertices.push_back(u);
       l0_count++;
       auto init_labels = Init(u);
+      // sort(init_labels.begin(), init_labels.end())
       labels[u].vertices.insert(labels[u].vertices.end(), init_labels->begin(), init_labels->end());
       l1_count += init_labels->size();
       delete init_labels;
@@ -450,6 +485,7 @@ void PSL::Index() {
 
   bool should_run[csr.n];
   fill(should_run, should_run+csr.n, true);
+  fill(max_ranks.begin(), max_ranks.end(), -1);
 
   vector<vector<IDType>*> new_labels(csr.n, nullptr);
   bool updated = true;
@@ -457,19 +493,19 @@ void PSL::Index() {
     
     start_time = omp_get_wtime();
     updated = false;
-    fill(max_ranks.begin(), max_ranks.end(), -1);
 
+    // TODO: Reverse this loop
     #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated) schedule(runtime)
     for (IDType u = 0; u < csr.n; u++) {
       if(should_run[u]){
         new_labels[u] =  Pull(u, d, caches[omp_get_thread_num()]);
         updated = updated || (new_labels[u] != nullptr && !new_labels[u]->empty());
+        should_run[u] = false;
       }
     }   
 
     last_dist++;
 
-    fill(should_run, should_run+csr.n, false);
     
     long long level_count = 0;      
     #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime) reduction(+ : level_count)
@@ -497,10 +533,12 @@ void PSL::Index() {
 
       for(IDType i=start; i<end; i++){
         IDType v = csr.col[i];
-        if(ranks[v] < max_ranks[u]){
+        if(v < max_ranks[u]){
           should_run[v] = true;
         }
       } 
+
+      max_ranks[u] = -1;
     }
 
 #ifdef DEBUG

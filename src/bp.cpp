@@ -11,15 +11,15 @@ bool BP::PruneByBp(IDType u, IDType v, int d){
 
       int td = idx_u.bp_dists[i] + idx_v.bp_dists[i];
       if (td - 2 <= d)
-	td += (idx_u.bp_sets[i][0] & idx_v.bp_sets[i][0]) ? -2
-	      : ((idx_u.bp_sets[i][0] & idx_v.bp_sets[i][1]) |
-				 (idx_u.bp_sets[i][1] & idx_v.bp_sets[i][0]))
-		  ? -1
-		  : 0;
+	      td += (idx_u.bp_sets[i][0] & idx_v.bp_sets[i][0]) ? -2
+	        : ((idx_u.bp_sets[i][0] & idx_v.bp_sets[i][1]) |
+	  			 (idx_u.bp_sets[i][1] & idx_v.bp_sets[i][0]))
+	    	  ? -1
+	    	  : 0;
   
       if (td <= d){
-	/* printf("BPPruned u=%d v=%d td=%d d=%d \n", u,v,td,d); */
-	return true;
+	      /* printf("BPPruned u=%d v=%d td=%d d=%d \n", u,v,td,d); */
+	      return true;
       }
     }
     return false;
@@ -82,18 +82,17 @@ void BP::InitBPForRoot(IDType r, vector<IDType>& Sr, int bp_index, CSR& csr){
       IDType end = csr.row_ptr[v+1];
 
       for(IDType i=start; i<end; i++){
-	IDType u = csr.col[i];
+        IDType u = csr.col[i];
 
-	if(bp_dists[u] == (uint8_t) MAX_DIST){
-	  E1.emplace_back(v,u);
-	  bp_dists[u] = (uint8_t) (bp_dists[v] + 1);
-	  Q1[Q1_size++] = u;
-	} else if(bp_dists[u] == bp_dists[v] + 1){
-	  E1.emplace_back(v,u);
-	} else if (bp_dists[u] == bp_dists[v]){
-	  E0.emplace_back(v,u);
-
-	} 
+        if(bp_dists[u] == (uint8_t) MAX_DIST){
+          E1.emplace_back(v,u);
+          bp_dists[u] = (uint8_t) (bp_dists[v] + 1);
+          Q1[Q1_size++] = u;
+        } else if(bp_dists[u] == bp_dists[v] + 1){
+          E1.emplace_back(v,u);
+        } else if (bp_dists[u] == bp_dists[v]){
+          E0.emplace_back(v,u);
+        } 
       } 
     }
 
@@ -157,13 +156,18 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
     IDType end = csr.row_ptr[i+1];
 
     if(end-start > 64)
-      sort(csr.col+start, csr.col+end, [&ranks](IDType u, IDType v){
-	  return ranks[u] > ranks[v];
-	});
+      sort(csr.col+start, csr.col+end, [](IDType u, IDType v){
+	      return u > v;
+	    });
   }
 
-  vector<IDType> candidates = order;
-
+// TODO: Clean this up later
+  vector<IDType> candidates;
+  candidates.resize(csr.n);
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+  for(int i=0; i<csr.n; i++){
+    candidates[i] = i;
+  }
 
 
   // If the mode is global then the cut vertices are inserted to the end of the list

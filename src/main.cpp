@@ -58,8 +58,6 @@ int main(int argc, char* argv[]){
 	cout << "Reading graph..." << endl;
 	CSR csr(filename);
 
-	cout << "__PSL__" << endl;
-
 	cout << "PSL Preprocessing..." << endl;
 	string order_method = ORDER_METHOD;
 	PSL psl(csr, order_method);
