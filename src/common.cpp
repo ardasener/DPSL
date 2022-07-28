@@ -133,3 +133,74 @@ CSR::~CSR(){
     delete[] coo_row;
     delete[] coo_col;
   }
+
+  void CSR::Reorder(vector<IDType>& order, vector<IDType>* cut, vector<bool>* in_cut){
+    cout << "Reordering the CSR..." << endl;
+    IDType* new_row_ptr = new IDType[n+1];
+    new_row_ptr[0] = 0;
+    IDType* new_col = new IDType[m];
+
+    vector<IDType> new_order;
+    if(RERANK_CUT && cut != nullptr){
+      new_order.reserve(n);
+      
+      for(IDType u : order){
+        if(! ((*in_cut)[u])){
+          new_order.push_back(u);
+        }
+      }
+
+      cout << "Removed: " << order.size() - new_order.size() << endl;
+      cout << "Cut: " << cut->size() << endl;
+
+      new_order.insert(new_order.end(), cut->begin(), cut->end());
+    } else {
+      new_order = order;
+    }
+
+
+    vector<IDType> ranks(n);
+
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+    for(int i=0; i<new_order.size(); i++){
+      ranks[new_order[i]] = i;
+    }
+    
+    // unordered_set<IDType> ranks_set;
+    // ranks_set.insert(ranks.begin(), ranks.end());
+    // cout << "Ranks: " << ranks.size() << endl;
+    // cout << "Ranks Set: " << ranks_set.size() << endl;
+
+    size_t last_index = 0;
+    for(IDType i=0; i<n; i++){
+      IDType u = new_order[i];
+      IDType start = row_ptr[u];
+      IDType end = row_ptr[u+1];
+      IDType size = end-start;
+
+      copy(col + start, col + end, new_col + last_index);
+      last_index += size;
+      new_row_ptr[i+1] = last_index;
+    }
+
+  real_ids = new IDType[n];
+  reorder_ids = new IDType[n];
+
+  #pragma omp parallel for default(shared) schedule(runtime) num_threads(NUM_THREADS)
+  for(IDType i=0; i<n; i++){
+    real_ids[ranks[i]] = i;
+    reorder_ids[i] = ranks[i]; 
+  }
+
+  #pragma omp parallel for default(shared) schedule(runtime) num_threads(NUM_THREADS)
+    for(IDType i=0; i<m; i++){
+      new_col[i] = ranks[new_col[i]];
+    }
+
+    delete[] row_ptr;
+    delete[] col;
+
+    row_ptr = new_row_ptr;
+    col = new_col;
+
+  }

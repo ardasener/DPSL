@@ -271,6 +271,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *> new_labels, PSL &psl) {
   vector<IDType> compressed_label_indices(cut.size()+1, 0);
   // compressed_label_indices[0] = 0;
   
+
 #pragma omp parallel default(shared) num_threads(NUM_THREADS)
 {
   int tid = omp_get_thread_num();
@@ -423,12 +424,12 @@ bool DPSL::MergeCut(vector<vector<IDType> *> new_labels, PSL &psl) {
       IDType max = -1;
       for(IDType j=start; j<end; j++){
         IDType v = compressed_merged[j];
-        if(psl.ranks[v] > max){
-          max = psl.ranks[v];
+        if(v > max){
+          max = v;
         }
       }
 
-      psl.max_ranks[u] = max;
+      u = max;
 
     }
 
@@ -520,10 +521,46 @@ void DPSL::InitP0(string part_file) {
 
   Log("Ordering Cut By Rank");
   sort(cut.begin(), cut.end(),
-       [this](IDType u, IDType v) { return ranks[u] > ranks[v]; });
+       [this](IDType u, IDType v) { return ranks[u] < ranks[v]; });
 
   auto &csrs = vc.csrs;
+
+  csr.Reorder(order, &cut, &in_cut);
+  
+  for(int p=0; p<np; p++)
+    csrs[p]->Reorder(order, &cut, &in_cut);
+  
   part_csr = csrs[0];
+
+  ofstream cut_ofs("output_dpsl_cut.txt");
+  for(int i=0; i<cut.size(); i++){
+    cut_ofs << cut[i] << endl;
+  }
+  cut_ofs.close();
+
+// #pragma omp parallel default(shared) num_threads(NUM_THREADS)
+  for(int i=0; i < cut.size(); i++){
+    cut[i] = csr.reorder_ids[cut[i]];
+  }
+
+  
+
+  in_cut.clear();
+  in_cut.resize(global_n, false);
+  for(IDType u : cut){
+    in_cut[u] = true;
+  }
+
+  for(int i=0; i<csr.n; i++){
+    vc.partition[i] = vc.partition[csr.real_ids[i]];  
+  }
+
+  // unordered_set<IDType> cut_set;
+  // cut_set.insert(cut.begin(), cut.end());
+  // cout << "Cut is unique: " << (cut_set.size() == cut.size()) << endl;
+  // cout << "Cut: " << cut.size() << endl;
+  // cout << "Cut Set: " << cut_set.size() << endl;
+
 
   double comm_start = omp_get_wtime();
 
@@ -588,7 +625,6 @@ void DPSL::InitP0(string part_file) {
 
   double init_end = omp_get_wtime();
   double comm_end = omp_get_wtime();
-
 
   cout << "Init Total: " << init_end - init_start << " seconds" << endl; 
   cout << "Init Communication: " << comm_end - comm_start << " seconds" << endl; 
@@ -691,12 +727,9 @@ void DPSL::Index() {
 
   string order_method = ORDER_METHOD;
 
-  vector<IDType>* ranks_ptr = nullptr;
-  vector<IDType>* order_ptr = nullptr;
-  if(GLOBAL_RANKS) {
-    ranks_ptr = &ranks;
-    order_ptr = &order;
-  }
+  vector<IDType>* ranks_ptr = &ranks;
+  vector<IDType>* order_ptr = &order;
+
   psl_ptr = new PSL(*part_csr, order_method, &cut, global_bp, ranks_ptr, order_ptr);
   PSL &psl = *psl_ptr;
 
@@ -841,7 +874,7 @@ void DPSL::Index() {
         IDType end_neighbors = csr.row_ptr[u + 1];
         for (IDType i = start_neighbors; i < end_neighbors; i++) {
           IDType v = csr.col[i];
-          if (psl.ranks[v] < psl.max_ranks[u]) {
+          if (v < psl.max_ranks[u]) {
             should_run[v] = true;
           }
         }

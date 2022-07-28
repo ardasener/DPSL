@@ -175,7 +175,7 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
   // If the mode is local then the cut vertices are ignored entirely here (ie, marked used)
   if(cut != nullptr){
     if(mode == GLOBAL_BP_MODE){
-      candidates.insert(candidates.end(), cut->rbegin(), cut->rend());
+      candidates.insert(candidates.end(), cut->begin(), cut->end());
     } else {
       for(IDType cut_node : *cut){
 	      used[cut_node] = true;
@@ -272,4 +272,3 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
 #endif
 
 }
-

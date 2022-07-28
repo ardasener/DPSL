@@ -25,6 +25,7 @@ public:
     void InitBPForRoot(IDType r, vector<IDType>& Sr, int root_index, CSR& csr);
     bool PruneByBp(IDType u, IDType v, int d);
     int QueryByBp(IDType u, IDType v);
+    void ReorderBP(CSR& csr);
 };
 
 #endif

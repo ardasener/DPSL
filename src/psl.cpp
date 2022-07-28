@@ -81,43 +81,8 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
     }
   }
 
-  if constexpr(RERANK_CUT){
-    if(cut != nullptr && !cut->empty()){
-      IDType temp_rank = MAX_ID;
-      for(IDType u : *cut){
-        ranks[u] = temp_rank--;
-      }
-
-      // sort(order.begin(), order.end(), [this](int i, int j){
-      //   this->ranks[i] < this->ranks[j];
-      // });
-    }    
-  }
-
-  cout << "Reordering the CSR..." << endl;
-  IDType* new_row_ptr = new IDType[csr.n+1];
-  new_row_ptr[0] = 0;
-  IDType* new_col = new IDType[csr.m];
-
-  size_t last_index = 0;
-  for(IDType i=0; i<csr.n; i++){
-    IDType u = order[i];
-    IDType start = csr.row_ptr[u];
-    IDType end = csr.row_ptr[u+1];
-    IDType size = end-start;
-
-    copy(csr.col + start, csr.col + end, new_col + last_index);
-    last_index += size;
-    new_row_ptr[i+1] = last_index;
-  }
-
-#pragma omp parallel for default(shared) schedule(runtime) num_threads(NUM_THREADS)
-  for(IDType i=0; i<csr.m; i++){
-    new_col[i] = ranks[new_col[i]];
-  }
-
-  CSR* reordered_csr = new CSR(new_row_ptr, new_col, csr.n, csr.m);
-  csr = *reordered_csr;
+  if(cut == nullptr)
+    csr.Reorder(order, nullptr, nullptr);
   
   if constexpr(USE_LOCAL_BP){
     if constexpr(USE_GLOBAL_BP){

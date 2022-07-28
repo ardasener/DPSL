@@ -25,6 +25,10 @@ VertexCut::VertexCut(CSR& csr, string part_file, string order_method, int np){
     partition[i++] = x;
   }
 
+  part_ifs.close();
+
+  cout << "Final i=" << i << endl;
+
   vector<bool> in_cut(csr.n, false);
   cout << "Calculating cut..." << endl;
   for(IDType i=csr.n-1; i>=0; i--){

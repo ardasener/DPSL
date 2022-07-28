@@ -79,12 +79,14 @@ struct CSR {
   IDType *col;
   IDType n;
   IDType m;
+  IDType *real_ids; 
+  IDType *reorder_ids; 
 
   ~CSR();
   CSR(CSR& csr);
   CSR(IDType* row_ptr, IDType *col, IDType n, IDType m);
   CSR(string filename);
-
+  void Reorder(vector<IDType>& order, vector<IDType>* cut = nullptr, vector<bool>* in_cut = nullptr);
 };
 
 
