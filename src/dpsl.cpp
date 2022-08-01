@@ -429,7 +429,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *> new_labels, PSL &psl) {
         }
       }
 
-      u = max;
+      psl.max_ranks[u] = max;
 
     }
 

@@ -2,7 +2,7 @@ MODE=Release
 NUM_THREADS=16
 USE_BP=true
 USE_64_BIT=false
-ORDER_METHOD=degree_eigen_cent
+ORDER_METHOD=degree
 N_ROOTS=16
 
 KERNEL_MODE=0
