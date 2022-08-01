@@ -725,6 +725,9 @@ void DPSL::Index() {
     fill(caches[i], caches[i] + part_csr->n, MAX_DIST);
   }
 
+  bool should_run[csr.n];
+  fill(should_run, should_run + csr.n, true);
+
   string order_method = ORDER_METHOD;
 
   vector<IDType>* ranks_ptr = &ranks;
@@ -785,6 +788,19 @@ void DPSL::Index() {
       labels.dist_ptrs.push_back(0);
       labels.dist_ptrs.push_back(1);
       labels.dist_ptrs.push_back(labels.vertices.size());
+
+      IDType ngh_start = csr.row_ptr[u];
+      IDType ngh_end = csr.row_ptr[u+1];
+
+      for(IDType i=ngh_start; i<ngh_end; i++){
+        IDType v = csr.col[i];
+
+        if(v < psl.max_ranks[u])
+          should_run[v] = true;
+      }
+
+      psl.max_ranks[u] = -1;
+
       delete init_labels[u];
     } else {
       labels.dist_ptrs.push_back(0);
@@ -795,9 +811,6 @@ void DPSL::Index() {
   }
 
   Barrier();
-
-  bool should_run[csr.n];
-  fill(should_run, should_run + csr.n, true);
 
 
   IDType* nodes_to_process = new IDType[csr.n];

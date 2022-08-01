@@ -367,6 +367,8 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache) {
 
 vector<IDType>* PSL::Init(IDType u){
   
+  max_ranks[u] = u;
+
   vector<IDType>* init_labels = new vector<IDType>;
 
   IDType start = csr.row_ptr[u];
@@ -387,6 +389,9 @@ vector<IDType>* PSL::Init(IDType u){
         }
 
       init_labels->push_back(v);
+
+      if(v > max_ranks[u])
+        max_ranks[u] = v;
     }
   }
 
@@ -406,6 +411,9 @@ void PSL::Index() {
     caches[i] = new char[csr.n];
     fill(caches[i], caches[i] + csr.n, MAX_DIST);
   }
+
+  bool should_run[csr.n];
+  fill(should_run, should_run+csr.n, true);
 
   // Adds the first two level of vertices
   // Level 0: vertex to itself
@@ -437,6 +445,19 @@ void PSL::Index() {
       labels[u].dist_ptrs.push_back(0);
       labels[u].dist_ptrs.push_back(1);
       labels[u].dist_ptrs.push_back(labels[u].vertices.size());
+
+      IDType ngh_start = csr.row_ptr[u];
+      IDType ngh_end = csr.row_ptr[u+1];
+
+      for(IDType i=ngh_start; i<ngh_end; i++){
+        IDType v = csr.col[i];
+
+        if(v < max_ranks[u])
+          should_run[v] = true;
+      }
+
+      max_ranks[u] = -1;
+
     } else {
       labels[u].dist_ptrs.push_back(0);
       labels[u].dist_ptrs.push_back(0);
@@ -448,9 +469,6 @@ void PSL::Index() {
   cout << "Level 0 & 1 Time: " << end_time-start_time << " seconds" << endl;
   cout << "Level 0 & 1 Count: " << l0_count << "," << l1_count << endl;
 
-  bool should_run[csr.n];
-  fill(should_run, should_run+csr.n, true);
-  fill(max_ranks.begin(), max_ranks.end(), -1);
 
   vector<vector<IDType>*> new_labels(csr.n, nullptr);
   bool updated = true;
