@@ -8,10 +8,10 @@ DPSL is a distributed partitioning based implementation of the Parallel Short-di
 
 ## Requirements
 
-- openmpi (with `mpic++` compiler and `mpirun` tool) (tested with version 3.0.0)
 - GNU Make (tested with version 4.2.1)
 - g++ (tested with versions 7.0.0 and 9.3.0)
-- (OPTIONAL) Nvidia CUDA (with `nvcc` compiler) (tested with version 11.2)
+- (For DPSL and GPSL only) openmpi (with `mpic++` compiler and `mpirun` tool) (tested with version 3.0.0)
+- (For GPSL only) Nvidia CUDA (with `nvcc` compiler) (tested with version 11.2)
 
 ## Building
 
@@ -37,7 +37,10 @@ Options can be passed to make as `OPTION_NAME=OPTION_VALUE`.
 - ORDER_METHOD: method used to order (and rank) the nodes, see the relevant section for more info (string) (default: degree_eigen_cent)
 - USE_64_BIT: activates experimental support for 64-bit integer vertex IDs (allowing larger graphs to be processed) (true or false) (default: false)
 - MODE: Build mode determines whether debug flags and optimizations should be compiled (Release or Debug) (default: Release)
-- CXX_COMPILER: the compiler used can be changed here but it should always be an openmpi compiler (path) (default: mpic++)
+- CXX_COMPILER: the compiler used for PSL (path) (default: g++)
+- MPICXX_COMPILER: the compiler used for DPSL and GPSL must be an openmpi compiler (path) (default: mpic++)
+- CUDA_COMPILER: the CUDA compiler used for GPSL (path) (default: nvcc)
+- SCHEDULE: OpenMP scheduling to be used, set to runtime to use the environment variable OMP_SCHEDULE (default: dynamic,256)
 
 ### Examples
 
