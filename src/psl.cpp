@@ -421,7 +421,7 @@ void PSL::Index() {
   long long l1_count = 0;
   long long l0_count = 0;
   start_time = omp_get_wtime();
-  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime) reduction(+ : l0_count, l1_count)
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : l0_count, l1_count)
   for (IDType u = 0; u < csr.n; u++) {
 
     bool should_init = true;
@@ -478,7 +478,7 @@ void PSL::Index() {
     updated = false;
 
     // TODO: Reverse this loop
-    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated) schedule(runtime)
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated) schedule(SCHEDULE)
     for (IDType u = 0; u < csr.n; u++) {
       if(should_run[u]){
         new_labels[u] =  Pull(u, d, caches[omp_get_thread_num()]);
@@ -491,7 +491,7 @@ void PSL::Index() {
 
     
     long long level_count = 0;      
-    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime) reduction(+ : level_count)
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : level_count)
     for (IDType u = 0; u < csr.n; u++) {
       
       auto& labels_u = labels[u];

@@ -39,6 +39,10 @@
 #define NUM_THREADS 16
 #endif
 
+#ifndef SCHEDULE
+#define SCHEDULE dynamic,256
+#endif
+
 using namespace std;
 
 

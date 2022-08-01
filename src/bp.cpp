@@ -136,7 +136,7 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
   double start_time = omp_get_wtime();
 
   bp_labels.resize(csr.n);
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
   for(IDType i=0; i<csr.n; i++){
     for(int j=0; j<N_ROOTS; j++){
       bp_labels[i].bp_dists[j] = (uint8_t) MAX_DIST;
@@ -150,7 +150,7 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
   vector<IDType> roots;
   roots.reserve(N_ROOTS);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
   for(IDType i=0; i<csr.n; i++){
     IDType start = csr.row_ptr[i];
     IDType end = csr.row_ptr[i+1];
@@ -164,7 +164,7 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
 // TODO: Clean this up later
   vector<IDType> candidates;
   candidates.resize(csr.n);
-  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
   for(int i=0; i<csr.n; i++){
     candidates[i] = i;
   }

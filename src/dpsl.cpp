@@ -46,7 +46,7 @@ void DPSL::Query(IDType u, string filename) {
   char *cache = new char[part_csr->n];
   fill(cache, cache + part_csr->n, MAX_DIST);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
   for (IDType d = 0; d < dist_ptrs_u_size - 1; d++) {
     IDType start = dist_ptrs_u[d];
     IDType end = dist_ptrs_u[d + 1];
@@ -59,7 +59,7 @@ void DPSL::Query(IDType u, string filename) {
 
   Log("Querying locally");
   vector<int> local_dist(part_csr->n, MAX_DIST);
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
   for (IDType v = 0; v < part_csr->n; v++) {
 
     int min = MAX_DIST;
@@ -104,7 +104,7 @@ void DPSL::Query(IDType u, string filename) {
     fill(all_dists, all_dists + whole_csr->n, -1);
     fill(source, source + whole_csr->n, -1);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
     for (IDType i = 0; i < local_dist.size(); i++) {
       all_dists[i] = local_dist[i];
       source[i] = 0;
@@ -332,7 +332,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *> new_labels, PSL &psl) {
     }
 
     vector<vector<IDType>*> sorted_vecs(cut.size());
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(+ : compressed_size) schedule(runtime)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(+ : compressed_size) schedule(SCHEDULE)
     for(IDType i=0; i<cut.size(); i++){
 
       vector<IDType>* sorted_vec = new vector<IDType>;
@@ -409,7 +409,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *> new_labels, PSL &psl) {
   if(compressed_size > 0){
     updated = true;
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
     for(IDType i=0; i<cut.size(); i++){
       IDType u = cut[i];
       auto& labels_u = psl.labels[u].vertices;
@@ -739,7 +739,7 @@ void DPSL::Index() {
   start = omp_get_wtime();
   alg_start = omp_get_wtime();
   vector<vector<IDType> *> init_labels(csr.n, nullptr);
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
   for (IDType u = 0; u < csr.n; u++) {
 
     bool should_init = true; 
@@ -754,7 +754,7 @@ void DPSL::Index() {
     }
   }
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
   for (IDType u = 0; u < csr.n; u++) {
     if (!in_cut[u] && init_labels[u] != nullptr &&
         !init_labels[u]->empty()) {
@@ -774,7 +774,7 @@ void DPSL::Index() {
   total_merge_time += end-start;
   Log("Merging Initial Labels End");
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
   for (IDType u = 0; u < csr.n; u++) {
     auto &labels = psl.labels[u];
 
@@ -833,7 +833,7 @@ void DPSL::Index() {
     last_dist = d;
     updated = false;
     Log("Pulling...");
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(|| : updated) schedule(runtime)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(|| : updated) schedule(SCHEDULE)
     for (IDType i = 0; i < num_nodes; i++) {
       IDType u = nodes_to_process[i];
       /* cout << "Pulling for u=" << u << endl; */
@@ -848,7 +848,7 @@ void DPSL::Index() {
     end = omp_get_wtime();
     PrintTime("Level " + to_string(d), end - start);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
     for (IDType i = 0; i < num_nodes; i++) {
       IDType u = nodes_to_process[i];
       if (!in_cut[u] && new_labels[u] != nullptr && !new_labels[u]->empty()) {
@@ -871,7 +871,7 @@ void DPSL::Index() {
 
     fill(should_run, should_run + csr.n, false);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
     for (IDType u = 0; u < csr.n;  u++) {
       auto &labels_u = psl.labels[u];
       labels_u.dist_ptrs.push_back(labels_u.vertices.size());

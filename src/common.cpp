@@ -161,7 +161,7 @@ CSR::~CSR(){
 
     vector<IDType> ranks(n);
 
-    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(runtime)
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
     for(int i=0; i<new_order.size(); i++){
       ranks[new_order[i]] = i;
     }
@@ -186,13 +186,13 @@ CSR::~CSR(){
   real_ids = new IDType[n];
   reorder_ids = new IDType[n];
 
-  #pragma omp parallel for default(shared) schedule(runtime) num_threads(NUM_THREADS)
+  #pragma omp parallel for default(shared) schedule(SCHEDULE) num_threads(NUM_THREADS)
   for(IDType i=0; i<n; i++){
     real_ids[ranks[i]] = i;
     reorder_ids[i] = ranks[i]; 
   }
 
-  #pragma omp parallel for default(shared) schedule(runtime) num_threads(NUM_THREADS)
+  #pragma omp parallel for default(shared) schedule(SCHEDULE) num_threads(NUM_THREADS)
     for(IDType i=0; i<m; i++){
       new_col[i] = ranks[new_col[i]];
     }
