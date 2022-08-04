@@ -407,7 +407,7 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
     computeBCandCC(lxadj, ladj, vcount, noBFS, pque, plevel, ppred, pendpred,
                    psigma, pdelta, pb_cent, pc_cent, -1);
     end = omp_get_wtime();
-    if(method == "degree_b_cent")
+    if(method == "degree_c_cent")
       for (T i = 0; i < n; i++)
         cent2[i] = pb_cent[0][i];
     else
@@ -444,7 +444,7 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
   }
 
   cout << "Ordering based on " << method << "..." << endl;
-  vector<tuple<float, float, T>> sort_vec;
+  vector<tuple<double, double, T>> sort_vec;
   sort_vec.reserve(n);
   T li = 0;
   for (T i = 0; i < n; i++) {
@@ -456,12 +456,19 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
     }
   }
 
-  sort(sort_vec.begin(), sort_vec.end(), [](tuple<float,float,T>& t1, tuple<float,float,T>& t2){
-          float c_t1 = get<0>(t1); 
-          float c_t2 = get<0>(t2); 
+  sort(sort_vec.begin(), sort_vec.end(), [](tuple<double,double,T>& t1, tuple<double,double,T>& t2){
+          double c_t1 = get<0>(t1); 
+          double c_t2 = get<0>(t2); 
 
           if(c_t1 == c_t2){
-            return get<1>(t1) < get<1>(t2);
+            
+            double c2_t1 = get<1>(t1);
+            double c2_t2 = get<1>(t2);
+
+            if(c2_t1 == c2_t2)
+              return get<2>(t1) < get<2>(t2);
+            
+            return c2_t1 < c2_t2;
           }
 
           return c_t1 < c_t2;

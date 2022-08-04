@@ -74,6 +74,7 @@ public:
   void Index();
   void WriteLabelCounts(string filename);
   void Query(IDType u, string filename);
+  void QueryTest(int query_count);
   void Log(string msg);
   void PrintTime(string tag, double time);
   PSL *psl_ptr;

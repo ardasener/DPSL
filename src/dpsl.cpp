@@ -10,6 +10,31 @@ void DPSL::PrintTime(string tag, double time) {
   cout << "P" << pid << ": " << tag << ", " << time << " seconds" << endl;
 }
 
+void DPSL::QueryTest(int query_count){
+  IDType* sources;
+  if(pid == 0){
+    sources = new IDType[query_count];
+
+    size_t cut_select = random_range(0, cut.size());
+    sources[0] = cut[cut_select];
+    for(int i=1; i<query_count; i++){
+      sources[i] = random_range(0, whole_csr->n);
+    }
+
+    BroadcastData(sources, query_count, 0);
+  } else {
+    RecvData(sources, 0, 0);
+  }
+
+
+  for(int i=0; i<query_count; i++){
+    Barrier();
+    IDType u = sources[i];
+    if(pid == 0)
+      cout << "Query From: " << u << "(" << partition[u] << ")" << endl;
+    Query(u, "output_dpsl_query_" + to_string(i) + ".txt");
+  }
+}
 
 void DPSL::Query(IDType u, string filename) {
 
@@ -26,7 +51,7 @@ void DPSL::Query(IDType u, string filename) {
 
   start_time = omp_get_wtime();
 
-  if (partition[u] == pid || (partition[u] == np && pid == 0)) {
+  if (partition[u] == pid) {
     Log("Broadcasting u's labels");
     auto &labels_u = psl_ptr->labels[u];
     BroadcastData(labels_u.vertices.data(), labels_u.vertices.size(), 0);
@@ -102,21 +127,21 @@ void DPSL::Query(IDType u, string filename) {
     int *all_dists = new int[whole_csr->n];
     int *source = new int[whole_csr->n];
     fill(all_dists, all_dists + whole_csr->n, -1);
-    fill(source, source + whole_csr->n, -1);
+    fill(source, source + whole_csr->n, 0);
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
     for (IDType i = 0; i < local_dist.size(); i++) {
       all_dists[i] = local_dist[i];
-      source[i] = 0;
     }
 
     for (int p = 1; p < np; p++) {
       int *dists;
       int size = RecvData(dists, 0, p, MPI_INT32_T);
-      for (int i = 0; i < size; i++) {
-        if (all_dists[i] < 0 || all_dists[i] > dists[i]) {
-          all_dists[i] = dists[i];
+      #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
+      for (int i = 0; i < whole_csr->n; i++) {
+        if(dists[i] < all_dists[i]){
           source[i] = p;
+          all_dists[i] = dists[i];
         }
       }
       delete[] dists;
@@ -551,8 +576,11 @@ void DPSL::InitP0(string part_file) {
     in_cut[u] = true;
   }
 
+
+  partition = new IDType[csr.n]; 
   for(int i=0; i<csr.n; i++){
-    vc.partition[i] = vc.partition[csr.real_ids[i]];  
+    IDType new_id = csr.reorder_ids[i];
+    partition[new_id] = vc.partition[i];
   }
 
   // unordered_set<IDType> cut_set;
@@ -570,15 +598,13 @@ void DPSL::InitP0(string part_file) {
     SendData(&global_n, 1, MPI_GLOBAL_N, i);
     SendData(csrs[i]->row_ptr, (csrs[i]->n) + 1, MPI_CSR_ROW_PTR, i);
     SendData(csrs[i]->col, csrs[i]->m, MPI_CSR_COL, i);
-    SendData(vc.partition, csr.n, MPI_PARTITION, i);
+    SendData(partition, csr.n, MPI_PARTITION, i);
     SendData(cut.data(), cut.size(), MPI_CUT, i);
     SendData(ranks.data(), ranks.size(), MPI_VERTEX_RANKS, i);
     SendData(order.data(), order.size(), MPI_VERTEX_ORDER, i);
     delete csrs[i];
     csrs[i] = nullptr;
   }
-
-  partition = vc.partition;
 
   Barrier();
   Log("Initial Barrier Region End");

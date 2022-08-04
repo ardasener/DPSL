@@ -1,4 +1,12 @@
 #include "common.h"
+#include <random>
+#include <time.h>
+
+size_t random_range(const size_t & min, const size_t & max) {
+ static mt19937 generator(time(0));
+ uniform_int_distribution<size_t> distribution(min, max);
+ return distribution(generator);
+}
 
 void WriteStats(const vector<Stats>& stats_vec, string filename){
   ofstream ofs(filename);

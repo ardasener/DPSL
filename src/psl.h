@@ -69,6 +69,7 @@ public:
   void CountPrune(int i);
   bool Prune(IDType u, IDType v, int d, char* cache);
   void Query(IDType u, string filename);
+  void QueryTest(int query_count);
   void CountStats(double time);
 };
 

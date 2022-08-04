@@ -131,6 +131,49 @@ void PSL::WriteLabelCounts(string filename){
   ofs.close();
 }
 
+
+void PSL::QueryTest(int query_count){
+
+  vector<IDType> sources;
+  sources.reserve(query_count);
+  for(int i=0; i<query_count; i++){
+    sources.push_back((IDType) random_range(0,csr.n));
+  }
+
+  for(IDType u: sources){
+    cout << "Query From: " << u << endl;
+    double start_time = omp_get_wtime();
+    auto results = Query(u);
+    double end_time = omp_get_wtime();
+
+    // cout << "Avg. Query Time: " << (end_time-start_time) / csr.n << " seconds" << endl;
+
+    start_time = omp_get_wtime();
+    auto bfs_results = BFSQuery(csr, u);
+    end_time = omp_get_wtime();
+    
+    // cout << "Avg. BFS Time: " << (end_time-start_time) / csr.n << " seconds" << endl;
+
+    bool all_correct = true;
+    for(IDType i=0; i<csr.n; i++){
+      int psl_res = results->at(i);
+      int bfs_res = bfs_results->at(i);
+      string correctness = (bfs_res == psl_res) ? "correct" : "wrong";
+
+      if(bfs_res != psl_res){
+        all_correct = false;
+      }
+
+    }
+
+    cout << "Correctness: " << all_correct << endl;
+
+    delete results;
+    delete bfs_results;
+  }
+
+}
+
 void PSL::Query(IDType u, string filename){
   double start_time = omp_get_wtime();
   auto results = Query(u);
@@ -238,11 +281,10 @@ bool PSL::Prune(IDType u, IDType v, int d, char* cache) {
     IDType dist_end = labels_v.dist_ptrs[i + 1];
 
     for (IDType j = dist_start; j < dist_end; j++) {
-      IDType w = labels_v.vertices[j];
+      IDType x = labels_v.vertices[j];
       
-      //TODO: Bitwise cache check
-
-      int cache_dist = cache[w];
+      //TODO: Absolute value with negative marks ?
+      int cache_dist = cache[x];
 
 
       if ((i + cache_dist) <= d) {
@@ -296,11 +338,7 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache) {
     for (IDType j = labels_start; j < labels_end; j++) {
       IDType w = labels_v.vertices[j];
 
-      // TODO: Bitwise cache check
-      
-      // if(w == u){
-      //   continue;
-      // }
+      //TODO: Add another n-sized cand. array
 
       if(cache[w] <= d){
         // TODO: Count this

@@ -5,7 +5,8 @@ vsep_output/*
 part_graphs/*
 part_output/*
 *.out
-output*
+output*.txt
+stats*.txt
 *.part*
 cutter
 dpsl

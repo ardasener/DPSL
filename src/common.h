@@ -96,5 +96,6 @@ struct CSR {
 
 void WriteStats(const vector<Stats>& stats_vec, string filename);
 vector<int>* BFSQuery(CSR& csr, IDType u);
+size_t random_range(const size_t & min, const size_t & max);
 
 #endif
