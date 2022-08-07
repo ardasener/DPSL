@@ -44,15 +44,17 @@ class DPSL {
 
 public:
   template <typename T>
-  void SendData(T *data, int size, int vertex, int to,
+  void SendData(T *data, int size, int tag, int to,
                 MPI_Datatype type = MPI_IDType);
 
   template <typename T>
-  void BroadcastData(T *data, int size, int vertex,
-                     MPI_Datatype type = MPI_IDType);
+  void BroadcastData(T *data, int size, MPI_Datatype type = MPI_IDType);
 
   template <typename T>
-  int RecvData(T *&data, int vertex, int from, MPI_Datatype type = MPI_IDType);
+  int RecvData(T *&data, int tag, int from, MPI_Datatype type = MPI_IDType);
+
+  template <typename T>
+  int RecvBroadcast(T *&data, int from, MPI_Datatype type = MPI_IDType);
 
   bool MergeCut(vector<vector<IDType> *> new_labels, PSL &psl);
   void Barrier();

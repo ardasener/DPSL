@@ -17,3 +17,5 @@ parts
 mtmetis
 *.swp
 .vscode
+gmon.out
+analysis.txt

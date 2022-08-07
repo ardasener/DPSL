@@ -21,9 +21,9 @@ void DPSL::QueryTest(int query_count){
       sources[i] = random_range(0, whole_csr->n);
     }
 
-    BroadcastData(sources, query_count, 0);
+    BroadcastData(sources, query_count);
   } else {
-    RecvData(sources, 0, 0);
+    RecvBroadcast(sources, 0);
   }
 
 
@@ -54,16 +54,16 @@ void DPSL::Query(IDType u, string filename) {
   if (partition[u] == pid) {
     Log("Broadcasting u's labels");
     auto &labels_u = psl_ptr->labels[u];
-    BroadcastData(labels_u.vertices.data(), labels_u.vertices.size(), 0);
-    BroadcastData(labels_u.dist_ptrs.data(), labels_u.dist_ptrs.size(), 1);
+    BroadcastData(labels_u.vertices.data(), labels_u.vertices.size());
+    BroadcastData(labels_u.dist_ptrs.data(), labels_u.dist_ptrs.size());
     vertices_u = labels_u.vertices.data();
     vertices_u_size = labels_u.vertices.size();
     dist_ptrs_u = labels_u.dist_ptrs.data();
     dist_ptrs_u_size = labels_u.dist_ptrs.size();
   } else {
     Log("Recieving u's labels");
-    vertices_u_size = RecvData(vertices_u, 0, MPI_ANY_SOURCE);
-    dist_ptrs_u_size = RecvData(dist_ptrs_u, 1, MPI_ANY_SOURCE);
+    vertices_u_size = RecvBroadcast(vertices_u, partition[u]);
+    dist_ptrs_u_size = RecvBroadcast(dist_ptrs_u, partition[u]);
   }
 
   Barrier();
@@ -421,14 +421,14 @@ bool DPSL::MergeCut(vector<vector<IDType> *> new_labels, PSL &psl) {
     }
 }
 
-    BroadcastData(compressed_merged_indices, cut.size()+1, MPI_LABEL_INDICES);
-    BroadcastData(compressed_merged, compressed_size, MPI_LABELS);
+    BroadcastData(compressed_merged_indices, cut.size()+1);
+    BroadcastData(compressed_merged, compressed_size);
     
   } else { // ALL EXCEPT P0
     SendData(compressed_label_indices.data(), compressed_label_indices.size(), MPI_LABEL_INDICES, 0);
     SendData(compressed_labels.data(), compressed_labels.size(), MPI_LABELS, 0);
-    RecvData(compressed_merged_indices, MPI_LABEL_INDICES, 0);
-    compressed_size = RecvData(compressed_merged, MPI_LABELS, 0);
+    RecvBroadcast(compressed_merged_indices, 0);
+    compressed_size = RecvBroadcast(compressed_merged, 0);
   }
 
   if(compressed_size > 0){
@@ -473,30 +473,50 @@ bool DPSL::MergeCut(vector<vector<IDType> *> new_labels, PSL &psl) {
 void DPSL::Barrier() { MPI_Barrier(MPI_COMM_WORLD); }
 
 template <typename T>
-void DPSL::SendData(T *data, int size, int vertex, int to,
+void DPSL::SendData(T *data, int size, int tag, int to,
                            MPI_Datatype type) {
-  int tag = (vertex << 1);
-  int size_tag = tag | 1;
+  int data_tag = (tag << 1);
+  int size_tag = data_tag | 1;
 
   MPI_Send(&size, 1, MPI_INT32_T, to, size_tag, MPI_COMM_WORLD);
 
   if (size != 0 && data != nullptr)
-    MPI_Send(data, size, type, to, tag, MPI_COMM_WORLD);
+    MPI_Send(data, size, type, to, data_tag, MPI_COMM_WORLD);
 }
 
 template <typename T>
-void DPSL::BroadcastData(T *data, int size, int vertex,
-                                MPI_Datatype type) {
-  for (int p = 0; p < np; p++) {
-    if (p != pid)
-      SendData(data, size, vertex, p, type);
+void DPSL::BroadcastData(T *data, int size, MPI_Datatype type) {
+
+  Barrier();
+  // cout << "Broadcasting size..." << endl;
+  MPI_Bcast(&size, 1, MPI_INT32_T, pid, MPI_COMM_WORLD);
+  Barrier();
+  if(size != 0 && data != nullptr)
+    // cout << "Broadcasting data... size=" << size << endl;
+    MPI_Bcast(data, size, type, pid, MPI_COMM_WORLD);
+}
+
+template <typename T>
+int DPSL::RecvBroadcast(T *&data, int from, MPI_Datatype type){
+  int size = 0;
+  Barrier();
+  // cout << "Recv size broadcast..." << endl;
+  MPI_Bcast(&size, 1, MPI_INT32_T, from, MPI_COMM_WORLD);
+  Barrier();
+  if(size != 0){
+    data = new T[size];
+    // cout << "Recv data broadcast... size=" << size << endl;
+    MPI_Bcast(data, size, type, from, MPI_COMM_WORLD); 
+  } else {
+    data = nullptr;
   }
+  return size;  
 }
 
 template <typename T>
-int DPSL::RecvData(T *&data, int vertex, int from, MPI_Datatype type) {
-  int tag = (vertex << 1);
-  int size_tag = tag | 1;
+int DPSL::RecvData(T *&data, int tag, int from, MPI_Datatype type) {
+  int data_tag = (tag << 1);
+  int size_tag = data_tag | 1;
   int size = 0;
 
   int error_code1, error_code2;
@@ -506,7 +526,7 @@ int DPSL::RecvData(T *&data, int vertex, int from, MPI_Datatype type) {
 
   if (size != 0) {
     data = new T[size];
-    error_code2 = MPI_Recv(data, size, type, from, tag, MPI_COMM_WORLD,
+    error_code2 = MPI_Recv(data, size, type, from, data_tag, MPI_COMM_WORLD,
                            MPI_STATUS_IGNORE);
     Log("Recieved Data with codes= " + to_string(error_code1) + "," +
         to_string(error_code2) + " and with size=" + to_string(size));
@@ -630,8 +650,8 @@ void DPSL::InitP0(string part_file) {
       }
     }
 
-    BroadcastData(bp_dists.data(), bp_dists.size(), MPI_BP_DIST, MPI_UINT8_T);
-    BroadcastData(bp_sets.data(), bp_sets.size(), MPI_BP_SET, MPI_UINT64_T);
+    BroadcastData(bp_dists.data(), bp_dists.size(), MPI_UINT8_T);
+    BroadcastData(bp_sets.data(), bp_sets.size(), MPI_UINT64_T);
 
     int* bp_used = new int[global_n];
 
@@ -639,7 +659,7 @@ void DPSL::InitP0(string part_file) {
     for(int i=0; i<global_n; i++){
       bp_used[i] = (int) global_bp->used[i];
     }
-    BroadcastData(bp_used, global_n, MPI_BP_USED);
+    BroadcastData(bp_used, global_n);
     delete[] bp_used;
 
     Barrier();
@@ -689,9 +709,9 @@ void DPSL::Init() {
     vector<BPLabel> bp_labels(global_n);
   
     uint8_t *bp_dists;
-    size_t bp_dists_size = RecvData(bp_dists, MPI_BP_DIST, 0, MPI_UINT8_T);
+    size_t bp_dists_size = RecvBroadcast(bp_dists, 0, MPI_UINT8_T);
     uint64_t *bp_sets;
-    size_t bp_sets_size = RecvData(bp_sets, MPI_BP_SET, 0, MPI_UINT64_T);
+    size_t bp_sets_size = RecvBroadcast(bp_sets, 0, MPI_UINT64_T);
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
     for (IDType i = 0; i < global_n; i++) {
@@ -709,7 +729,7 @@ void DPSL::Init() {
     delete[] bp_sets;
 
     int* bp_used; 
-    size_t bp_used_size = RecvData(bp_used, MPI_BP_USED, 0);
+    size_t bp_used_size = RecvBroadcast(bp_used, 0);
 
     vector<bool> bp_used_vec(global_n);
 
@@ -923,13 +943,16 @@ void DPSL::Index() {
     }
 
     // Stops the execution once all processes agree that they are done
-    int updated_int = (int)updated;
-    BroadcastData(&updated_int, 1, MPI_UPDATED);
-    for (int i = 0; i < np - 1; i++) {
-      int *updated_other;
-      RecvData(updated_other, MPI_UPDATED, MPI_ANY_SOURCE);
-      updated_int |= *updated_other;
-      delete[] updated_other;
+    int updated_int = (int) updated;
+    for (int i = 0; i < np; i++) {
+      if(pid == i){
+        BroadcastData(&updated_int, 1);
+      } else {
+        int *updated_other;
+        RecvBroadcast(updated_other, i);
+        updated_int |= *updated_other;
+        delete updated_other;
+      }
     }
 
 #ifdef DEBUG

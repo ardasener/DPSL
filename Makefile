@@ -13,6 +13,7 @@ MPICXX_COMPILER=mpic++
 CXX_FLAGS= -fopenmp -std=c++17 -DNUM_THREADS=$(NUM_THREADS) -DORDER_METHOD=\"$(ORDER_METHOD)\" -DN_ROOTS=$(N_ROOTS) -DSCHEDULE=$(SCHEDULE)
 CXX_RELEASE_FLAGS= -O3
 CXX_DEBUG_FLAGS= -O0 -g -DDEBUG
+CXX_PROFILE_FLAGS= -O0 -pg
 PSL_SOURCE_FILES=src/main.cpp src/psl.cpp src/bp.cpp src/common.cpp
 DPSL_SOURCE_FILES=src/*.cpp
 CXX_SOURCE_FILES=src/*.cpp
@@ -33,6 +34,10 @@ ifeq ($(MODE_LOWER) , debug)
 $(info Building in Debug mode...)
 CXX_MODE_FLAGS = $(CXX_DEBUG_FLAGS)
 CUDA_MODE_FLAGS = $(CUDA_DEBUG_FLAGS)
+else ifeq ($(MODE_LOWER) , profile)
+$(info Building in Profile mode...)
+CXX_MODE_FLAGS = $(CXX_PROFILE_FLAGS)
+CUDA_MODE_FLAGS = $(CUDA_PROFILE_FLAGS)
 else
 $(info Building in Release mode...)
 CXX_MODE_FLAGS = $(CXX_RELEASE_FLAGS)
