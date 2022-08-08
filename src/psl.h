@@ -72,7 +72,7 @@ public:
   
   template<bool use_cache = true>
   vector<IDType>* Pull(IDType u, int d, char* cache, vector<bool>& used_vec);
-  
+
   void Query(IDType u, string filename);
   void QueryTest(int query_count);
   void CountStats(double time);

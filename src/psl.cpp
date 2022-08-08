@@ -631,3 +631,6 @@ void PSL::Index() {
   WriteStats(stats_vec, "stats.txt");
 #endif
 }
+
+template vector<IDType>* PSL::Pull<true>(IDType u, int d, char* cache, vector<bool>& used_vec);
+template vector<IDType>* PSL::Pull<false>(IDType u, int d, char* cache, vector<bool>& used_vec);

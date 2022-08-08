@@ -71,6 +71,7 @@ public:
   VertexCut *vc_ptr = nullptr;
   int last_dist;
   char **caches;
+  vector<bool>* used;
   void InitP0(string vsep_file="");
   void Init();
   void Index();

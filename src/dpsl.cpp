@@ -771,6 +771,12 @@ void DPSL::Index() {
     fill(caches[i], caches[i] + part_csr->n, MAX_DIST);
   }
 
+  used = new vector<bool>[NUM_THREADS];
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+  for(int i=0; i<NUM_THREADS; i++){
+    used[i].resize(csr.n, false);
+  }
+
   bool should_run[csr.n];
   fill(should_run, should_run + csr.n, true);
 
@@ -881,11 +887,29 @@ void DPSL::Index() {
     Log("Pulling...");
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(|| : updated) schedule(SCHEDULE)
     for (IDType i = 0; i < num_nodes; i++) {
+
+      int tid = omp_get_thread_num();
+
       IDType u = nodes_to_process[i];
       /* cout << "Pulling for u=" << u << endl; */
 
       if (should_run[u]) {
-        new_labels[u] = psl.Pull(u, d, caches[omp_get_thread_num()]);
+
+        if constexpr(SMART_DIST_CACHE_CUTOFF)
+        {
+          if(psl.labels[u].vertices.size() <= SMART_DIST_CACHE_CUTOFF){
+            new_labels[u] =  psl.Pull<false>(u, d, caches[tid], used[tid]);
+            // cacheless_pull++;
+          }
+          else {
+            new_labels[u] =  psl.Pull<true>(u, d, caches[tid], used[tid]);
+            // cacheful_pull++;
+          }
+        } else {
+          new_labels[u] =  psl.Pull<true>(u, d, caches[tid], used[tid]);
+        }
+
+
         if (new_labels[u] != nullptr && !new_labels[u]->empty()) {
           updated = updated || true;
         }
