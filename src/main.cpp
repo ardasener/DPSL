@@ -50,6 +50,7 @@ int main(int argc, char* argv[]){
 		<< " LOCAL_BP=" << USE_LOCAL_BP
 		<< " GLOBAL_BP=" << USE_GLOBAL_BP
 		<< " ORDER_METHOD=" << ORDER_METHOD
+		<< " SMART_DIST_CACHE_CUTOFF=" << SMART_DIST_CACHE_CUTOFF
 		<< " 64_BIT=" << use64bit
 		<< endl;
 

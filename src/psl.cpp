@@ -34,11 +34,7 @@ PSL::~PSL(){
   }
 
   if(used != nullptr){
-   
-   for(int i=0; i<NUM_THREADS; i++){
-    delete [] used[i];
-   }
-   delete[] used; 
+   delete [] used;
   }
 
 
@@ -72,7 +68,6 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
     ranks.insert(ranks.end(), ranks_ptr->begin(), ranks_ptr->end());
     order.insert(order.end(), order_ptr->begin(), order_ptr->end());
   }
-
 
   in_cut.resize(csr.n, false);
   if(cut != nullptr && !cut->empty()){
@@ -272,9 +267,11 @@ vector<IDType>* PSL::Query(IDType u) {
   return results;
 }
 
+template<bool use_cache = true>
 bool PSL::Prune(IDType u, IDType v, int d, char* cache) {
 
   auto &labels_v = labels[v];
+  auto &labels_u = labels[u];
 
   for (int i = 0; i < d; i++) {
     IDType dist_start = labels_v.dist_ptrs[i];
@@ -284,11 +281,26 @@ bool PSL::Prune(IDType u, IDType v, int d, char* cache) {
       IDType x = labels_v.vertices[j];
       
       //TODO: Absolute value with negative marks ?
-      int cache_dist = cache[x];
 
+      if constexpr(use_cache){
+        int cache_dist = cache[x];
 
-      if ((i + cache_dist) <= d) {
-        return true;
+        if ((i + cache_dist) <= d) {
+          return true;
+        }
+
+      } else {
+        int desired_dist = (i == 0) ? d : d - i + 1;
+        IDType dist_start2 = labels_u.dist_ptrs[0];
+        IDType dist_end2 = labels_u.dist_ptrs[desired_dist];
+    
+        for (IDType j2 = dist_start2; j2 < dist_end2; j2++) {
+          IDType x2 = labels_u.vertices[j2];
+
+          if(x2 == x){
+            return true;
+          }  
+        }
       }
     }
   }
@@ -296,7 +308,8 @@ bool PSL::Prune(IDType u, IDType v, int d, char* cache) {
   return false;
 }
 
-vector<IDType>* PSL::Pull(IDType u, int d, char* cache) {
+template<bool use_cache = true>
+vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) {
 
   if constexpr(USE_LOCAL_BP)
     if(local_bp->used[u])
@@ -316,17 +329,19 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache) {
 
   auto &labels_u = labels[u];
 
-  for (int i = 0; i < d; i++) {
-    IDType dist_start = labels_u.dist_ptrs[i];
-    IDType dist_end = labels_u.dist_ptrs[i + 1];
+  if constexpr(use_cache)
+    for (int i = 0; i < d; i++) {
+      IDType dist_start = labels_u.dist_ptrs[i];
+      IDType dist_end = labels_u.dist_ptrs[i + 1];
 
-    for (IDType j = dist_start; j < dist_end; j++) {
-      IDType w = labels_u.vertices[j];
-      cache[w] = (char) i;
+      for (IDType j = dist_start; j < dist_end; j++) {
+        IDType w = labels_u.vertices[j];
+        cache[w] = (char) i;
+      }
     }
-  }
 
   vector<IDType>* new_labels = nullptr;
+  vector<IDType> candidates;
 
   for (IDType i = start; i < end; i++) {
     IDType v = csr.col[i];
@@ -338,56 +353,63 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache) {
     for (IDType j = labels_start; j < labels_end; j++) {
       IDType w = labels_v.vertices[j];
 
-      //TODO: Add another n-sized cand. array
-
-      if(cache[w] <= d){
-        // TODO: Count this
-        continue;
-      }
-
       if (u > w) {
 	      CountPrune(PRUNE_RANK);
         continue;
       }
 
-      if constexpr(USE_GLOBAL_BP){
-        if(global_bp->PruneByBp(u, w, d)){
-          CountPrune(PRUNE_GLOBAL_BP);
-          continue;
-        }
+      if(!used_vec[w]){
+        used_vec[w] = true;
+        candidates.push_back(w);
       }
-
-      if constexpr(USE_LOCAL_BP){
-        if(local_bp->PruneByBp(u, w, d)){
-          CountPrune(PRUNE_LOCAL_BP);
-          continue;
-        }
-      }
-
-      if(Prune(u, w, d, cache)){
-        CountPrune(PRUNE_LABEL);
-        continue;
-      }
-
-      if(new_labels == nullptr){
-        new_labels = new vector<IDType>;
-      }
-
-      new_labels->push_back(w);
-
-      if(w > max_ranks[u]){
-        max_ranks[u] = w;
-      }
-
-      cache[w] = d;
-    
     }
   }
 
-  // TODO: If you do bitwise, this may be unnessary
-  for (int i = 0; i < d; i++) {
-    IDType dist_start = labels_u.dist_ptrs[i];
-    IDType dist_end = labels_u.dist_ptrs[i + 1];
+  for(IDType w : candidates){
+
+    used_vec[w] = false;
+
+    if constexpr(use_cache)
+      if(cache[w] <= d){
+        continue;
+      }
+
+    if constexpr(USE_GLOBAL_BP){
+      if(global_bp->PruneByBp(u, w, d)){
+        CountPrune(PRUNE_GLOBAL_BP);
+        continue;
+      }
+    }
+
+    if constexpr(USE_LOCAL_BP){
+      if(local_bp->PruneByBp(u, w, d)){
+        CountPrune(PRUNE_LOCAL_BP);
+        continue;
+      }
+    }
+
+    if(Prune<use_cache>(u, w, d, cache)){
+      CountPrune(PRUNE_LABEL);
+      continue;
+    }
+
+    if(new_labels == nullptr){
+      new_labels = new vector<IDType>;
+    }
+
+    new_labels->push_back(w);
+
+    if(w > max_ranks[u]){
+      max_ranks[u] = w;
+    }
+
+  }
+
+
+  if constexpr(use_cache) 
+  {
+    IDType dist_start = labels_u.dist_ptrs[0];
+    IDType dist_end = labels_u.dist_ptrs[d];
 
     for (IDType j = dist_start; j < dist_end; j++) {
       IDType w = labels_u.vertices[j];
@@ -395,10 +417,6 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache) {
     }
   }
 
-  if(new_labels != nullptr)
-    for(IDType w : *new_labels){
-      cache[w] = (char) MAX_DIST;
-    }
   
   return new_labels;
 }
@@ -448,6 +466,12 @@ void PSL::Index() {
   for(int i=0; i<NUM_THREADS; i++){
     caches[i] = new char[csr.n];
     fill(caches[i], caches[i] + csr.n, MAX_DIST);
+  }
+
+  used = new vector<bool>[NUM_THREADS];
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+  for(int i=0; i<NUM_THREADS; i++){
+    used[i].resize(csr.n, false);
   }
 
   bool should_run[csr.n];
@@ -507,6 +531,8 @@ void PSL::Index() {
   cout << "Level 0 & 1 Time: " << end_time-start_time << " seconds" << endl;
   cout << "Level 0 & 1 Count: " << l0_count << "," << l1_count << endl;
 
+  // long long cacheless_pull = 0;
+  // long long cacheful_pull = 0;
 
   vector<vector<IDType>*> new_labels(csr.n, nullptr);
   bool updated = true;
@@ -515,15 +541,34 @@ void PSL::Index() {
     start_time = omp_get_wtime();
     updated = false;
 
+
     // TODO: Reverse this loop
     #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated) schedule(SCHEDULE)
     for (IDType u = 0; u < csr.n; u++) {
+      int tid = omp_get_thread_num();
+
       if(should_run[u]){
-        new_labels[u] =  Pull(u, d, caches[omp_get_thread_num()]);
+
+        if constexpr(SMART_DIST_CACHE_CUTOFF)
+        {
+          if(labels[u].vertices.size() <= SMART_DIST_CACHE_CUTOFF){
+            new_labels[u] =  Pull<false>(u, d, caches[tid], used[tid]);
+            // cacheless_pull++;
+          }
+          else {
+            new_labels[u] =  Pull<true>(u, d, caches[tid], used[tid]);
+            // cacheful_pull++;
+          }
+        } else {
+          new_labels[u] =  Pull<true>(u, d, caches[tid], used[tid]);
+        }
+
+
         updated = updated || (new_labels[u] != nullptr && !new_labels[u]->empty());
         should_run[u] = false;
       }
     }   
+
 
     last_dist++;
 
@@ -574,6 +619,9 @@ void PSL::Index() {
   all_end_time = omp_get_wtime();
   cout << "Indexing: " << all_end_time-all_start_time << " seconds" << endl;
 
+
+  // cout << "Cacheless: " << cacheless_pull << endl; 
+  // cout << "Cacheful: " << cacheful_pull << endl; 
 
 #ifdef DEBUG
   cout << "Prune by Rank: " << prune_rank << endl; 

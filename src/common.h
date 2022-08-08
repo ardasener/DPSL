@@ -43,6 +43,10 @@
 #define SCHEDULE dynamic,256
 #endif
 
+#ifndef SMART_DIST_CACHE_CUTOFF
+#define SMART_DIST_CACHE_CUTOFF 0
+#endif
+
 using namespace std;
 
 

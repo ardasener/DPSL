@@ -58,16 +58,21 @@ public:
   vector<IDType> max_ranks;
   vector<bool> in_cut;
   char** caches = nullptr;
-  bool** used = nullptr;
+  vector<bool>* used = nullptr;
   PSL(CSR &csr_, string order_method, vector<IDType>* cut=nullptr, BP* global_bp=nullptr, vector<IDType>* ranks_ptr=nullptr, vector<IDType>* order_ptr = nullptr);
   ~PSL();
-  vector<IDType>* Pull(IDType u, int d, char* cache);
   vector<IDType>* Init(IDType u);
   void Index();
   void WriteLabelCounts(string filename);
   vector<IDType>* Query(IDType u);
   void CountPrune(int i);
+
+  template<bool use_cache = true>
   bool Prune(IDType u, IDType v, int d, char* cache);
+  
+  template<bool use_cache = true>
+  vector<IDType>* Pull(IDType u, int d, char* cache, vector<bool>& used_vec);
+  
   void Query(IDType u, string filename);
   void QueryTest(int query_count);
   void CountStats(double time);
