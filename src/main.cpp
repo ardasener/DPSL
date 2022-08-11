@@ -76,7 +76,9 @@ int main(int argc, char* argv[]){
 		int pid, np;
 		MPI_Comm_rank(MPI_COMM_WORLD,&pid);
 		MPI_Comm_size(MPI_COMM_WORLD,&np);
-		
+
+		cout << "PID=" << pid << endl;
+
 		if(pid == 0){
 			cout << "Reading " << filename << "..." << endl;
 			CSR csr(filename);

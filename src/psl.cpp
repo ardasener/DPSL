@@ -100,11 +100,14 @@ void PSL::WriteLabelCounts(string filename){
   ofs << endl;
 
   long long total = 0;
+  long long max_label_size = 0;
   for(IDType i=0; i<csr.n; i++){
     IDType u = order[csr.n-i-1];
     ofs << u << ":\t";
     auto& labels_u = labels[u];
     total += labels_u.vertices.size();
+
+    max_label_size = max((size_t) max_label_size, labels_u.vertices.size());
 
     for(int d=0; d<last_dist; d++){
       IDType dist_start = labels_u.dist_ptrs[d];
@@ -120,7 +123,8 @@ void PSL::WriteLabelCounts(string filename){
   cout << "Total Label Count: " << total << endl;
   ofs << "Avg. Label Count: " << total/(double) csr.n << endl;
   cout << "Avg. Label Count: " << total/(double) csr.n << endl;
-  
+  cout << "Max Label Count: " << max_label_size << endl;
+
   ofs << endl;
 
   ofs.close();
@@ -269,6 +273,7 @@ vector<IDType>* PSL::Query(IDType u) {
 
 template<bool use_cache = true>
 bool PSL::Prune(IDType u, IDType v, int d, char* cache) {
+  asm("");
 
   auto &labels_v = labels[v];
   auto &labels_u = labels[u];

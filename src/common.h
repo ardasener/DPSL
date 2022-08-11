@@ -87,8 +87,8 @@ struct CSR {
   IDType *col;
   IDType n;
   IDType m;
-  IDType *real_ids; 
-  IDType *reorder_ids; 
+  IDType *real_ids = nullptr; 
+  IDType *reorder_ids = nullptr; 
 
   ~CSR();
   CSR(CSR& csr);

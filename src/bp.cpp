@@ -186,6 +186,8 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
 
   vector<vector<IDType>> Srs(N_ROOTS);
 
+  // TODO: use avg. degree of nghood for candidate selection
+  // TODO: can we add the same node twice? If it has > 64 nghboors
   IDType root_index = candidates.size()-1;
   IDType number_of_roots_used = 0;
   for(IDType i=0; i<N_ROOTS; i++){

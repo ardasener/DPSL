@@ -55,6 +55,12 @@ vector<int>* BFSQuery(CSR& csr, IDType u){
 CSR::~CSR(){
     delete[] row_ptr;
     delete[] col;
+    
+    if(reorder_ids != nullptr)
+      delete[] reorder_ids;
+
+    if(real_ids != nullptr)
+      delete[] real_ids;
 }
 
   CSR::CSR(CSR& csr){

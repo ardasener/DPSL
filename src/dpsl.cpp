@@ -34,6 +34,8 @@ void DPSL::QueryTest(int query_count){
       cout << "Query From: " << u << "(" << partition[u] << ")" << endl;
     Query(u, "output_dpsl_query_" + to_string(i) + ".txt");
   }
+
+  delete [] sources;
 }
 
 void DPSL::Query(IDType u, string filename) {
@@ -118,6 +120,13 @@ void DPSL::Query(IDType u, string filename) {
     }
 
     local_dist[v] = min;
+  }
+
+  delete[] cache;
+
+  if(partition[u] != pid){
+    delete[] vertices_u;
+    delete[] dist_ptrs_u;
   }
 
   Barrier();
@@ -242,6 +251,7 @@ void DPSL::WriteLabelCounts(string filename) {
           }
         }
       }
+      delete[] recv_counts;
     }
 
     long long *total_per_source = new long long[np];
@@ -460,10 +470,8 @@ bool DPSL::MergeCut(vector<vector<IDType> *> new_labels, PSL &psl) {
 
   }
 
-  if(pid == 0){
-    delete[] compressed_merged;
-    delete[] compressed_merged_indices;
-  }
+  delete[] compressed_merged;
+  delete[] compressed_merged_indices;
 
 
   return updated;
@@ -988,6 +996,8 @@ void DPSL::Index() {
     }
   }
 
+  delete[] nodes_to_process;
+
   alg_end = omp_get_wtime();
   PrintTime("Total", alg_end - alg_start);
   PrintTime("Total Merge Time", total_merge_time);
@@ -1018,7 +1028,13 @@ DPSL::~DPSL() {
   }
   delete[] caches;
 
-  delete part_csr;
+  delete[] used;
+
+  if(part_csr != nullptr)
+    delete part_csr;
+
+  // if(whole_csr != nullptr)
+  //   delete whole_csr;
 
   delete psl_ptr;
 

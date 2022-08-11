@@ -491,6 +491,9 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
     delete[] pc_cent[i];
   }
 
+  delete[] compid;
+  delete[] que;
+
   delete[] cent;
   delete[] cent2;
   delete[] probs;
