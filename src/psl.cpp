@@ -333,17 +333,6 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
   }
 
   auto &labels_u = labels[u];
-  // TODO : Put this below, and use instad of used_vec
-  if constexpr(use_cache)
-    for (int i = 0; i < d; i++) {
-      IDType dist_start = labels_u.dist_ptrs[i];
-      IDType dist_end = labels_u.dist_ptrs[i + 1];
-
-      for (IDType j = dist_start; j < dist_end; j++) {
-        IDType w = labels_u.vertices[j];
-        cache[w] = (char) i;
-      }
-    }
 
   vector<IDType>* new_labels = nullptr;
   vector<IDType> candidates;
@@ -387,6 +376,21 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
     }
   }
 
+  if(candidates.empty()){
+    return nullptr;
+  }
+
+  if constexpr(use_cache)
+    for (int i = 0; i < d; i++) {
+      IDType dist_start = labels_u.dist_ptrs[i];
+      IDType dist_end = labels_u.dist_ptrs[i + 1];
+
+      for (IDType j = dist_start; j < dist_end; j++) {
+        IDType w = labels_u.vertices[j];
+        cache[w] = (char) i;
+      }
+    }
+
   for(IDType w : candidates){
 
     used_vec[w] = false;
@@ -395,7 +399,6 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
       if(cache[w] <= d){
         continue;
       }
-
 
     if(Prune<use_cache>(u, w, d, cache)){
       CountPrune(PRUNE_LABEL);
