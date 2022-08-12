@@ -333,7 +333,7 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
   }
 
   auto &labels_u = labels[u];
-
+  // TODO : Put this below, and use instad of used_vec
   if constexpr(use_cache)
     for (int i = 0; i < d; i++) {
       IDType dist_start = labels_u.dist_ptrs[i];
@@ -363,10 +363,27 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
         continue;
       }
 
-      if(!used_vec[w]){
-        used_vec[w] = true;
-        candidates.push_back(w);
+      if(used_vec[w]){
+        continue;
       }
+
+      if constexpr(USE_GLOBAL_BP){
+        if(global_bp->PruneByBp(u, w, d)){
+          CountPrune(PRUNE_GLOBAL_BP);
+          continue;
+        }
+      }
+
+      if constexpr(USE_LOCAL_BP){
+        if(local_bp->PruneByBp(u, w, d)){
+          CountPrune(PRUNE_LOCAL_BP);
+          continue;
+        }
+      }
+
+      used_vec[w] = true;
+      candidates.push_back(w);
+      
     }
   }
 
@@ -379,19 +396,6 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
         continue;
       }
 
-    if constexpr(USE_GLOBAL_BP){
-      if(global_bp->PruneByBp(u, w, d)){
-        CountPrune(PRUNE_GLOBAL_BP);
-        continue;
-      }
-    }
-
-    if constexpr(USE_LOCAL_BP){
-      if(local_bp->PruneByBp(u, w, d)){
-        CountPrune(PRUNE_LOCAL_BP);
-        continue;
-      }
-    }
 
     if(Prune<use_cache>(u, w, d, cache)){
       CountPrune(PRUNE_LABEL);

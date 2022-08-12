@@ -73,12 +73,13 @@ public:
   template<bool use_cache = true>
   vector<IDType>* Pull(IDType u, int d, char* cache, vector<bool>& used_vec);
 
-  // #ifdef GPU
-  // void LoadGPU(CSR& csr);
-  // void LoadGPU(BP& bp);
-  // void LoadGPU()
-  // vector<IDType>* PullGPU(vector<IDType>& ids, int d);
-  // #endif
+  #ifdef GPU
+  void setDevice(int device);
+  void LoadGPU(CSR& csr);
+  void LoadGPU(BP& bp);
+  void LoadGPU(vector<LabelSet>& labels, int d);
+  vector<vector<IDType>*> PullGPU(vector<IDType>& vertices, int d);
+  #endif
 
   void Query(IDType u, string filename);
   void QueryTest(int query_count);

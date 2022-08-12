@@ -19,3 +19,5 @@ mtmetis
 .vscode
 gmon.out
 analysis.txt
+callgrind*
+valgrind*

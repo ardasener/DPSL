@@ -85,7 +85,10 @@ CSR::~CSR(){
 
   CSR::CSR(string filename) {
 
-    bool is_mtx = true;
+    bool is_mtx = false;
+    if(filename.find(".mtx") != string::npos){
+      is_mtx = true;
+    }
 
     PigoCOO pigo_coo(filename);
 
