@@ -161,14 +161,43 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
 	    });
   }
 
-// TODO: Clean this up later
-  vector<IDType> candidates;
-  candidates.resize(csr.n);
-  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
-  for(int i=0; i<csr.n; i++){
-    candidates[i] = i;
-  }
+  vector<IDType> candidates(csr.n);
+  if constexpr(BP_RERANK){
+    vector<int64_t> ngh_ranks(csr.n, 0);
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
+    for(IDType i=0; i<csr.n; i++){
+      IDType start = csr.row_ptr[i];
+      IDType end = csr.row_ptr[i+1];
 
+      ngh_ranks[i] = i;
+      for(IDType j=start; j < end; j++){
+        IDType v = csr.col[j];
+        ngh_ranks[i] += v;
+      }
+    }
+
+    vector<pair<int64_t, IDType>> sort_vec(csr.n);
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
+    for(IDType i=0; i<csr.n; i++){
+      sort_vec[i] = pair<int64_t, IDType>(ngh_ranks[i], i);
+    }
+
+    sort(sort_vec.begin(), sort_vec.end(), less<pair<int64_t, IDType>>());
+
+    
+
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
+    for(IDType i=0; i<csr.n; i++){
+      candidates[i] = sort_vec[i].second;
+    }
+
+  } else {
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
+    for(IDType i=0; i<csr.n; i++){
+      candidates[i] = i;
+    }
+
+  }
 
   // If the mode is global then the cut vertices are inserted to the end of the list
   // This way they are picked first and only when they are covered we start choosing others
@@ -191,7 +220,6 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
   IDType root_index = candidates.size()-1;
   IDType number_of_roots_used = 0;
   for(IDType i=0; i<N_ROOTS; i++){
-
 
     while(root_index >= 0){
       IDType root = candidates[root_index]; 

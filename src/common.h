@@ -47,6 +47,14 @@
 #define SMART_DIST_CACHE_CUTOFF 0
 #endif
 
+#ifndef ALLOW_DUPLICATE_BP
+#define ALLOW_DUPLICATE_BP false
+#endif
+
+#ifndef BP_RERANK
+#define BP_RERANK true
+#endif
+
 using namespace std;
 
 
