@@ -1,4 +1,5 @@
 #include "bp.h"
+#include <queue>
 
 
 BP::BP(vector<BPLabel>& bp_labels, vector<bool>& used) : bp_labels(bp_labels), used(used){}
@@ -10,6 +11,13 @@ bool BP::PruneByBp(IDType u, IDType v, int d){
   for (int i = 0; i < N_ROOTS; ++i) {
 
       int td = idx_u.bp_dists[i] + idx_v.bp_dists[i];
+
+      /* TRY THIS
+      if(td <= d){
+        return true;
+      }
+      */
+
       if (td - 2 <= d)
 	      td += (idx_u.bp_sets[i][0] & idx_v.bp_sets[i][0]) ? -2
 	        : ((idx_u.bp_sets[i][0] & idx_v.bp_sets[i][1]) |
@@ -161,9 +169,10 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
 	    });
   }
 
-  vector<IDType> candidates(csr.n);
+  priority_queue<pair<int64_t, IDType>, vector<pair<int64_t, IDType>>, less<pair<int64_t, IDType>>> candidates;
   if constexpr(BP_RERANK){
     vector<int64_t> ngh_ranks(csr.n, 0);
+
     #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
     for(IDType i=0; i<csr.n; i++){
       IDType start = csr.row_ptr[i];
@@ -176,70 +185,59 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
       }
     }
 
-    vector<pair<int64_t, IDType>> sort_vec(csr.n);
-    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
-    for(IDType i=0; i<csr.n; i++){
-      sort_vec[i] = pair<int64_t, IDType>(ngh_ranks[i], i);
-    }
+    if(cut == nullptr)
+      for(IDType i=0; i<csr.n; i++){
+        candidates.emplace(ngh_ranks[i], i);
+      }
+    else
+      for(IDType i : *cut){
+        candidates.emplace(ngh_ranks[i], i);
+      }
 
-    sort(sort_vec.begin(), sort_vec.end(), less<pair<int64_t, IDType>>());
-
-    
-
-    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
-    for(IDType i=0; i<csr.n; i++){
-      candidates[i] = sort_vec[i].second;
-    }
 
   } else {
-    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
-    for(IDType i=0; i<csr.n; i++){
-      candidates[i] = i;
-    }
+
+    if(cut == nullptr)
+      for(IDType i=0; i<csr.n; i++){
+        candidates.emplace(0, i);
+      }
+    else
+      for(IDType i : *cut){
+        candidates.emplace(0, i);
+      }
 
   }
-
-  // If the mode is global then the cut vertices are inserted to the end of the list
-  // This way they are picked first and only when they are covered we start choosing others
-  // If the mode is local then the cut vertices are ignored entirely here (ie, marked used)
-  if(cut != nullptr){
-    if(mode == GLOBAL_BP_MODE){
-      candidates.insert(candidates.end(), cut->begin(), cut->end());
-    } else {
-      for(IDType cut_node : *cut){
-	      used[cut_node] = true;
-      }
-    }
-
-  } 
 
   vector<vector<IDType>> Srs(N_ROOTS);
 
   // TODO: use avg. degree of nghood for candidate selection
   // TODO: can we add the same node twice? If it has > 64 nghboors
-  IDType root_index = candidates.size()-1;
   IDType number_of_roots_used = 0;
   for(IDType i=0; i<N_ROOTS; i++){
 
-    while(root_index >= 0){
-      IDType root = candidates[root_index]; 
+    int64_t bp_rank = -1;
+    IDType root = -1;
+    while(! candidates.empty()){
+      auto& p = candidates.top();
+      bp_rank = p.first;
+      root = p.second;
+      candidates.pop();
+
       if(!used[root]){
         number_of_roots_used++;
         break;
       }
-      root_index--;
+
     }
 
-    if(root_index == 0){
+    if(candidates.empty()){
       cout << "Run out of root nodes for BP" << endl;
       break;
     }
 
-    IDType root = candidates[root_index];
     roots.push_back(root);
-    /* cout << "Chosen root=" << root << endl; */
-    /* cout << "Chosen root rank=" << ranks[root] << endl; */
     used[root] = true;
+    bp_rank -= root;
     
     Srs[i].reserve(64);
 
@@ -249,12 +247,17 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
     for(IDType j=start; j<end; j++){
       IDType v = csr.col[j];
       if(!used[v]){
+        bp_rank -= v;
         Srs[i].push_back(v);
         used[v] = true;
         if(Srs[i].size() == 64){
           break;
         }
       }
+    }
+
+    if constexpr(ALLOW_DUPLICATE_BP){
+      candidates.emplace(bp_rank, root);
     }
   }
 

@@ -52,7 +52,7 @@
 #endif
 
 #ifndef BP_RERANK
-#define BP_RERANK true
+#define BP_RERANK false
 #endif
 
 using namespace std;

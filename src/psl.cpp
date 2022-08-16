@@ -57,6 +57,9 @@ void PSL::CountPrune(int i){
 
 PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vector<IDType>* ranks_ptr, vector<IDType>* order_ptr) : csr(csr_),  labels(csr.n), global_bp(global_bp) {
 
+#ifdef DEBUG
+  cand_counts.resize(csr.n, 0);
+#endif
 
   if(ranks_ptr == nullptr){
     order = gen_order<IDType>(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
@@ -101,8 +104,7 @@ void PSL::WriteLabelCounts(string filename){
 
   long long total = 0;
   long long max_label_size = 0;
-  for(IDType i=0; i<csr.n; i++){
-    IDType u = order[csr.n-i-1];
+  for(IDType u=0; u<csr.n; u++){
     ofs << u << ":\t";
     auto& labels_u = labels[u];
     total += labels_u.vertices.size();
@@ -128,6 +130,15 @@ void PSL::WriteLabelCounts(string filename){
   ofs << endl;
 
   ofs.close();
+
+#ifdef DEBUG
+ofstream ofs2("output_psl_cand_counts.txt");
+for(size_t i=0; i < cand_counts.size(); i++){
+  ofs2 << i << ": " << cand_counts[i] << endl;
+}
+ofs2.close();
+#endif
+
 }
 
 
@@ -273,8 +284,6 @@ vector<IDType>* PSL::Query(IDType u) {
 
 template<bool use_cache = true>
 bool PSL::Prune(IDType u, IDType v, int d, char* cache) {
-  asm("");
-
   auto &labels_v = labels[v];
   auto &labels_u = labels[u];
 
@@ -380,6 +389,13 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
     return nullptr;
   }
 
+#ifdef DEBUG
+  for(IDType w : candidates){
+    cand_counts[w]++;
+  }
+#endif
+
+
   if constexpr(use_cache)
     for (int i = 0; i < d; i++) {
       IDType dist_start = labels_u.dist_ptrs[i];
@@ -470,6 +486,7 @@ vector<IDType>* PSL::Init(IDType u){
 
 void PSL::Index() {
 
+
   double start_time, end_time, all_start_time, all_end_time;
   all_start_time = omp_get_wtime();
 
@@ -548,8 +565,10 @@ void PSL::Index() {
 
   vector<vector<IDType>*> new_labels(csr.n, nullptr);
   bool updated = true;
+
   for (int d = 2; d < MAX_DIST && updated; d++) {
-    
+   
+ 
     start_time = omp_get_wtime();
     updated = false;
 

@@ -50,6 +50,7 @@ public:
   long long prune_labels = 0;
   long long prune_local_bp = 0;
   long long prune_global_bp = 0;
+  vector<long long> cand_counts;
 
   void ConstructBPLabel();
 
