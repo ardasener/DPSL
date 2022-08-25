@@ -1,57 +1,68 @@
 #include "bp.h"
 #include <queue>
+#include "external/order/order.hpp"
 
 
-BP::BP(vector<BPLabel>& bp_labels, vector<bool>& used) : bp_labels(bp_labels), used(used){}
+BP::BP(vector<uint64_t>& bp_0_sets, vector<uint64_t>& bp_1_sets, vector<uint8_t>& bp_dists, vector<bool>& used)
+: bp_0_sets(bp_0_sets), bp_1_sets(bp_1_sets), bp_dists(bp_dists), used(used) {}
 
 bool BP::PruneByBp(IDType u, IDType v, int d){
-
-  BPLabel &idx_u = bp_labels[u], &idx_v = bp_labels[v];
-
+  
+  int u_index = u*N_ROOTS;
+  int v_index = v*N_ROOTS;
   for (int i = 0; i < N_ROOTS; ++i) {
 
-      int td = idx_u.bp_dists[i] + idx_v.bp_dists[i];
+      int td = bp_dists[u_index] + bp_dists[v_index];
 
-      /* TRY THIS
       if(td <= d){
         return true;
       }
-      */
 
       if (td - 2 <= d)
-	      td += (idx_u.bp_sets[i][0] & idx_v.bp_sets[i][0]) ? -2
-	        : ((idx_u.bp_sets[i][0] & idx_v.bp_sets[i][1]) |
-	  			 (idx_u.bp_sets[i][1] & idx_v.bp_sets[i][0]))
-	    	  ? -1
-	    	  : 0;
+        
+        if(bp_0_sets[u_index] & bp_0_sets[v_index]){
+          td -= 2;
+        } else if((bp_0_sets[u_index] & bp_1_sets[v_index]) | bp_1_sets[u_index] & bp_0_sets[v_index]){
+          td -= 1;
+        }
   
       if (td <= d){
 	      /* printf("BPPruned u=%d v=%d td=%d d=%d \n", u,v,td,d); */
 	      return true;
       }
+
+      u_index++;
+      v_index++;
     }
+
     return false;
 
 }
 
 int BP::QueryByBp(IDType u, IDType v){
 
-  BPLabel &idx_u = bp_labels[u], &idx_v = bp_labels[v];
-
   int d = MAX_DIST;
+
+  int u_index = u*N_ROOTS;
+  int v_index = v*N_ROOTS;
   for (int i = 0; i < N_ROOTS; ++i) {
 
-      int td = idx_u.bp_dists[i] + idx_v.bp_dists[i];
+      int td = bp_dists[u_index] + bp_dists[v_index];
+
       if (td - 2 <= d)
-	td += (idx_u.bp_sets[i][0] & idx_v.bp_sets[i][0]) ? -2
-	      : ((idx_u.bp_sets[i][0] & idx_v.bp_sets[i][1]) |
-				 (idx_u.bp_sets[i][1] & idx_v.bp_sets[i][0]))
-		  ? -1
-		  : 0;
+        
+        if(bp_0_sets[u_index] & bp_0_sets[v_index]){
+          td -= 2;
+        } else if((bp_0_sets[u_index] & bp_1_sets[v_index]) | bp_1_sets[u_index] & bp_0_sets[v_index]){
+          td -= 1;
+        }
   
-      if (td < d){
-	d = td;
+      if (td <= d){
+        d = td;
       }
+
+      u_index++;
+      v_index++;
     }
 
     return d;
@@ -59,8 +70,8 @@ int BP::QueryByBp(IDType u, IDType v){
 
 void BP::InitBPForRoot(IDType r, vector<IDType>& Sr, int bp_index, CSR& csr){
 
-  vector<pair<uint64_t,uint64_t>> bp_sets(csr.n, make_pair((uint64_t) 0, (uint64_t) 0));
-  vector<uint8_t> bp_dists(csr.n, (uint8_t) MAX_DIST);
+  vector<pair<uint64_t,uint64_t>> new_bp_sets(csr.n, make_pair((uint64_t) 0, (uint64_t) 0));
+  vector<uint8_t> new_bp_dists(csr.n, (uint8_t) MAX_DIST);
 
   IDType* Q0 = new IDType[csr.n];
   IDType* Q1 = new IDType[csr.n];
@@ -70,13 +81,13 @@ void BP::InitBPForRoot(IDType r, vector<IDType>& Sr, int bp_index, CSR& csr){
   IDType Q1_ptr = 0;
 
   Q0[Q0_size++] = r;
-  bp_dists[r] = (uint8_t) 0;
+  new_bp_dists[r] = (uint8_t) 0;
 
   for(IDType i=0; i<Sr.size(); i++){
     IDType v = Sr[i];
     Q1[Q1_size++] = v;
-    bp_dists[v] = (uint8_t) 1;
-    bp_sets[v].first |= 1ULL << i;
+    new_bp_dists[v] = (uint8_t) 1;
+    new_bp_sets[v].first |= 1ULL << i;
   }
 
   while(Q0_ptr < Q0_size){
@@ -92,13 +103,13 @@ void BP::InitBPForRoot(IDType r, vector<IDType>& Sr, int bp_index, CSR& csr){
       for(IDType i=start; i<end; i++){
         IDType u = csr.col[i];
 
-        if(bp_dists[u] == (uint8_t) MAX_DIST){
+        if(new_bp_dists[u] == (uint8_t) MAX_DIST){
           E1.emplace_back(v,u);
-          bp_dists[u] = (uint8_t) (bp_dists[v] + 1);
+          new_bp_dists[u] = (uint8_t) (new_bp_dists[v] + 1);
           Q1[Q1_size++] = u;
-        } else if(bp_dists[u] == bp_dists[v] + 1){
+        } else if(new_bp_dists[u] == new_bp_dists[v] + 1){
           E1.emplace_back(v,u);
-        } else if (bp_dists[u] == bp_dists[v]){
+        } else if (new_bp_dists[u] == new_bp_dists[v]){
           E0.emplace_back(v,u);
         } 
       } 
@@ -107,15 +118,15 @@ void BP::InitBPForRoot(IDType r, vector<IDType>& Sr, int bp_index, CSR& csr){
     for(auto& p : E0){
       IDType v = p.first;
       IDType u = p.second;
-      bp_sets[v].second |= bp_sets[u].first;
-      bp_sets[u].second |= bp_sets[v].first;
+      new_bp_sets[v].second |= new_bp_sets[u].first;
+      new_bp_sets[u].second |= new_bp_sets[v].first;
     }
 
     for(auto& p : E1){
       IDType v = p.first;
       IDType u = p.second;
-      bp_sets[u].first |= bp_sets[v].first;
-      bp_sets[u].second |= bp_sets[v].second & ~bp_sets[v].first;
+      new_bp_sets[u].first |= new_bp_sets[v].first;
+      new_bp_sets[u].second |= new_bp_sets[v].second & ~new_bp_sets[v].first;
       //bp_sets[u].second |= bp_sets[v].second;
     }
 
@@ -128,10 +139,15 @@ void BP::InitBPForRoot(IDType r, vector<IDType>& Sr, int bp_index, CSR& csr){
 
 
   for(IDType i=0; i<csr.n; i++){
-    auto& bp = bp_labels[i];
-    bp.bp_dists[bp_index] = bp_dists[i];
-    bp.bp_sets[bp_index][0] = bp_sets[i].first;
-    bp.bp_sets[bp_index][1] = bp_sets[i].second;
+
+    bp_0_sets[i*N_ROOTS + bp_index] = new_bp_sets[i].first;
+    bp_1_sets[i*N_ROOTS + bp_index] = new_bp_sets[i].second;
+    bp_dists[i*N_ROOTS + bp_index] = new_bp_dists[i];
+
+    // auto& bp = bp_labels[i];
+    // bp.bp_dists[bp_index] = bp_dists[i];
+    // bp.bp_sets[bp_index][0] = bp_sets[i].first;
+    // bp.bp_sets[bp_index][1] = bp_sets[i].second;
   }
 
   delete[] Q0;
@@ -139,20 +155,27 @@ void BP::InitBPForRoot(IDType r, vector<IDType>& Sr, int bp_index, CSR& csr){
 
 }
 
-BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* cut, Mode mode) {
+BP::BP(CSR& csr, vector<IDType>* cut, Mode mode) {
 
   double start_time = omp_get_wtime();
 
-  bp_labels.resize(csr.n);
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
-  for(IDType i=0; i<csr.n; i++){
-    for(int j=0; j<N_ROOTS; j++){
-      bp_labels[i].bp_dists[j] = (uint8_t) MAX_DIST;
-      bp_labels[i].bp_sets[j][0] = (uint64_t) 0;
-      bp_labels[i].bp_sets[j][1] = (uint64_t) 0;   
-    }
-  }
+  bp_0_sets.resize(csr.n*N_ROOTS, 0);
+  bp_1_sets.resize(csr.n*N_ROOTS, 0);
+  bp_dists.resize(csr.n*N_ROOTS, MAX_DIST);
 
+  vector<int> bp_order;
+  vector<int> bp_ranks;
+
+  if constexpr(BP_ORDER_METHOD != "same"){
+    bp_order = gen_order<IDType>(csr.row_ptr, csr.col, csr.n, csr.m, BP_ORDER_METHOD);
+    bp_ranks.resize(csr.n);
+
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
+    for(IDType i=0; i<csr.n; i++){
+          bp_ranks[bp_order[i]] = i;
+    } 
+  
+  }
 
   used.resize(csr.n, false);
   vector<IDType> roots;
@@ -164,8 +187,12 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
     IDType end = csr.row_ptr[i+1];
 
     if(end-start > 64)
-      sort(csr.col+start, csr.col+end, [](IDType u, IDType v){
-	      return u > v;
+      sort(csr.col+start, csr.col+end, [&bp_ranks](IDType u, IDType v){
+        if constexpr(BP_ORDER_METHOD == "same"){
+	        return u > v;
+        } else {
+          return bp_ranks[u] > bp_ranks[v];
+        }
 	    });
   }
 
@@ -175,13 +202,24 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
 
     #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
     for(IDType i=0; i<csr.n; i++){
+      
       IDType start = csr.row_ptr[i];
       IDType end = csr.row_ptr[i+1];
 
-      ngh_ranks[i] = i;
+      if constexpr(BP_ORDER_METHOD == "same"){
+        ngh_ranks[i] = i;
+      } else{
+        ngh_ranks[i] += bp_ranks[i];
+      }
+
       for(IDType j=start; j < end; j++){
         IDType v = csr.col[j];
-        ngh_ranks[i] += v;
+        
+        if constexpr(BP_ORDER_METHOD == "same"){
+          ngh_ranks[i] += v;
+        } else{
+          ngh_ranks[i] += bp_ranks[v];
+        }
       }
     }
 
@@ -199,10 +237,22 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
 
     if(cut == nullptr)
       for(IDType i=0; i<csr.n; i++){
-        candidates.emplace(0, i);
+
+        int64_t weight = 0;
+        if constexpr(BP_ORDER_METHOD != "same"){
+          weight = bp_ranks[i];
+        }
+
+        candidates.emplace(weight, i);
       }
     else
       for(IDType i : *cut){
+        
+        int64_t weight = 0;
+        if constexpr(BP_ORDER_METHOD != "same"){
+          weight = bp_ranks[i];
+        }
+
         candidates.emplace(0, i);
       }
 
@@ -274,6 +324,7 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
   double end_time = omp_get_wtime();
   cout << "Constructed BP Labels in " << end_time-start_time << " seconds" << endl;
 
+/*
 #ifdef DEBUG
   ofstream ofs("output_bp_labels.txt");
   ofs << "__Roots__" << endl;
@@ -303,5 +354,6 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
 
 
 #endif
+*/
 
 }

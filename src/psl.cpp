@@ -57,13 +57,16 @@ void PSL::CountPrune(int i){
 
 PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vector<IDType>* ranks_ptr, vector<IDType>* order_ptr) : csr(csr_),  labels(csr.n), global_bp(global_bp) {
 
-#ifdef DEBUG
-  cand_counts.resize(csr.n, 0);
-#endif
+  // bp_time.resize(csr.n, 0);
+  // prune_time.resize(csr.n, 0);
+  // pull_time.resize(csr.n, 0);
+  // cand_counts.resize(csr.n, 0);
 
   if(ranks_ptr == nullptr){
     order = gen_order<IDType>(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
     ranks.resize(csr.n);
+
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) 
     for(IDType i=0; i<csr.n; i++){
           ranks[order[i]] = i;
     } 
@@ -84,9 +87,9 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
   
   if constexpr(USE_LOCAL_BP){
     if constexpr(USE_GLOBAL_BP){
-      local_bp = new BP(csr, ranks, order, cut, LOCAL_BP_MODE);
+      local_bp = new BP(csr, cut, LOCAL_BP_MODE);
     } else {
-      local_bp = new BP(csr, ranks, order, nullptr, LOCAL_BP_MODE);
+      local_bp = new BP(csr, nullptr, LOCAL_BP_MODE);
     }
   }
 
@@ -131,13 +134,6 @@ void PSL::WriteLabelCounts(string filename){
 
   ofs.close();
 
-#ifdef DEBUG
-ofstream ofs2("output_psl_cand_counts.txt");
-for(size_t i=0; i < cand_counts.size(); i++){
-  ofs2 << i << ": " << cand_counts[i] << endl;
-}
-ofs2.close();
-#endif
 
 }
 
@@ -325,6 +321,8 @@ bool PSL::Prune(IDType u, IDType v, int d, char* cache) {
 template<bool use_cache = true>
 vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) {
 
+  // double pull_start_time = omp_get_wtime();
+
   if constexpr(USE_LOCAL_BP)
     if(local_bp->used[u])
       return nullptr;
@@ -365,6 +363,7 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
         continue;
       }
 
+      // double bp_start_time = omp_get_wtime();
       if constexpr(USE_GLOBAL_BP){
         if(global_bp->PruneByBp(u, w, d)){
           CountPrune(PRUNE_GLOBAL_BP);
@@ -378,6 +377,7 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
           continue;
         }
       }
+      // bp_time[u] += omp_get_wtime() - bp_start_time;
 
       used_vec[w] = true;
       candidates.push_back(w);
@@ -389,12 +389,7 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
     return nullptr;
   }
 
-#ifdef DEBUG
-  for(IDType w : candidates){
-    cand_counts[w]++;
-  }
-#endif
-
+  // cand_counts[u] += candidates.size();
 
   if constexpr(use_cache)
     for (int i = 0; i < d; i++) {
@@ -416,10 +411,12 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
         continue;
       }
 
+    // double prune_start_time = omp_get_wtime();
     if(Prune<use_cache>(u, w, d, cache)){
       CountPrune(PRUNE_LABEL);
       continue;
     }
+    // prune_time[u] += omp_get_wtime() - prune_start_time;
 
     if(new_labels == nullptr){
       new_labels = new vector<IDType>;
@@ -445,6 +442,7 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
     }
   }
 
+  // pull_time[u] += omp_get_wtime() - pull_start_time;
   
   return new_labels;
 }
@@ -645,6 +643,10 @@ void PSL::Index() {
     end_time = omp_get_wtime();
     cout << "Level " << d << " Time: " << end_time-start_time << " seconds" << endl;
     cout << "Level " << d << " Count: " << level_count << endl;
+
+    // if(d == 3){
+    //   Report(d);
+    // }
   }
 
   all_end_time = omp_get_wtime();
@@ -661,6 +663,41 @@ void PSL::Index() {
   cout << "Prune by Labels: " << prune_labels << endl; 
   WriteStats(stats_vec, "stats.txt");
 #endif
+}
+
+void PSL::Report(int d){
+  ofstream ofs("output_level_" + to_string(d) + "_report.csv");
+
+  ofs << "Vertex_ID" << ","
+      << "Pull_Time" << ","
+      << "Prune_Time" << ","
+      << "BP_Time" << ","
+      << "Other_Time" << ","
+      << "Label_Count" << ","
+      << "New_Label_Count" << ","
+      << "Cand_Count" << endl;
+
+  for(int i=0; i<csr.n; i++){
+
+    auto& labels_i = labels[i];
+
+    IDType start = labels_i.dist_ptrs[0];
+    IDType end = labels_i.dist_ptrs[d-1];
+
+    size_t label_count = end - start;
+    size_t new_label_count = labels_i.vertices.size() - label_count;
+
+    ofs << i << ", "
+        << pull_time[i] << ","
+        << prune_time[i] << ","
+        << bp_time[i] << ","
+        << pull_time[i] - prune_time[i] - bp_time[i] << ","
+        << label_count << ","
+        << new_label_count << ","
+        << cand_counts[i] << endl;
+  }
+
+  ofs.close();
 }
 
 template vector<IDType>* PSL::Pull<true>(IDType u, int d, char* cache, vector<bool>& used_vec);

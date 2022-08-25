@@ -639,27 +639,14 @@ void DPSL::InitP0(string part_file) {
 
   if constexpr (USE_GLOBAL_BP) {
     Log("Creating Global BP");
-    global_bp = new BP(csr, vc.ranks, vc.order, &cut);
+    global_bp = new BP(csr, &cut);
 
     Log("Global BP Barrier Region");
     Barrier();
-    vector<uint64_t> bp_sets(global_n*N_ROOTS*2);
-    vector<uint8_t> bp_dists(global_n*N_ROOTS);
 
-#pragma omp parallel default(shared) num_threads(NUM_THREADS)
-    for (IDType i = 0; i < global_n; i++) {
-      int offset1 = i*N_ROOTS;
-      int offset2 = i*N_ROOTS*2;
-      BPLabel &bp_label = global_bp->bp_labels[i];
-      for (int j = 0; j < N_ROOTS; j++) {
-        bp_dists[offset1 + j] = bp_label.bp_dists[j];
-        bp_sets[offset2 + j*2] = bp_label.bp_sets[j][0]; 
-        bp_sets[offset2 + j*2 + 1] = bp_label.bp_sets[j][1];
-      }
-    }
-
-    BroadcastData(bp_dists.data(), bp_dists.size(), MPI_UINT8_T);
-    BroadcastData(bp_sets.data(), bp_sets.size(), MPI_UINT64_T);
+    BroadcastData(global_bp->bp_dists.data(), global_bp->bp_dists.size(), MPI_UINT8_T);
+    BroadcastData(global_bp->bp_0_sets.data(), global_bp->bp_0_sets.size(), MPI_UINT64_T);
+    BroadcastData(global_bp->bp_1_sets.data(), global_bp->bp_1_sets.size(), MPI_UINT64_T);
 
     int* bp_used = new int[global_n];
 
@@ -714,27 +701,21 @@ void DPSL::Init() {
   if constexpr (USE_GLOBAL_BP) {
     Log("Global BP Barrier Region");
     Barrier();
-    vector<BPLabel> bp_labels(global_n);
-  
+
     uint8_t *bp_dists;
     size_t bp_dists_size = RecvBroadcast(bp_dists, 0, MPI_UINT8_T);
-    uint64_t *bp_sets;
-    size_t bp_sets_size = RecvBroadcast(bp_sets, 0, MPI_UINT64_T);
+    uint64_t *bp_0_sets;
+    size_t bp_0_sets_size = RecvBroadcast(bp_0_sets, 0, MPI_UINT64_T);
+    uint64_t *bp_1_sets;
+    size_t bp_1_sets_size = RecvBroadcast(bp_1_sets, 0, MPI_UINT64_T);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
-    for (IDType i = 0; i < global_n; i++) {
-      int offset1 = i*N_ROOTS;
-      int offset2 = i*N_ROOTS*2;
-      for (IDType j = 0; j < N_ROOTS; j++) {
-        bp_labels[i].bp_dists[j] = bp_dists[offset1 + j];
-        bp_labels[i].bp_sets[j][0] = bp_sets[offset2 + j * 2];
-        bp_labels[i].bp_sets[j][1] = bp_sets[offset2 + j * 2 + 1];
-      }
-
-    }
+    vector<uint64_t> bp_0_sets_vec(bp_0_sets, bp_0_sets + bp_0_sets_size);
+    vector<uint64_t> bp_1_sets_vec(bp_1_sets, bp_1_sets + bp_1_sets_size);
+    vector<uint8_t> bp_dists_vec(bp_dists, bp_dists + bp_dists_size);
 
     delete[] bp_dists;
-    delete[] bp_sets;
+    delete[] bp_0_sets;
+    delete[] bp_1_sets;
 
     int* bp_used; 
     size_t bp_used_size = RecvBroadcast(bp_used, 0);
@@ -750,7 +731,7 @@ void DPSL::Init() {
     Barrier();
     Log("Global BP Barrier Region End");
 
-    global_bp = new BP(bp_labels, bp_used_vec);
+    global_bp = new BP(bp_0_sets_vec, bp_1_sets_vec, bp_dists_vec, bp_used_vec);
   }
 
   cut.insert(cut.end(), cut_ptr, cut_ptr + size_cut);

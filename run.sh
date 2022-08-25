@@ -69,10 +69,22 @@ for GRAPH in ${GRAPHS[@]}; do
 	if [[ $MODE == "order_method" ]]; then
 		for METHOD in degree b_cent c_cent rw_cent eigen_cent degree_b_cent degree_c_cent degree_rw_cent degree_eigen_cent
 		do
-			make psl -B NUM_THREADS=20 ORDER_METHOD=${METHOD}
+			make psl -B NUM_THREADS=60 ORDER_METHOD=${METHOD}
 			run_psl $GRAPH_PATH run_outputs/${GRAPH}.${METHOD}.psl.out
 		done
 	fi
+
+	if [[ $MODE == "bp_order_method" ]]; then
+		for METHOD in b_cent c_cent rw_cent degree_b_cent
+		do
+			for BP_METHOD in b_cent c_cent rw_cent degree_b_cent
+			do
+				make psl -B NUM_THREADS=60 ORDER_METHOD=${METHOD} BP_ORDER_METHOD=${BP_METHOD}
+				run_psl $GRAPH_PATH run_outputs/${GRAPH}.${METHOD}.${BP_METHOD}.psl.out
+			done
+		done
+	fi
+	
 
 	if [[ $MODE == "opt_bp" ]]; then
 

@@ -55,6 +55,10 @@
 #define BP_RERANK false
 #endif
 
+#ifndef BP_ORDER_METHOD
+#define BP_ORDER_METHOD "same"
+#endif
+
 using namespace std;
 
 

@@ -353,7 +353,7 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
 
   double start, end;
 
-  if (method == "degree") {
+  if (method.find("degree") != string::npos) {
     cout << "starting degree computation\n";
     start = omp_get_wtime();
     for (T i = 0; i < vcount; i++) {
@@ -363,28 +363,7 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
     cout << "Deg-cent is computed in " << end - start << " seconds\n";
   }
 
-  // cout << "starting BC-1 computation\n";
-  // start = omp_get_wtime();
-  // computeBCandCC(lxadj, ladj, vcount, noBFS, pque, plevel, ppred, pendpred,
-  // psigma, pdelta, pb_cent, pc_cent, 2); end = omp_get_wtime(); for(int i = 0;
-  // i < n; i++) one_btwn[i] = pb_cent[0][i]; cout << "BC-1 is computed in " <<
-  // end - start << " seconds\n";
-
-  // cout << "starting BC-2 computation\n";
-  // start = omp_get_wtime();
-  // computeBCandCC(lxadj, ladj, vcount, noBFS, pque, plevel, ppred, pendpred,
-  // psigma, pdelta, pb_cent, pc_cent, 4); end = omp_get_wtime(); for(int i = 0;
-  // i < n; i++) two_btwn[i] = pb_cent[0][i]; cout << "BC-2 is computed in " <<
-  // end - start << " seconds\n";
-
-  // cout << "starting BC-3 computation\n";
-  // start = omp_get_wtime();
-  // computeBCandCC(lxadj, ladj, vcount, noBFS, pque, plevel, ppred, pendpred,
-  // psigma, pdelta, pb_cent, pc_cent, 6); end = omp_get_wtime(); for(int i = 0;
-  // i < n; i++) thr_btwn[i] = pb_cent[0][i]; cout << "BC-3 is computed in " <<
-  // end - start << " seconds\n";
-
-  else if (method == "b_cent" || method == "degree_b_cent") {
+  if (method == "b_cent" || method == "degree_b_cent") {
     cout << "starting BC-all computation\n";
     start = omp_get_wtime();
     computeBCandCC(lxadj, ladj, vcount, noBFS, pque, plevel, ppred, pendpred,

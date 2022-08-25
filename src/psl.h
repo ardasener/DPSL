@@ -46,13 +46,16 @@ public:
   BP* local_bp = nullptr;
   BP* global_bp = nullptr;
   int last_dist = 2;
+  
   long long prune_rank = 0;
   long long prune_labels = 0;
   long long prune_local_bp = 0;
   long long prune_global_bp = 0;
-  vector<long long> cand_counts;
 
-  void ConstructBPLabel();
+  vector<long long> cand_counts;
+  vector<double> bp_time;
+  vector<double> prune_time;
+  vector<double> pull_time;
 
   vector<LabelSet> labels;
   vector<Stats> stats_vec;
@@ -60,6 +63,8 @@ public:
   vector<bool> in_cut;
   char** caches = nullptr;
   vector<bool>* used = nullptr;
+
+
   PSL(CSR &csr_, string order_method, vector<IDType>* cut=nullptr, BP* global_bp=nullptr, vector<IDType>* ranks_ptr=nullptr, vector<IDType>* order_ptr = nullptr);
   ~PSL();
   vector<IDType>* Init(IDType u);
@@ -67,7 +72,8 @@ public:
   void WriteLabelCounts(string filename);
   vector<IDType>* Query(IDType u);
   void CountPrune(int i);
-
+  void ConstructBPLabel();
+  
   template<bool use_cache = true>
   bool Prune(IDType u, IDType v, int d, char* cache);
   
@@ -85,6 +91,7 @@ public:
   void Query(IDType u, string filename);
   void QueryTest(int query_count);
   void CountStats(double time);
+  void Report(int d);
 };
 
 
