@@ -145,7 +145,7 @@ void DPSL::Query(IDType u, string filename) {
 
     for (int p = 1; p < np; p++) {
       int *dists;
-      int size = RecvData(dists, 0, p, MPI_INT32_T);
+      size_t size = RecvData(dists, 0, p, MPI_INT32_T);
       #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
       for (int i = 0; i < whole_csr->n; i++) {
         if(dists[i] < all_dists[i]){
@@ -239,7 +239,7 @@ void DPSL::WriteLabelCounts(string filename) {
 
     for (int p = 1; p < np; p++) {
       IDType *recv_counts;
-      IDType size = RecvData(recv_counts, 0, p);
+      size_t size = RecvData(recv_counts, 0, p);
       for (IDType i = 0; i < size; i++) {
         if (recv_counts[i] != -1) { // Count recieved
           if (vc_ptr->cut.find(i) == vc_ptr->cut.end() &&
@@ -352,7 +352,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *> new_labels, PSL &psl) {
 
   IDType * compressed_merged;
   IDType * compressed_merged_indices;
-  IDType compressed_size = 0;
+  size_t compressed_size = 0;
 
   if(pid == 0){ // ONLY P0
     vector<IDType*> all_compressed_labels(np);
@@ -481,69 +481,129 @@ bool DPSL::MergeCut(vector<vector<IDType> *> new_labels, PSL &psl) {
 void DPSL::Barrier() { MPI_Barrier(MPI_COMM_WORLD); }
 
 template <typename T>
-void DPSL::SendData(T *data, int size, int tag, int to,
+void DPSL::SendData(T *data, size_t size, int tag, int to,
                            MPI_Datatype type) {
-  int data_tag = (tag << 1);
-  int size_tag = data_tag | 1;
+  int data_tag = (tag << 4);
+  int size_tag = data_tag;
 
-  MPI_Send(&size, 1, MPI_INT32_T, to, size_tag, MPI_COMM_WORLD);
+  MPI_Send(&size, 1, MPI_INT64_T, to, size_tag, MPI_COMM_WORLD);
 
-  if (size != 0 && data != nullptr)
-    MPI_Send(data, size, type, to, data_tag, MPI_COMM_WORLD);
+  if (size != 0 && data != nullptr){
+
+    int send_id = 1;
+    while(size > MAX_COMM_SIZE){
+      int curr_tag = data_tag | send_id++;
+      MPI_Send(data, MAX_COMM_SIZE, type, to, curr_tag, MPI_COMM_WORLD);
+      data += MAX_COMM_SIZE;
+      size -= MAX_COMM_SIZE;
+    }
+
+    if(size > 0){
+      int curr_tag = data_tag | send_id++;
+      MPI_Send(data, size, type, to, curr_tag, MPI_COMM_WORLD);
+    }
+  }
 }
 
 template <typename T>
-void DPSL::BroadcastData(T *data, int size, MPI_Datatype type) {
+void DPSL::BroadcastData(T *data, size_t size, MPI_Datatype type) {
 
   Barrier();
-  // cout << "Broadcasting size..." << endl;
-  MPI_Bcast(&size, 1, MPI_INT32_T, pid, MPI_COMM_WORLD);
+  // cout << "Broadcasting size of data: " << size << endl;
+  MPI_Bcast(&size, 1, MPI_INT64_T, pid, MPI_COMM_WORLD);
   Barrier();
-  if(size != 0 && data != nullptr)
-    // cout << "Broadcasting data... size=" << size << endl;
-    MPI_Bcast(data, size, type, pid, MPI_COMM_WORLD);
+
+  if(size != 0 && data != nullptr){
+    while(size > MAX_COMM_SIZE){
+
+      Barrier();
+      // cout << "Loop Broadcasting chunk size=" << size << endl;
+      MPI_Bcast(data, MAX_COMM_SIZE, type, pid, MPI_COMM_WORLD);
+      Barrier();
+      data += MAX_COMM_SIZE;
+      size -= MAX_COMM_SIZE;
+    }
+
+    if(size > 0){
+      Barrier();
+      // cout << "Broadcasting chunk size=" << size << endl;
+      MPI_Bcast(data, size, type, pid, MPI_COMM_WORLD); 
+      Barrier();
+    }
+  }
 }
 
 template <typename T>
-int DPSL::RecvBroadcast(T *&data, int from, MPI_Datatype type){
-  int size = 0;
+size_t DPSL::RecvBroadcast(T *&data, int from, MPI_Datatype type){
+  size_t size = 0;
+  
   Barrier();
-  // cout << "Recv size broadcast..." << endl;
-  MPI_Bcast(&size, 1, MPI_INT32_T, from, MPI_COMM_WORLD);
+  MPI_Bcast(&size, 1, MPI_INT64_T, from, MPI_COMM_WORLD);
   Barrier();
+
+  size_t full_size = size;
+
   if(size != 0){
     data = new T[size];
-    // cout << "Recv data broadcast... size=" << size << endl;
-    MPI_Bcast(data, size, type, from, MPI_COMM_WORLD); 
+    size_t sent = 0;
+    while(size > MAX_COMM_SIZE){
+      Barrier();
+      MPI_Bcast(data + sent, MAX_COMM_SIZE, type, from, MPI_COMM_WORLD); 
+      Barrier();
+
+      size -= MAX_COMM_SIZE;
+      sent += MAX_COMM_SIZE;
+
+    }
+
+    if(size > 0){
+      
+      Barrier();
+      MPI_Bcast(data + sent, size, type, from, MPI_COMM_WORLD); 
+      Barrier();
+
+    }
+
   } else {
     data = nullptr;
   }
-  return size;  
+  return full_size;
 }
 
 template <typename T>
-int DPSL::RecvData(T *&data, int tag, int from, MPI_Datatype type) {
-  int data_tag = (tag << 1);
-  int size_tag = data_tag | 1;
-  int size = 0;
+size_t DPSL::RecvData(T *&data, int tag, int from, MPI_Datatype type) {
+  int data_tag = (tag << 4);
+  int size_tag = data_tag;
+  size_t size = 0;
 
   int error_code1, error_code2;
 
-  error_code1 = MPI_Recv(&size, 1, MPI_INT32_T, from, size_tag, MPI_COMM_WORLD,
-                         MPI_STATUS_IGNORE);
+  MPI_Recv(&size, 1, MPI_INT64_T, from, size_tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  size_t full_size = size;
 
   if (size != 0) {
     data = new T[size];
-    error_code2 = MPI_Recv(data, size, type, from, data_tag, MPI_COMM_WORLD,
-                           MPI_STATUS_IGNORE);
-    Log("Recieved Data with codes= " + to_string(error_code1) + "," +
-        to_string(error_code2) + " and with size=" + to_string(size));
+
+    int send_id = 1;
+    size_t sent = 0;
+    while(size > MAX_COMM_SIZE){
+      int curr_tag = data_tag | send_id++;
+      MPI_Recv(data + sent, MAX_COMM_SIZE, type, from, curr_tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      size -= MAX_COMM_SIZE;
+      sent += MAX_COMM_SIZE;
+    }
+
+    if(size > 0){
+      int curr_tag = data_tag | send_id++;
+      MPI_Recv(data + sent, size, type, from, curr_tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+
   } else {
     data = nullptr;
     Log("Recieved Size 0 Data");
   }
 
-  return size;
+  return full_size;
 }
 
 void DPSL::InitP0(string part_file) {
@@ -658,7 +718,9 @@ void DPSL::InitP0(string part_file) {
       }
     }
 
+    cout << "Sending bp dists" << endl;
     BroadcastData(bp_dists.data(), bp_dists.size(), MPI_UINT8_T);
+    cout << "Sending bp sets" << endl;
     BroadcastData(bp_sets.data(), bp_sets.size(), MPI_UINT64_T);
 
     int* bp_used = new int[global_n];
@@ -667,6 +729,7 @@ void DPSL::InitP0(string part_file) {
     for(int i=0; i<global_n; i++){
       bp_used[i] = (int) global_bp->used[i];
     }
+    cout << "Sending bp used" << endl;
     BroadcastData(bp_used, global_n);
     delete[] bp_used;
 

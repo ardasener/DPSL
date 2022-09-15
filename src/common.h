@@ -55,6 +55,8 @@
 #define BP_RERANK false
 #endif
 
+#define MAX_COMM_SIZE 1000000
+
 using namespace std;
 
 
