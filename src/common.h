@@ -55,7 +55,7 @@
 #define BP_RERANK false
 #endif
 
-#define MPI_CHUNK_SIZE 1<<30
+#define MAX_COMM_SIZE 1<<30
 
 using namespace std;
 

@@ -492,6 +492,7 @@ void DPSL::SendData(T *data, size_t size, int tag, int to,
 
     int send_id = 1;
     while(size > MAX_COMM_SIZE){
+      cout << "Large size data (" << size << ") in Send" << endl;
       int curr_tag = data_tag | send_id++;
       MPI_Send(data, MAX_COMM_SIZE, type, to, curr_tag, MPI_COMM_WORLD);
       data += MAX_COMM_SIZE;
@@ -513,7 +514,7 @@ void DPSL::BroadcastData(T *data, size_t size, MPI_Datatype type) {
 
   if(size != 0 && data != nullptr){
     while(size > MAX_COMM_SIZE){
-
+      cout << "Large size data (" << size << ") in Broadcast" << endl;
       Barrier();
       MPI_Bcast(data, MAX_COMM_SIZE, type, pid, MPI_COMM_WORLD);
       data += MAX_COMM_SIZE;
