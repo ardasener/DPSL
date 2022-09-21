@@ -509,26 +509,20 @@ template <typename T>
 void DPSL::BroadcastData(T *data, size_t size, MPI_Datatype type) {
 
   Barrier();
-  // cout << "Broadcasting size of data: " << size << endl;
   MPI_Bcast(&size, 1, MPI_INT64_T, pid, MPI_COMM_WORLD);
-  Barrier();
 
   if(size != 0 && data != nullptr){
     while(size > MAX_COMM_SIZE){
 
       Barrier();
-      // cout << "Loop Broadcasting chunk size=" << size << endl;
       MPI_Bcast(data, MAX_COMM_SIZE, type, pid, MPI_COMM_WORLD);
-      Barrier();
       data += MAX_COMM_SIZE;
       size -= MAX_COMM_SIZE;
     }
 
     if(size > 0){
       Barrier();
-      // cout << "Broadcasting chunk size=" << size << endl;
       MPI_Bcast(data, size, type, pid, MPI_COMM_WORLD); 
-      Barrier();
     }
   }
 }
@@ -539,7 +533,6 @@ size_t DPSL::RecvBroadcast(T *&data, int from, MPI_Datatype type){
   
   Barrier();
   MPI_Bcast(&size, 1, MPI_INT64_T, from, MPI_COMM_WORLD);
-  Barrier();
 
   size_t full_size = size;
 
@@ -549,7 +542,6 @@ size_t DPSL::RecvBroadcast(T *&data, int from, MPI_Datatype type){
     while(size > MAX_COMM_SIZE){
       Barrier();
       MPI_Bcast(data + sent, MAX_COMM_SIZE, type, from, MPI_COMM_WORLD); 
-      Barrier();
 
       size -= MAX_COMM_SIZE;
       sent += MAX_COMM_SIZE;
@@ -560,7 +552,6 @@ size_t DPSL::RecvBroadcast(T *&data, int from, MPI_Datatype type){
       
       Barrier();
       MPI_Bcast(data + sent, size, type, from, MPI_COMM_WORLD); 
-      Barrier();
 
     }
 

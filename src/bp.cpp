@@ -263,7 +263,7 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
 
   cout << "BP Root Count: " << roots.size() << endl;
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(dynamic)
+//#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for(int i=0; i<number_of_roots_used; i++){
     vector<IDType>& Sr = Srs[i];
     IDType root = roots[i];
