@@ -324,11 +324,14 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
     for(int p=0; p<np; p++){
       size_t start = round_start + p * MERGE_CHUNK_SIZE;
       size_t end = start + MERGE_CHUNK_SIZE;
+      cout << "This: " << pid << " To:" << p << " Start:" << start << " End:" << end << endl;
       
       if(p != pid){
         size_t num_vertices = CompressCutLabels(comp_indices, comp_labels, new_labels, start, end);
+        cout << "Sending data to " << p << endl;
         SendData(comp_indices, num_vertices+1, MPI_LABEL_INDICES, p);
         SendData(comp_labels, comp_indices[num_vertices], MPI_LABELS, p);
+        cout << "Done Sending data to " << p << endl;
         if(comp_indices != nullptr) delete[] comp_indices;
         if(comp_labels != nullptr) delete[] comp_labels;
       
@@ -338,7 +341,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
 #pragma omp parallel for num_threads(NUM_THREADS)
         for(size_t i=0; i<num_vertices; i++){
           size_t start = comp_indices[i];
-          size_t end = comp_labels[i+1];
+          size_t end = comp_indices[i+1];
           all_comp[i].insert(all_comp[i].end(), comp_labels + start, comp_labels + end);
         }
 
@@ -347,8 +350,11 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
       
         for(int p2=0; p2<np; p2++){
           if(p2 == pid) continue;
+          cout << "Recv. data from " << p2 << endl;
           size_t comp_indices_size = RecvData(comp_indices, MPI_LABEL_INDICES, p2);
           size_t comp_labels_size = RecvData(comp_labels, MPI_LABELS, p2);
+          cout << "Done Recv. data from " << p2 << " with sizes=" << comp_indices_size << ", " << comp_labels_size << endl;
+         
 
           if(comp_indices_size == 0 || comp_labels_size == 0){
             continue;
@@ -357,7 +363,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
 #pragma omp parallel for num_threads(NUM_THREADS)
           for(size_t i=0; i<comp_indices_size-1; i++){
             size_t start = comp_indices[i];
-            size_t end = comp_labels[i+1];
+            size_t end = comp_indices[i+1];
             all_comp[i].insert(all_comp[i].end(), comp_labels + start, comp_labels + end);
           }
 
@@ -369,6 +375,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
     }
 
     // Merge Operation
+    cout << "Merging P" << pid << endl;
     vector<vector<bool>> seen(NUM_THREADS, vector<bool>(global_n, false));
 #pragma omp parallel for num_threads(NUM_THREADS) 
     for(size_t i=0; i<MERGE_CHUNK_SIZE; i++){
@@ -384,14 +391,18 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
         }
       }
 
-      for(IDType u : merged){
-        seen[tid][u] = false;
+      if(!merged.empty()){
+        for(IDType u : merged){
+          seen[tid][u] = false;
+        }
+        all_comp[i] = merged;
       }
 
-      all_comp[i] = merged;
     }
+    cout << "DONE Merging P" << pid << endl;
 
     // Recompress the merged data
+    cout << "Recompress P" << pid << endl;
     IDType* merge_indices = new IDType[MERGE_CHUNK_SIZE + 1];
 
     fill(merge_indices, merge_indices + MERGE_CHUNK_SIZE + 1, 0);
@@ -415,6 +426,8 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
     size_t label_start_index = merge_indices[i];
     copy(all_comp[i].begin(), all_comp[i].end(), merge_labels + label_start_index);
   }
+  
+  cout << "DONE Recompress P" << pid << endl;
 
   // Broadcast and apply the labels
   for(int p=0; p<np; p++){
@@ -423,16 +436,21 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
 
     // Recieve or broadcast the data depending on pid
     if(pid == p){
+      cout << "Broadcasting P" << pid << endl;
       BroadcastData(merge_indices, MERGE_CHUNK_SIZE+1);
       BroadcastData(merge_labels, merge_indices[MERGE_CHUNK_SIZE]);
       recv_merge_indices = merge_indices;
       recv_merge_labels = merge_labels;
+      cout << "DONE Broadcasting P" << pid << endl;
     } else {
-      RecvBroadcast(recv_merge_indices, p);
-      RecvBroadcast(recv_merge_labels, p);
+      cout << "Recv. Broadcast P" << pid << endl;
+      size_t s1 = RecvBroadcast(recv_merge_indices, p);
+      size_t s2 = RecvBroadcast(recv_merge_labels, p);
+      cout << "DONE Recv. Broadcast P" << pid << " with size=" << s1 << ", " << s2 << endl;
     }
 
     // Apply the received data to PSL
+    cout << "Apply data P" << pid << endl;
 #pragma omp parallel for num_threads(NUM_THREADS)
     for(size_t i=0; i < MERGE_CHUNK_SIZE; i++){
       size_t cut_index = round_start + p *MERGE_CHUNK_SIZE + i;
@@ -446,14 +464,16 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
       size_t start = recv_merge_indices[i];
       size_t end = recv_merge_indices[i+1];
 
-      updated = updated || (end-start > 0);
+      if(end-start > 0){
+        updated = true;
+        max_rank = *max_element(recv_merge_labels + start, recv_merge_labels + end);
+        auto& labels_u = psl.labels[u].vertices;
+        labels_u.insert(labels_u.end(), recv_merge_labels + start, recv_merge_labels + end);
+      }
 
-      max_rank = max(max_rank, *max_element(recv_merge_labels + start, recv_merge_labels + end));
       psl.max_ranks[u] = max_rank;
-
-      auto& labels_u = psl.labels[u].vertices;
-      labels_u.insert(labels_u.end(), recv_merge_labels + start, recv_merge_labels + end);
     }
+    cout << "DONE Apply data P" << pid << endl;
 
     // This will delete the received data
     // But note that on the broadcasting node it deletes the constructed data too
@@ -461,6 +481,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
     if(recv_merge_labels != nullptr) delete[] recv_merge_labels;
 
   } // Broadcast loop
+
 
   } // Outer loop
 
@@ -474,8 +495,12 @@ size_t DPSL::CompressCutLabels(IDType*& comp_indices, IDType*& comp_labels, vect
   // Ensures we don't overflow the array
   start_index = min(start_index, cut.size());
   end_index = min(end_index, cut.size());
+
   
   size_t num_vertices = end_index - start_index;
+
+  cout << "Compress: " << start_index << ", " << end_index << ", " << num_vertices << endl;
+
 
   if(num_vertices == 0){
     comp_indices = nullptr;
@@ -487,26 +512,33 @@ size_t DPSL::CompressCutLabels(IDType*& comp_indices, IDType*& comp_labels, vect
   fill(comp_indices, comp_indices + num_vertices + 1, 0);
 
   // Fill the size of each label_set in parallel
+  cout << "Filling sizes" << endl;
 #pragma omp parallel for num_threads(NUM_THREADS)
   for(size_t i=start_index; i < end_index; i++){
     IDType u = cut[i];
     size_t new_labels_size = (new_labels[u] != nullptr) ? new_labels[u]->size() : 0;
     comp_indices[i-start_index+1] = new_labels_size;
   }
+  cout << "DONE Filling sizes" << endl;
 
   // Cumilate them (not in parallel)
+  cout << "Sum sizes" << endl;
   for(size_t i=1; i<num_vertices+1; i++){
     comp_indices[i] += comp_indices[i-1];
   }
+  cout << "DONE Sum sizes" << endl;
 
   // Write the labels in parallel
+  cout << "Write labels" << endl;
   comp_labels = new IDType[comp_indices[num_vertices]];
  #pragma omp parallel for num_threads(NUM_THREADS)
   for(size_t i=start_index; i < end_index; i++){ 
     IDType u = cut[i];
     size_t label_start_index = comp_indices[i-start_index];
-    copy(new_labels[u]->begin(), new_labels[u]->end(), comp_labels + label_start_index);
+    if(new_labels[u] != nullptr)
+      copy(new_labels[u]->begin(), new_labels[u]->end(), comp_labels + label_start_index);
   }
+  cout << "DONE Write labels" << endl;
 
   return num_vertices;
 }
