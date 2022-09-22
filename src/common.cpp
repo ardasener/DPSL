@@ -147,8 +147,8 @@ CSR::~CSR(){
     row_ptr[0] = 0;
 
 
-    delete[] coo_row;
-    delete[] coo_col;
+    free(coo_row);
+    free(coo_col);
   }
 
   void CSR::Reorder(vector<IDType>& order, vector<IDType>* cut, vector<bool>* in_cut){

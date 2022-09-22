@@ -56,7 +56,11 @@ public:
   template <typename T>
   size_t RecvBroadcast(T *&data, int from, MPI_Datatype type = MPI_IDType);
 
-  bool MergeCut(vector<vector<IDType> *> new_labels, PSL &psl);
+  size_t CompressCutLabels(IDType*& comp_indices, IDType*& comp_labels, vector<vector<IDType> *>& new_labels, size_t start_index, size_t end_index);
+  bool MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl);
+
+
+
   void Barrier();
   int pid, np;
   IDType global_n;

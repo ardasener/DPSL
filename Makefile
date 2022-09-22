@@ -15,7 +15,7 @@ CXX_COMPILER=g++
 MPICXX_COMPILER=mpic++
 CXX_FLAGS= -fopenmp -std=c++17 -DNUM_THREADS=$(NUM_THREADS) -DORDER_METHOD=\"$(ORDER_METHOD)\" -DN_ROOTS=$(N_ROOTS) -DSCHEDULE=$(SCHEDULE) -DSMART_DIST_CACHE_CUTOFF=$(SMART_DIST_CACHE_CUTOFF)
 CXX_RELEASE_FLAGS= -O3
-CXX_DEBUG_FLAGS= -O0 -g -DDEBUG
+CXX_DEBUG_FLAGS= -O1 -g -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address
 CXX_PROFILE_FLAGS= -O3 -g -fno-inline
 PSL_SOURCE_FILES=src/main.cpp src/psl.cpp src/bp.cpp src/common.cpp
 DPSL_SOURCE_FILES=src/*.cpp
