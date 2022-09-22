@@ -152,7 +152,7 @@ CSR::~CSR(){
   }
 
   void CSR::Reorder(vector<IDType>& order, vector<IDType>* cut, vector<bool>* in_cut){
-    cout << "Reordering the CSR..." << endl;
+    // cout << "Reordering the CSR..." << endl;
     IDType* new_row_ptr = new IDType[n+1];
     new_row_ptr[0] = 0;
     IDType* new_col = new IDType[m];
@@ -167,8 +167,8 @@ CSR::~CSR(){
         }
       }
 
-      cout << "Removed: " << order.size() - new_order.size() << endl;
-      cout << "Cut: " << cut->size() << endl;
+      // cout << "Removed: " << order.size() - new_order.size() << endl;
+      // cout << "Cut: " << cut->size() << endl;
 
       new_order.insert(new_order.end(), cut->begin(), cut->end());
     } else {

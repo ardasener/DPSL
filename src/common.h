@@ -57,7 +57,7 @@
 
 #define MAX_COMM_SIZE 1<<30
 
-#define MERGE_CHUNK_SIZE 1000
+#define MERGE_CHUNK_SIZE 1000000
 
 using namespace std;
 
