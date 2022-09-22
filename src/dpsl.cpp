@@ -307,13 +307,12 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
   // Keeps track of whether or not new labels were added to the vertices
   bool updated = false;
 
-  size_t total_chunk_size = MERGE_CHUNK_SIZE;
-  size_t per_node_chunk_size = (MERGE_CHUNK_SIZE / np) + 1;
-
   // Outer Loop: Processes the data in rounds
-  for(size_t round_start = 0; round_start < cut.size(); round_start += total_chunk_size){
+  for(size_t round_start = 0; round_start < cut.size(); round_start += MERGE_CHUNK_SIZE){
     
     // cout << "NEW ROUND: " << round_start << endl;
+    size_t round_size = min((size_t) MERGE_CHUNK_SIZE, cut.size() - round_start);
+    size_t per_node_chunk_size = (round_size / np) + 1;
 
     vector<vector<IDType>> all_comp(per_node_chunk_size);
   
@@ -427,6 +426,8 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
   }
   
   // cout << "DONE Recompress P" << pid << endl;
+
+  Barrier();
 
   // Broadcast and apply the labels
   for(int p=0; p<np; p++){
