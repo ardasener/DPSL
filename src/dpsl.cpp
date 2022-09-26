@@ -299,11 +299,10 @@ void DPSL::WriteLabelCounts(string filename) {
   }
 }
 
-
-
-
 bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
-  
+
+  Barrier();
+
   // Keeps track of whether or not new labels were added to the vertices
   bool updated = false;
 
@@ -326,7 +325,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
     size_t self_start = round_start + pid * per_node_chunk_size;
     size_t self_end = self_start + per_node_chunk_size;
 
-#pragma omp parallel for num_threads(NUM_THREADS)
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(SCHEDULE)
     for(size_t i=self_start; i<self_end; i++){
       IDType u = cut[i];
       if(new_labels[u] != nullptr)
@@ -334,36 +333,48 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
           new_labels[u]->begin(), new_labels[u]->end());
     }
 
-    for(int k = 1; k < np; k++){
-      int p_send = (pid + k) % np;
-      int p_recv = (pid - k + np) % np;
+    // Used for round-robin communication
+    // For 8 nodes initially we would have:
+    // 0 1 2 3
+    // 7 6 5 4
+    vector<int> processes(np);
+    iota(processes.begin(), processes.end(), 0);
 
-      // cout << "K: " << k << " PID: " << pid << " Sending to: " << p_send << " Recv. from: " << p_recv << endl;
+    for(int k = 0; k < np-1; k++){
 
-      size_t start = round_start + p_send * per_node_chunk_size;
+      // Everyone pairs up with the node accross them in the representation shown above
+      int self_index = find(processes.begin(), processes.end(), pid) - processes.begin();
+      int pair = processes[(np-self_index-1) % np];
+
+      // Rotate the vector to the right except the first element
+      rotate(processes.rbegin(), processes.rbegin()+1, processes.rend()-1);
+
+      // cout << "K: " << k << " PID: " << pid << " Pair: " << pair << endl;
+
+      size_t start = round_start + pair * per_node_chunk_size;
       size_t end = start + per_node_chunk_size;
       
       size_t num_vertices = CompressCutLabels(send_comp_indices, send_comp_labels, new_labels, start, end);
       
       // The process with the smaller pid sends first
-      if(pid < p_recv){
-        SendData(send_comp_indices, num_vertices+1, MPI_LABEL_INDICES, p_send);
-        SendData(send_comp_labels, send_comp_indices[num_vertices], MPI_LABELS, p_send);
-        recv_comp_indices_size = RecvData(recv_comp_indices, MPI_LABEL_INDICES, p_recv);
-        recv_comp_labels_size = RecvData(recv_comp_labels, MPI_LABELS, p_recv);
+      if(pid < pair){
+        SendData(send_comp_indices, num_vertices+1, MPI_LABEL_INDICES, pair);
+        SendData(send_comp_labels, send_comp_indices[num_vertices], MPI_LABELS, pair);
+        recv_comp_indices_size = RecvData(recv_comp_indices, MPI_LABEL_INDICES, pair);
+        recv_comp_labels_size = RecvData(recv_comp_labels, MPI_LABELS, pair);
 
       } else {
-        recv_comp_indices_size = RecvData(recv_comp_indices, MPI_LABEL_INDICES, p_recv);
-        recv_comp_labels_size = RecvData(recv_comp_labels, MPI_LABELS, p_recv);
-        SendData(send_comp_indices, num_vertices+1, MPI_LABEL_INDICES, p_send);
-        SendData(send_comp_labels, send_comp_indices[num_vertices], MPI_LABELS, p_send);
+        recv_comp_indices_size = RecvData(recv_comp_indices, MPI_LABEL_INDICES, pair);
+        recv_comp_labels_size = RecvData(recv_comp_labels, MPI_LABELS, pair);
+        SendData(send_comp_indices, num_vertices+1, MPI_LABEL_INDICES, pair);
+        SendData(send_comp_labels, send_comp_indices[num_vertices], MPI_LABELS, pair);
       }
 
 
       delete[] send_comp_indices;
       delete[] send_comp_labels; 
 
-      #pragma omp parallel for num_threads(NUM_THREADS)
+      #pragma omp parallel for num_threads(NUM_THREADS) schedule(SCHEDULE)
       for(size_t i=0; i<recv_comp_indices_size-1; i++){
         size_t start = recv_comp_indices[i];
         size_t end = recv_comp_indices[i+1];
@@ -381,7 +392,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
     // Merge Operation
     // cout << "Merging P" << pid << endl;
     vector<vector<bool>> seen(NUM_THREADS, vector<bool>(global_n, false));
-#pragma omp parallel for num_threads(NUM_THREADS) 
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(SCHEDULE)
     for(size_t i=0; i<per_node_chunk_size; i++){
       int tid = omp_get_thread_num();
 
@@ -399,7 +410,9 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
         for(IDType u : merged){
           seen[tid][u] = false;
         }
-        all_comp[i] = merged;
+
+        all_comp[i].clear();
+        all_comp[i] = move(merged);
       }
 
     }
@@ -408,11 +421,10 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
     // Recompress the merged data
     // cout << "Recompress P" << pid << endl;
     IDType* merge_indices = new IDType[per_node_chunk_size + 1];
-
-    fill(merge_indices, merge_indices + per_node_chunk_size + 1, 0);
+    merge_indices[0] = 0;
 
     // Fill the size of each label_set in parallel
-#pragma omp parallel for num_threads(NUM_THREADS)
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(SCHEDULE)
     for(size_t i=0; i < per_node_chunk_size; i++){
       merge_indices[i+1] = all_comp[i].size();
     }
@@ -425,7 +437,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
 
 // Write the merged labels in parallel
   IDType* merge_labels = new IDType[merge_indices[per_node_chunk_size]];
-#pragma omp parallel for num_threads(NUM_THREADS)
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(SCHEDULE)
   for(size_t i=0; i < per_node_chunk_size; i++){ 
     size_t label_start_index = merge_indices[i];
     copy(all_comp[i].begin(), all_comp[i].end(), merge_labels + label_start_index);
@@ -457,7 +469,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
 
     // Apply the received data to PSL
     // cout << "Apply data P" << pid << endl;
-#pragma omp parallel for num_threads(NUM_THREADS)
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(SCHEDULE)
     for(size_t i=0; i < per_node_chunk_size; i++){
       size_t cut_index = round_start + p * per_node_chunk_size + i;
 
@@ -515,11 +527,11 @@ size_t DPSL::CompressCutLabels(IDType*& comp_indices, IDType*& comp_labels, vect
 
   // Basically like the row_ptr array of a CSR  
   comp_indices = new IDType[num_vertices + 1];
-  fill(comp_indices, comp_indices + num_vertices + 1, 0);
+  comp_indices[0] = 0;
 
   // Fill the size of each label_set in parallel
   // cout << "Filling sizes" << endl;
-#pragma omp parallel for num_threads(NUM_THREADS)
+#pragma omp parallel for num_threads(NUM_THREADS) schedule(SCHEDULE)
   for(size_t i=start_index; i < end_index; i++){
     IDType u = cut[i];
     size_t new_labels_size = (new_labels[u] != nullptr) ? new_labels[u]->size() : 0;
@@ -537,7 +549,7 @@ size_t DPSL::CompressCutLabels(IDType*& comp_indices, IDType*& comp_labels, vect
   // Write the labels in parallel
   // cout << "Write labels" << endl;
   comp_labels = new IDType[comp_indices[num_vertices]];
- #pragma omp parallel for num_threads(NUM_THREADS)
+ #pragma omp parallel for num_threads(NUM_THREADS) schedule(SCHEDULE)
   for(size_t i=start_index; i < end_index; i++){ 
     IDType u = cut[i];
     size_t label_start_index = comp_indices[i-start_index];
