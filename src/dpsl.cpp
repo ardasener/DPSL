@@ -316,61 +316,67 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
 
     vector<vector<IDType>> all_comp(per_node_chunk_size);
   
-    IDType* comp_indices;
-    IDType* comp_labels;
+    IDType* send_comp_indices;
+    IDType* send_comp_labels;
+    IDType* recv_comp_indices;
+    IDType* recv_comp_labels;
+    size_t recv_comp_indices_size;
+    size_t recv_comp_labels_size;
 
-    for(int p=0; p<np; p++){
-      size_t start = round_start + p * per_node_chunk_size;
-      size_t end = start + per_node_chunk_size;
-      // cout << "This: " << pid << " To:" << p << " Start:" << start << " End:" << end << endl;
-      
-      if(p != pid){
-        size_t num_vertices = CompressCutLabels(comp_indices, comp_labels, new_labels, start, end);
-        // cout << "Sending data to " << p << endl;
-        SendData(comp_indices, num_vertices+1, MPI_LABEL_INDICES, p);
-        SendData(comp_labels, comp_indices[num_vertices], MPI_LABELS, p);
-        // cout << "Done Sending data to " << p << endl;
-        if(comp_indices != nullptr) delete[] comp_indices;
-        if(comp_labels != nullptr) delete[] comp_labels;
-      
-      } else {
-        
-        size_t num_vertices = CompressCutLabels(comp_indices, comp_labels, new_labels, start, end);
-#pragma omp parallel for num_threads(NUM_THREADS)
-        for(size_t i=0; i<num_vertices; i++){
-          size_t start = comp_indices[i];
-          size_t end = comp_indices[i+1];
-          all_comp[i].insert(all_comp[i].end(), comp_labels + start, comp_labels + end);
-        }
-
-        if(comp_indices != nullptr) delete[] comp_indices;
-        if(comp_labels != nullptr) delete[] comp_labels;
-      
-        for(int p2=0; p2<np; p2++){
-          if(p2 == pid) continue;
-          // cout << "Recv. data from " << p2 << endl;
-          size_t comp_indices_size = RecvData(comp_indices, MPI_LABEL_INDICES, p2);
-          size_t comp_labels_size = RecvData(comp_labels, MPI_LABELS, p2);
-          // cout << "Done Recv. data from " << p2 << " with sizes=" << comp_indices_size << ", " << comp_labels_size << endl;
-         
-
-          if(comp_indices_size == 0 || comp_labels_size == 0){
-            continue;
-          }
+    size_t self_start = round_start + pid * per_node_chunk_size;
+    size_t self_end = self_start + per_node_chunk_size;
 
 #pragma omp parallel for num_threads(NUM_THREADS)
-          for(size_t i=0; i<comp_indices_size-1; i++){
-            size_t start = comp_indices[i];
-            size_t end = comp_indices[i+1];
-            all_comp[i].insert(all_comp[i].end(), comp_labels + start, comp_labels + end);
-          }
-
-          if(comp_indices != nullptr) delete[] comp_indices;
-          if(comp_labels != nullptr) delete[] comp_labels;
-
-        }
-      }
+    for(size_t i=self_start; i<self_end; i++){
+      IDType u = cut[i];
+      if(new_labels[u] != nullptr)
+        all_comp[i-self_start].insert(all_comp[i-self_start].end(), 
+          new_labels[u]->begin(), new_labels[u]->end());
     }
+
+    for(int k = 1; k < np; k++){
+      int p_send = (pid + k) % np;
+      int p_recv = (pid - k + np) % np;
+
+      // cout << "K: " << k << " PID: " << pid << " Sending to: " << p_send << " Recv. from: " << p_recv << endl;
+
+      size_t start = round_start + p_send * per_node_chunk_size;
+      size_t end = start + per_node_chunk_size;
+      
+      size_t num_vertices = CompressCutLabels(send_comp_indices, send_comp_labels, new_labels, start, end);
+      
+      // The process with the smaller pid sends first
+      if(pid < p_recv){
+        SendData(send_comp_indices, num_vertices+1, MPI_LABEL_INDICES, p_send);
+        SendData(send_comp_labels, send_comp_indices[num_vertices], MPI_LABELS, p_send);
+        recv_comp_indices_size = RecvData(recv_comp_indices, MPI_LABEL_INDICES, p_recv);
+        recv_comp_labels_size = RecvData(recv_comp_labels, MPI_LABELS, p_recv);
+
+      } else {
+        recv_comp_indices_size = RecvData(recv_comp_indices, MPI_LABEL_INDICES, p_recv);
+        recv_comp_labels_size = RecvData(recv_comp_labels, MPI_LABELS, p_recv);
+        SendData(send_comp_indices, num_vertices+1, MPI_LABEL_INDICES, p_send);
+        SendData(send_comp_labels, send_comp_indices[num_vertices], MPI_LABELS, p_send);
+      }
+
+
+      delete[] send_comp_indices;
+      delete[] send_comp_labels; 
+
+      #pragma omp parallel for num_threads(NUM_THREADS)
+      for(size_t i=0; i<recv_comp_indices_size-1; i++){
+        size_t start = recv_comp_indices[i];
+        size_t end = recv_comp_indices[i+1];
+        all_comp[i].insert(all_comp[i].end(), recv_comp_labels + start, recv_comp_labels + end);
+      }
+
+      delete[] recv_comp_indices;
+      delete[] recv_comp_labels; 
+
+    }
+
+
+
 
     // Merge Operation
     // cout << "Merging P" << pid << endl;
