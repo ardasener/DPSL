@@ -1153,6 +1153,13 @@ void DPSL::Index() {
   PrintTime("Total Merge Time", total_merge_time);
   PrintTime("Total Index Time", alg_end - alg_start - total_merge_time);
 
+  size_t total_label_count = 0;
+  for(auto& l : psl_ptr->labels){
+    total_label_count += l.vertices.size();
+  }
+  size_t label_memory = total_label_count * sizeof(IDType);
+  cout << "P" << pid << ":" << " Label Memory, " << label_memory / (double) (1024*1024*1024) << " GB" << endl;
+
 #ifdef DEBUG
   Log("Prune by Rank: " + to_string(psl_ptr->prune_rank));
   Log("Prune by Local BP: " + to_string(psl_ptr->prune_local_bp));

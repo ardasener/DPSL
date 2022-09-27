@@ -650,6 +650,14 @@ void PSL::Index() {
   all_end_time = omp_get_wtime();
   cout << "Indexing: " << all_end_time-all_start_time << " seconds" << endl;
 
+  size_t total_label_count = 0;
+  for(auto& l : labels){
+    total_label_count += l.vertices.size();
+  }
+  size_t label_memory = total_label_count * sizeof(IDType);
+  cout << "Label Memory: " << label_memory / (double) (1024*1024*1024) << " GB" << endl;
+
+
 
   // cout << "Cacheless: " << cacheless_pull << endl; 
   // cout << "Cacheful: " << cacheful_pull << endl; 
