@@ -28,6 +28,7 @@ enum MPI_CONSTS {
   MPI_CSR_COL,
   MPI_CSR_NODES,
   MPI_CUT,
+  MPI_CUT_MERGE_ORDER,
   MPI_PARTITION,
   MPI_CACHE,
   MPI_UPDATED,
@@ -69,6 +70,7 @@ public:
   BP *global_bp = nullptr;
   IDType *partition;
   vector<IDType> cut;
+  vector<IDType> cut_merge_order;
   vector<bool> in_cut;
   vector<IDType> ranks;
   vector<IDType> order;

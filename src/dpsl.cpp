@@ -327,7 +327,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(SCHEDULE)
     for(size_t i=self_start; i<self_end; i++){
-      IDType u = cut[i];
+      IDType u = cut_merge_order[i];
       if(new_labels[u] != nullptr)
         all_comp[i-self_start].insert(all_comp[i-self_start].end(), 
           new_labels[u]->begin(), new_labels[u]->end());
@@ -473,9 +473,9 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
     for(size_t i=0; i < per_node_chunk_size; i++){
       size_t cut_index = round_start + p * per_node_chunk_size + i;
 
-      if(cut_index >= cut.size()) continue;
+      if(cut_index >= cut_merge_order.size()) continue;
 
-      IDType u = cut[cut_index];
+      IDType u = cut_merge_order[cut_index];
 
       IDType max_rank = -1;
 
@@ -511,8 +511,8 @@ size_t DPSL::CompressCutLabels(IDType*& comp_indices, IDType*& comp_labels, vect
   size_t start_index, size_t end_index){
 
   // Ensures we don't overflow the array
-  start_index = min(start_index, cut.size());
-  end_index = min(end_index, cut.size());
+  start_index = min(start_index, cut_merge_order.size());
+  end_index = min(end_index, cut_merge_order.size());
 
   
   size_t num_vertices = end_index - start_index;
@@ -533,7 +533,7 @@ size_t DPSL::CompressCutLabels(IDType*& comp_indices, IDType*& comp_labels, vect
   // cout << "Filling sizes" << endl;
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(SCHEDULE)
   for(size_t i=start_index; i < end_index; i++){
-    IDType u = cut[i];
+    IDType u = cut_merge_order[i];
     size_t new_labels_size = (new_labels[u] != nullptr) ? new_labels[u]->size() : 0;
     comp_indices[i-start_index+1] = new_labels_size;
   }
@@ -551,7 +551,7 @@ size_t DPSL::CompressCutLabels(IDType*& comp_indices, IDType*& comp_labels, vect
   comp_labels = new IDType[comp_indices[num_vertices]];
  #pragma omp parallel for num_threads(NUM_THREADS) schedule(SCHEDULE)
   for(size_t i=start_index; i < end_index; i++){ 
-    IDType u = cut[i];
+    IDType u = cut_merge_order[i];
     size_t label_start_index = comp_indices[i-start_index];
     if(new_labels[u] != nullptr)
       copy(new_labels[u]->begin(), new_labels[u]->end(), comp_labels + label_start_index);
@@ -734,13 +734,14 @@ void DPSL::InitP0(string part_file) {
     cut[i] = csr.reorder_ids[cut[i]];
   }
 
-  
-
   in_cut.clear();
   in_cut.resize(global_n, false);
   for(IDType u : cut){
     in_cut[u] = true;
   }
+
+  cut_merge_order = cut;
+  random_shuffle(cut_merge_order.begin(), cut_merge_order.end());
 
 
   partition = new IDType[csr.n]; 
@@ -766,6 +767,7 @@ void DPSL::InitP0(string part_file) {
     SendData(csrs[i]->col, csrs[i]->m, MPI_CSR_COL, i);
     SendData(partition, csr.n, MPI_PARTITION, i);
     SendData(cut.data(), cut.size(), MPI_CUT, i);
+    SendData(cut_merge_order.data(), cut_merge_order.size(), MPI_CUT_MERGE_ORDER, i);
     SendData(ranks.data(), ranks.size(), MPI_VERTEX_RANKS, i);
     SendData(order.data(), order.size(), MPI_VERTEX_ORDER, i);
     delete csrs[i];
@@ -829,6 +831,7 @@ void DPSL::Init() {
   IDType *row_ptr;
   IDType *col;
   IDType *cut_ptr;
+  IDType *cut_merge_order_ptr;
   IDType *ranks_ptr;
   IDType *order_ptr;
 
@@ -844,6 +847,7 @@ void DPSL::Init() {
   IDType size_col = RecvData(col, MPI_CSR_COL, 0);
   IDType size_partition = RecvData(partition, MPI_PARTITION, 0);
   IDType size_cut = RecvData(cut_ptr, MPI_CUT, 0);
+  IDType size_cut_merge_order = RecvData(cut_merge_order_ptr, MPI_CUT_MERGE_ORDER, 0);
   IDType size_ranks = RecvData(ranks_ptr, MPI_VERTEX_RANKS, 0);
   IDType size_order = RecvData(order_ptr, MPI_VERTEX_ORDER, 0);
   Barrier();
@@ -853,6 +857,16 @@ void DPSL::Init() {
   order.insert(order.end(), order_ptr, order_ptr + size_order);
   delete[] ranks_ptr;
   delete[] order_ptr;
+
+  cut_merge_order.insert(cut_merge_order.end(), cut_merge_order_ptr, cut_merge_order_ptr + size_cut);
+  delete[] cut_merge_order_ptr;
+
+  cut.insert(cut.end(), cut_ptr, cut_ptr + size_cut);
+  in_cut.resize(global_n, false);
+  for(IDType u : cut){
+    in_cut[u] = true;
+  }
+  delete[] cut_ptr;
 
   if constexpr (USE_GLOBAL_BP) {
     Log("Global BP Barrier Region");
@@ -896,16 +910,9 @@ void DPSL::Init() {
     global_bp = new BP(bp_labels, bp_used_vec);
   }
 
-  cut.insert(cut.end(), cut_ptr, cut_ptr + size_cut);
-
-  in_cut.resize(global_n, false);
-  for(IDType u : cut){
-    in_cut[u] = true;
-  }
 
   part_csr = new CSR(row_ptr, col, size_row_ptr - 1, size_col);
   Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
-  delete[] cut_ptr;
 }
 
 void DPSL::Index() {
