@@ -326,11 +326,13 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
     size_t self_end = self_start + per_node_chunk_size;
 
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(SCHEDULE)
-    for(size_t i=self_start; i<self_end; i++){
-      IDType u = cut_merge_order[i];
-      if(new_labels[u] != nullptr)
-        all_comp[i-self_start].insert(all_comp[i-self_start].end(), 
-          new_labels[u]->begin(), new_labels[u]->end());
+    for(size_t i=self_start; i < self_end; i++){
+      if(i < cut_merge_order.size()){
+        IDType u = cut_merge_order[i];
+        if(new_labels[u] != nullptr)
+          all_comp[i-self_start].insert(all_comp[i-self_start].end(), 
+            new_labels[u]->begin(), new_labels[u]->end());
+      }
     }
 
     // Used for round-robin communication
