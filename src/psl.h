@@ -58,6 +58,7 @@ public:
   vector<Stats> stats_vec;
   vector<IDType> max_ranks;
   vector<bool> in_cut;
+  vector<bool> local_min;
   char** caches = nullptr;
   vector<bool>* used = nullptr;
   PSL(CSR &csr_, string order_method, vector<IDType>* cut=nullptr, BP* global_bp=nullptr, vector<IDType>* ranks_ptr=nullptr, vector<IDType>* order_ptr = nullptr);

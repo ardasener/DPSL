@@ -79,9 +79,28 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
     }
   }
 
+
   if(cut == nullptr)
     csr.Reorder(order, nullptr, nullptr);
   
+
+
+  local_min.resize(csr.n, false);
+
+  if constexpr(ELIMINATE_LOCAL_MIN){
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
+    for(IDType u = 0; u <csr.n; u++){
+      if(in_cut[u]) continue;
+      
+      IDType start = csr.row_ptr[u];
+      IDType end = csr.row_ptr[u+1];
+
+      if(end == start || u < csr.col[start]){
+        local_min[u] = true;
+      }
+    }
+  }
+
   if constexpr(USE_LOCAL_BP){
     if constexpr(USE_GLOBAL_BP){
       local_bp = new BP(csr, ranks, order, cut, LOCAL_BP_MODE);
@@ -229,6 +248,7 @@ void PSL::Query(IDType u, string filename){
   delete bfs_results;
 }
 
+
 vector<IDType>* PSL::Query(IDType u) {
 
 
@@ -238,44 +258,96 @@ vector<IDType>* PSL::Query(IDType u) {
 
   vector<char> cache(csr.n, -1);
 
-  for (int d = 0; d < last_dist; d++) {
-    IDType dist_start = labels_u.dist_ptrs[d];
-    IDType dist_end = labels_u.dist_ptrs[d + 1];
+  if(local_min[u]){
 
-    for (IDType i = dist_start; i < dist_end; i++) {
-      IDType w = labels_u.vertices[i]; 
-      cache[w] = (char) d;
+    cache[u] = 0;
+    
+    IDType u_ngh_start = csr.row_ptr[u]; 
+    IDType u_ngh_end = csr.row_ptr[u+1]; 
+
+    for(IDType i = u_ngh_start; i < u_ngh_end; i++){
+      auto &labels_un = labels[csr.col[i]];
+      for(int d = 0; d < last_dist; d++){
+        IDType dist_start = labels_un.dist_ptrs[d];
+        IDType dist_end = labels_un.dist_ptrs[d + 1];
+
+        for (IDType j = dist_start; j < dist_end; j++) {
+          IDType w = labels_un.vertices[j];
+
+          if(cache[w] == -1)
+            cache[w] = d + 1;
+          else
+            cache[w] = min((int) cache[w], (int) d + 1);
+        }
+      }
+    }
+
+  } else {
+    for(int d = 0; d < last_dist; d++){
+      IDType dist_start = labels_u.dist_ptrs[d];
+      IDType dist_end = labels_u.dist_ptrs[d + 1];
+
+      for (IDType i = dist_start; i < dist_end; i++) {
+        IDType w = labels_u.vertices[i]; 
+        cache[w] = (char) d;
+      }
     }
   }
+
+  
 
   for (IDType v = 0; v < csr.n; v++) {
 
     auto& labels_v = labels[v];
 
-    int min = MAX_DIST;
+    int min_dist = MAX_DIST;
+    
+    if(cache[v] != -1) min_dist = min(min_dist, (int) cache[v]);
 
     if constexpr(USE_LOCAL_BP)
-      min = local_bp->QueryByBp(u,v);
+      min_dist = min(min_dist, (int) local_bp->QueryByBp(u,v));
+    
+    if(local_min[v]){
+      
+      IDType v_ngh_start = csr.row_ptr[v]; 
+      IDType v_ngh_end = csr.row_ptr[v+1]; 
+      for (int d = 0; d + 1 < min_dist && d < last_dist; d++) {
+        for(IDType i = v_ngh_start; i < v_ngh_end; i++){
+          auto& labels_vn = labels[csr.col[i]];
+          IDType dist_start = labels_vn.dist_ptrs[d];
+          IDType dist_end = labels_vn.dist_ptrs[d + 1];
 
-    for (int d = 0; d < min && d < last_dist; d++) {
-      IDType dist_start = labels_v.dist_ptrs[d];
-      IDType dist_end = labels_v.dist_ptrs[d + 1];
+          for (IDType j = dist_start; j < dist_end; j++) {
+            IDType w = labels_vn.vertices[j];
 
-      for (IDType i = dist_start; i < dist_end; i++) {
-        IDType w = labels_v.vertices[i];
+            if(cache[w] == -1){
+              continue;
+            }
 
-        if(cache[w] == -1){
-          continue;
+            int dist = d + 1 + (int) cache[w];
+            min_dist = min(min_dist, dist);
+          }
         }
+      }
+    } else {
+      for (int d = 0; d < min_dist && d < last_dist; d++) {
+        IDType dist_start = labels_v.dist_ptrs[d];
+        IDType dist_end = labels_v.dist_ptrs[d + 1];
 
-        int dist = d + (int) cache[w];
-        if(dist < min){
-          min = dist;
+        for (IDType i = dist_start; i < dist_end; i++) {
+          IDType w = labels_v.vertices[i];
+
+          if(cache[w] == -1){
+            continue;
+          }
+
+          int dist = d + (int) cache[w];
+          min_dist = min(min_dist, dist);
         }
       }
     }
     
-    (*results)[v] = (min == MAX_DIST) ? -1 : min;
+    (*results)[v] = (min_dist == MAX_DIST) ? -1 : min_dist;
 
   }
   
@@ -294,8 +366,6 @@ bool PSL::Prune(IDType u, IDType v, int d, char* cache) {
     for (IDType j = dist_start; j < dist_end; j++) {
       IDType x = labels_v.vertices[j];
       
-      //TODO: Absolute value with negative marks ?
-
       if constexpr(use_cache){
         int cache_dist = cache[x];
 
@@ -334,6 +404,12 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
     if(global_bp->used[u])
       return nullptr;
 
+
+  if constexpr(ELIMINATE_LOCAL_MIN)
+    if(local_min[u]){
+      return nullptr;
+    }
+
   IDType start = csr.row_ptr[u];
   IDType end = csr.row_ptr[u + 1];
   
@@ -347,8 +423,57 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
   vector<IDType> candidates;
 
   for (IDType i = start; i < end; i++) {
+
+    
     IDType v = csr.col[i];
     auto &labels_v = labels[v];
+
+    if constexpr(ELIMINATE_LOCAL_MIN){
+      if(local_min[v]){
+        IDType v_nghs_start = csr.row_ptr[v];
+        IDType v_nghs_end = csr.row_ptr[v+1];
+
+        for(IDType k = v_nghs_start; k < v_nghs_end; k++){
+
+          auto &labels_vn = labels[csr.col[k]];
+          IDType labels_start = labels_vn.dist_ptrs[d-2];
+          IDType labels_end = labels_vn.dist_ptrs[d-1];
+
+          for (IDType j = labels_start; j < labels_end; j++) {
+            IDType w = labels_vn.vertices[j];
+
+            if (u >= w) {
+              CountPrune(PRUNE_RANK);
+              continue;
+            }
+
+            if(used_vec[w]){
+              continue;
+            }
+
+            if constexpr(USE_GLOBAL_BP){
+              if(global_bp->PruneByBp(u, w, d)){
+                CountPrune(PRUNE_GLOBAL_BP);
+                continue;
+              }
+            }
+
+            if constexpr(USE_LOCAL_BP){
+              if(local_bp->PruneByBp(u, w, d)){
+                CountPrune(PRUNE_LOCAL_BP);
+                continue;
+              }
+            }
+
+            used_vec[w] = true;
+            candidates.push_back(w);
+            
+          }
+        }
+        continue;
+      }
+    }
+
 
     IDType labels_start = labels_v.dist_ptrs[d-1];
     IDType labels_end = labels_v.dist_ptrs[d];
@@ -356,7 +481,7 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
     for (IDType j = labels_start; j < labels_end; j++) {
       IDType w = labels_v.vertices[j];
 
-      if (u > w) {
+      if (u >= w) {
 	      CountPrune(PRUNE_RANK);
         continue;
       }
@@ -450,7 +575,7 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
 }
 
 vector<IDType>* PSL::Init(IDType u){
-  
+
   max_ranks[u] = u;
 
   vector<IDType>* init_labels = new vector<IDType>;
@@ -524,14 +649,21 @@ void PSL::Index() {
       if(global_bp->used[u])
         should_init = false;
 
+    if constexpr(ELIMINATE_LOCAL_MIN)
+      if(local_min[u])
+        should_init = false;
+
     if(should_init){
       labels[u].vertices.push_back(u);
       l0_count++;
+      
       auto init_labels = Init(u);
       // sort(init_labels.begin(), init_labels.end())
-      labels[u].vertices.insert(labels[u].vertices.end(), init_labels->begin(), init_labels->end());
-      l1_count += init_labels->size();
-      delete init_labels;
+      if(init_labels != nullptr){
+        labels[u].vertices.insert(labels[u].vertices.end(), init_labels->begin(), init_labels->end());
+        l1_count += init_labels->size();
+        delete init_labels;
+      }
 
       labels[u].dist_ptrs.push_back(0);
       labels[u].dist_ptrs.push_back(1);
@@ -578,7 +710,7 @@ void PSL::Index() {
     for (IDType u = 0; u < csr.n; u++) {
       int tid = omp_get_thread_num();
 
-      if(should_run[u]){
+      if(ELIMINATE_LOCAL_MIN || should_run[u]){
 
         if constexpr(SMART_DIST_CACHE_CUTOFF)
         {

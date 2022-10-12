@@ -78,10 +78,14 @@ CSR::~CSR(){
     n = csr.n;
     m = csr.m;
 
+    Sort();
+
   }
 
   CSR::CSR(IDType * row_ptr, IDType *col, IDType n, IDType m): 
-    row_ptr(row_ptr), col(col), n(n), m(m) {}
+    row_ptr(row_ptr), col(col), n(n), m(m) {
+      Sort();
+    }
 
   CSR::CSR(string filename) {
 
@@ -149,6 +153,8 @@ CSR::~CSR(){
 
     free(coo_row);
     free(coo_col);
+
+    Sort();
   }
 
   void CSR::Reorder(vector<IDType>& order, vector<IDType>* cut, vector<bool>* in_cut){
@@ -220,4 +226,16 @@ CSR::~CSR(){
     row_ptr = new_row_ptr;
     col = new_col;
 
+    Sort();
+
+  }
+
+
+  void CSR::Sort(){
+  #pragma omp parallel for default(shared) schedule(SCHEDULE) num_threads(NUM_THREADS)
+    for(IDType u = 0; u < n; u++){
+      IDType start = row_ptr[u];
+      IDType end = row_ptr[u+1];
+      sort(col + start, col + end);
+    }
   }

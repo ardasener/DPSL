@@ -55,6 +55,10 @@
 #define BP_RERANK false
 #endif
 
+#ifndef ELIMINATE_LOCAL_MIN
+#define ELIMINATE_LOCAL_MIN true
+#endif
+
 #define MAX_COMM_SIZE 1<<30
 
 #define MERGE_CHUNK_SIZE 1000000
@@ -107,6 +111,7 @@ struct CSR {
   CSR(IDType* row_ptr, IDType *col, IDType n, IDType m);
   CSR(string filename);
   void Reorder(vector<IDType>& order, vector<IDType>* cut = nullptr, vector<bool>* in_cut = nullptr);
+  void Sort();
 };
 
 
