@@ -44,90 +44,127 @@ void DPSL::Query(IDType u, string filename) {
   Log("Global N: " + to_string(global_n));
   Barrier();
 
-  IDType *vertices_u;
-  IDType *dist_ptrs_u;
-  IDType dist_ptrs_u_size;
-  IDType vertices_u_size;
-
   double start_time, end_time;
 
   start_time = omp_get_wtime();
 
+  char* cache;
+
   if (partition[u] == pid) {
+    cache = new char[part_csr->n];
+    fill(cache, cache + part_csr->n, MAX_DIST);
+
+    if(psl_ptr->local_min[u]){
+        
+      cache[u] = 0;
+      
+      IDType u_ngh_start = part_csr->row_ptr[u]; 
+      IDType u_ngh_end = part_csr->row_ptr[u+1]; 
+
+      for(IDType i = u_ngh_start; i < u_ngh_end; i++){
+        auto &labels_un = psl_ptr->labels[part_csr->col[i]];
+        for(int d = 0; d < last_dist; d++){
+          IDType dist_start = labels_un.dist_ptrs[d];
+          IDType dist_end = labels_un.dist_ptrs[d + 1];
+
+          for (IDType j = dist_start; j < dist_end; j++) {
+            IDType w = labels_un.vertices[j];
+
+            if(cache[w] == -1)
+              cache[w] = d + 1;
+            else
+              cache[w] = min((int) cache[w], (int) d + 1);
+          }
+        }
+      } 
+    } else {
+
+      auto &labels_u = psl_ptr->labels[u];
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
+      for (IDType d = 0; d < last_dist; d++) {
+        IDType start = labels_u.dist_ptrs[d];
+        IDType end = labels_u.dist_ptrs[d + 1];
+
+        for (IDType i = start; i < end; i++) {
+          IDType v = labels_u.vertices[i];
+          cache[v] = d;
+        }
+      }
+    }
+
     Log("Broadcasting u's labels");
-    auto &labels_u = psl_ptr->labels[u];
-    BroadcastData(labels_u.vertices.data(), labels_u.vertices.size());
-    BroadcastData(labels_u.dist_ptrs.data(), labels_u.dist_ptrs.size());
-    vertices_u = labels_u.vertices.data();
-    vertices_u_size = labels_u.vertices.size();
-    dist_ptrs_u = labels_u.dist_ptrs.data();
-    dist_ptrs_u_size = labels_u.dist_ptrs.size();
+    BroadcastData(cache, part_csr->n, MPI_SIGNED_CHAR);
   } else {
     Log("Recieving u's labels");
-    vertices_u_size = RecvBroadcast(vertices_u, partition[u]);
-    dist_ptrs_u_size = RecvBroadcast(dist_ptrs_u, partition[u]);
+    RecvBroadcast(cache, partition[u], MPI_SIGNED_CHAR);
   }
 
   Barrier();
 
-  char *cache = new char[part_csr->n];
-  fill(cache, cache + part_csr->n, MAX_DIST);
-
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
-  for (IDType d = 0; d < dist_ptrs_u_size - 1; d++) {
-    IDType start = dist_ptrs_u[d];
-    IDType end = dist_ptrs_u[d + 1];
-
-    for (IDType i = start; i < end; i++) {
-      IDType v = vertices_u[i];
-      cache[v] = d;
-    }
-  }
 
   Log("Querying locally");
   vector<int> local_dist(part_csr->n, MAX_DIST);
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
   for (IDType v = 0; v < part_csr->n; v++) {
 
-    int min = MAX_DIST;
+    int min_dist = MAX_DIST;
+
+    if(cache[v] != -1){
+      min_dist = min((int) cache[v], min_dist);
+    }
 
     if constexpr (USE_GLOBAL_BP) {
-      min = global_bp->QueryByBp(u, v);
+      min_dist = min(min_dist, (int) global_bp->QueryByBp(u, v));
     }
 
     if constexpr (USE_LOCAL_BP) {
       int local_bp_dist = psl_ptr->local_bp->QueryByBp(u, v);
-      if (local_bp_dist < min) {
-        min = local_bp_dist;
-      }
+      min_dist = min(min_dist, local_bp_dist);
     }
 
-    auto &vertices_v = psl_ptr->labels[v].vertices;
-    auto &dist_ptrs_v = psl_ptr->labels[v].dist_ptrs;
+    if(psl_ptr->local_min[v]){
+      IDType v_ngh_start = part_csr->row_ptr[v]; 
+      IDType v_ngh_end = part_csr->row_ptr[v+1]; 
+      for (int d = 0; d + 1 < min_dist && d < last_dist; d++) {
+        for(IDType i = v_ngh_start; i < v_ngh_end; i++){
+          auto& labels_vn = psl_ptr->labels[part_csr->col[i]];
+          IDType dist_start = labels_vn.dist_ptrs[d];
+          IDType dist_end = labels_vn.dist_ptrs[d + 1];
 
-    for (int d = 0; d < last_dist && d < min; d++) {
-      IDType start = dist_ptrs_v[d];
-      IDType end = dist_ptrs_v[d + 1];
+          for (IDType j = dist_start; j < dist_end; j++) {
+            IDType w = labels_vn.vertices[j];
 
-      for (IDType i = start; i < end; i++) {
-        IDType w = vertices_v[i];
+            if(cache[w] == -1){
+              continue;
+            }
 
-        int dist = d + (int) cache[w];
-        if (dist < min) {
-          min = dist;
+            int dist = d + 1 + (int) cache[w];
+            min_dist = min(min_dist, dist);
+          }
+        }
+      }
+    } else {
+
+      auto &labels_v = psl_ptr->labels[v];
+
+      for (int d = 0; d < last_dist && d < min_dist; d++) {
+        IDType start = labels_v.dist_ptrs[d];
+        IDType end = labels_v.dist_ptrs[d + 1];
+
+        for (IDType i = start; i < end; i++) {
+          IDType w = labels_v.vertices[i];
+
+          int dist = d + (int) cache[w];
+          min_dist = min(dist, min_dist);
         }
       }
     }
 
-    local_dist[v] = min;
+
+    local_dist[v] = min_dist;
   }
 
   delete[] cache;
-
-  if(partition[u] != pid){
-    delete[] vertices_u;
-    delete[] dist_ptrs_u;
-  }
 
   Barrier();
 
@@ -960,6 +997,10 @@ void DPSL::Index() {
         should_init = false;
     }
 
+    if constexpr(ELIMINATE_LOCAL_MIN)
+      if(psl.local_min[u])
+        should_init = false;
+
     if(should_init){
       psl.labels[u].vertices.push_back(u);
       init_labels[u] = psl.Init(u);
@@ -995,6 +1036,10 @@ void DPSL::Index() {
       if(global_bp->used[u])
         should_init = false;
     }
+
+    if constexpr(ELIMINATE_LOCAL_MIN)
+      if(psl.local_min[u])
+        should_init = false;
 
     if(should_init){
       labels.dist_ptrs.push_back(0);
@@ -1053,7 +1098,7 @@ void DPSL::Index() {
       IDType u = nodes_to_process[i];
       /* cout << "Pulling for u=" << u << endl; */
 
-      if (should_run[u]) {
+      if (ELIMINATE_LOCAL_MIN || should_run[u]) {
 
         if constexpr(SMART_DIST_CACHE_CUTOFF)
         {

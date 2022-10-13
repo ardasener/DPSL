@@ -17,6 +17,7 @@ parts
 mtmetis
 *.swp
 .vscode
+.fleet
 gmon.out
 analysis.txt
 callgrind*

@@ -87,14 +87,14 @@ int main(int argc, char* argv[]){
 			dpsl.Index();
 			dpsl.WriteLabelCounts("output_dpsl_label_counts.txt");
 			dpsl.QueryTest(5);
-			// dpsl.Query(11, "output_dpsl_query.txt"); // Writes to file only in Debug mode
+			dpsl.Query(11, "output_dpsl_query.txt"); // Writes to file only in Debug mode
 	
 		} else {
 			DPSL dpsl(pid, nullptr, np, "");
 			dpsl.Index();
 			dpsl.WriteLabelCounts(""); // Only P0 writes to the file, so filename is empty here
 			dpsl.QueryTest(5);
-			// dpsl.Query(11, ""); // Again only P0 writes to the file
+			dpsl.Query(11, ""); // Again only P0 writes to the file
 		}
 		MPI_Finalize();
 #endif
