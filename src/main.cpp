@@ -68,7 +68,7 @@ int main(int argc, char* argv[]){
 	psl.WriteLabelCounts("output_psl_label_counts.txt");
 	cout << "PSL Querying..." << endl;
 	psl.QueryTest(5);
-	psl.Query(11, "output_psl_query.txt"); // Writes to file only in Debug mode
+	psl.Query(60703, "output_psl_query.txt"); // Writes to file only in Debug mode
 #endif
 
 #ifdef BIN_DPSL 

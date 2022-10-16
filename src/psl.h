@@ -41,6 +41,7 @@ class PSL {
 public:
   
   CSR& csr;
+  CSR* unordered_csr = nullptr;
   vector<IDType> ranks;
   vector<IDType> order;
   BP* local_bp = nullptr;

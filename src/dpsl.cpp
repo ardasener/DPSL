@@ -46,20 +46,23 @@ void DPSL::Query(IDType u, string filename) {
 
   double start_time, end_time;
 
+  IDType u_inv = part_csr->inv_ids[u];
+  // cout << "P" << pid << ": U: " << u << " " << u_inv << endl;
+
   start_time = omp_get_wtime();
 
   char* cache;
 
   if (partition[u] == pid) {
     cache = new char[part_csr->n];
-    fill(cache, cache + part_csr->n, MAX_DIST);
+    fill(cache, cache + part_csr->n, -1);
 
-    if(psl_ptr->local_min[u]){
+    if(psl_ptr->local_min[u_inv]){
         
-      cache[u] = 0;
+      cache[u_inv] = 0;
       
-      IDType u_ngh_start = part_csr->row_ptr[u]; 
-      IDType u_ngh_end = part_csr->row_ptr[u+1]; 
+      IDType u_ngh_start = part_csr->row_ptr[u_inv]; 
+      IDType u_ngh_end = part_csr->row_ptr[u_inv+1]; 
 
       for(IDType i = u_ngh_start; i < u_ngh_end; i++){
         auto &labels_un = psl_ptr->labels[part_csr->col[i]];
@@ -79,7 +82,7 @@ void DPSL::Query(IDType u, string filename) {
       } 
     } else {
 
-      auto &labels_u = psl_ptr->labels[u];
+      auto &labels_u = psl_ptr->labels[u_inv];
     #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
       for (IDType d = 0; d < last_dist; d++) {
         IDType start = labels_u.dist_ptrs[d];
@@ -93,10 +96,10 @@ void DPSL::Query(IDType u, string filename) {
     }
 
     Log("Broadcasting u's labels");
-    BroadcastData(cache, part_csr->n, MPI_SIGNED_CHAR);
+    BroadcastData(cache, part_csr->n, MPI_CHAR);
   } else {
     Log("Recieving u's labels");
-    RecvBroadcast(cache, partition[u], MPI_SIGNED_CHAR);
+    RecvBroadcast(cache, partition[u], MPI_CHAR);
   }
 
   Barrier();
@@ -107,24 +110,33 @@ void DPSL::Query(IDType u, string filename) {
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
   for (IDType v = 0; v < part_csr->n; v++) {
 
+    IDType v_inv = part_csr->inv_ids[v];
+    // cout << "P" << pid << << ": V: " << v << " " << v_inv << endl;
+
+    if(partition[u] == pid && v_inv == u_inv){
+      local_dist[v] = (u == v) ? 0 : max(part_csr->type[u], part_csr->type[v]);
+      // if(v == 14) cout << local_dist[v] << "!!!" << endl;
+      continue;
+    }
+
     int min_dist = MAX_DIST;
 
-    if(cache[v] != -1){
-      min_dist = min((int) cache[v], min_dist);
+    if(cache[v_inv] != -1){
+      min_dist = min((int) cache[v_inv], min_dist);
     }
 
     if constexpr (USE_GLOBAL_BP) {
-      min_dist = min(min_dist, (int) global_bp->QueryByBp(u, v));
+      min_dist = min(min_dist, (int) global_bp->QueryByBp(u_inv, v_inv));
     }
 
     if constexpr (USE_LOCAL_BP) {
-      int local_bp_dist = psl_ptr->local_bp->QueryByBp(u, v);
+      int local_bp_dist = psl_ptr->local_bp->QueryByBp(u_inv, v_inv);
       min_dist = min(min_dist, local_bp_dist);
     }
 
-    if(psl_ptr->local_min[v]){
-      IDType v_ngh_start = part_csr->row_ptr[v]; 
-      IDType v_ngh_end = part_csr->row_ptr[v+1]; 
+    if(psl_ptr->local_min[v_inv]){
+      IDType v_ngh_start = part_csr->row_ptr[v_inv]; 
+      IDType v_ngh_end = part_csr->row_ptr[v_inv+1]; 
       for (int d = 0; d + 1 < min_dist && d < last_dist; d++) {
         for(IDType i = v_ngh_start; i < v_ngh_end; i++){
           auto& labels_vn = psl_ptr->labels[part_csr->col[i]];
@@ -145,7 +157,11 @@ void DPSL::Query(IDType u, string filename) {
       }
     } else {
 
-      auto &labels_v = psl_ptr->labels[v];
+      auto &labels_v = psl_ptr->labels[v_inv];
+
+      // if(v == 14){
+      //       cout << "P" << pid << ":" << v_inv << endl;
+      //     }
 
       for (int d = 0; d < last_dist && d < min_dist; d++) {
         IDType start = labels_v.dist_ptrs[d];
@@ -154,12 +170,19 @@ void DPSL::Query(IDType u, string filename) {
         for (IDType i = start; i < end; i++) {
           IDType w = labels_v.vertices[i];
 
+          if(cache[w] == -1){
+            continue;
+          }
+
           int dist = d + (int) cache[w];
           min_dist = min(dist, min_dist);
+
+          // if(v == 14){
+          //   cout << "P" << pid << ":" << min_dist << endl;
+          // }
         }
       }
     }
-
 
     local_dist[v] = min_dist;
   }
@@ -172,7 +195,7 @@ void DPSL::Query(IDType u, string filename) {
   if (pid == 0) {
     int *all_dists = new int[whole_csr->n];
     int *source = new int[whole_csr->n];
-    fill(all_dists, all_dists + whole_csr->n, -1);
+    fill(all_dists, all_dists + whole_csr->n, MAX_DIST);
     fill(source, source + whole_csr->n, 0);
 
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
@@ -188,7 +211,7 @@ void DPSL::Query(IDType u, string filename) {
         if(dists[i] < all_dists[i]){
           source[i] = p;
           all_dists[i] = dists[i];
-        }
+        } 
       }
       delete[] dists;
     }
@@ -198,17 +221,17 @@ void DPSL::Query(IDType u, string filename) {
     cout << "Avg. Query Time: " << (end_time-start_time) / whole_csr->n << " seconds" << endl;
 
     start_time = omp_get_wtime();
-    vector<int> *bfs_results = BFSQuery(*whole_csr, u);
+    vector<int> *bfs_results = BFSQuery(*unordered_csr, u);
     end_time = omp_get_wtime();
 
     cout << "Avg. BFS Time: " << (end_time-start_time) / whole_csr->n << " seconds" << endl;;
 
     bool all_correct = true;
     
-#ifdef DEBUG
+// #ifdef DEBUG
     ofstream ofs(filename);
     ofs << "Vertex\tDPSL(source)\tBFS\tCorrectness" << endl;
-#endif
+// #endif
     
     for (IDType i = 0; i < whole_csr->n; i++) {
       int psl_res = all_dists[i];
@@ -222,10 +245,10 @@ void DPSL::Query(IDType u, string filename) {
         all_correct = false;
       }
       
-#ifdef DEBUG
+// #ifdef DEBUG
       ofs << i << "\t" << psl_res << "(" << source[i] << ")"
           << "\t" << bfs_res << "\t" << correctness << endl;
-#endif
+// #endif
 
     }
 
@@ -233,9 +256,9 @@ void DPSL::Query(IDType u, string filename) {
     delete[] all_dists;
     delete[] source;
 
-#ifdef DEBUG
+// #ifdef DEBUG
     ofs.close();
-#endif
+// #endif
 
     cout << "Correctness of Query: " << all_correct << endl;
 
@@ -734,7 +757,7 @@ void DPSL::InitP0(string part_file) {
   if(part_file == "")
     throw "Partition file is required";
   else
-    vc_ptr = new VertexCut(csr, part_file, order_method, np);
+    vc_ptr = VertexCut::Read(csr, part_file, order_method, np);
 
   VertexCut &vc = *vc_ptr;
 
@@ -755,6 +778,7 @@ void DPSL::InitP0(string part_file) {
 
   auto &csrs = vc.csrs;
 
+  unordered_csr = new CSR(csr);
   csr.Reorder(order, &cut, &in_cut);
   
   for(int p=0; p<np; p++)
@@ -770,7 +794,7 @@ void DPSL::InitP0(string part_file) {
 
 // #pragma omp parallel default(shared) num_threads(NUM_THREADS)
   for(int i=0; i < cut.size(); i++){
-    cut[i] = csr.reorder_ids[cut[i]];
+    cut[i] = csr.inv_ids[cut[i]];
   }
 
   in_cut.clear();
@@ -785,8 +809,8 @@ void DPSL::InitP0(string part_file) {
 
   partition = new IDType[csr.n]; 
   for(int i=0; i<csr.n; i++){
-    IDType new_id = csr.reorder_ids[i];
-    partition[new_id] = vc.partition[i];
+    IDType new_id = csr.inv_ids[i];
+    partition[i] = vc.partition[i];
   }
 
   // unordered_set<IDType> cut_set;
@@ -804,6 +828,9 @@ void DPSL::InitP0(string part_file) {
     SendData(&global_n, 1, MPI_GLOBAL_N, i);
     SendData(csrs[i]->row_ptr, (csrs[i]->n) + 1, MPI_CSR_ROW_PTR, i);
     SendData(csrs[i]->col, csrs[i]->m, MPI_CSR_COL, i);
+    SendData(csrs[i]->ids, csrs[i]->n, MPI_CSR_IDS, i);
+    SendData(csrs[i]->inv_ids, csrs[i]->n, MPI_CSR_INV_IDS, i);
+    SendData(csrs[i]->type, csrs[i]->n, MPI_CSR_TYPE, i, MPI_CHAR);
     SendData(partition, csr.n, MPI_PARTITION, i);
     SendData(cut.data(), cut.size(), MPI_CUT, i);
     SendData(cut_merge_order.data(), cut_merge_order.size(), MPI_CUT_MERGE_ORDER, i);
@@ -869,6 +896,9 @@ void DPSL::InitP0(string part_file) {
 void DPSL::Init() {
   IDType *row_ptr;
   IDType *col;
+  IDType* ids;
+  IDType* inv_ids;
+  char* type;
   IDType *cut_ptr;
   IDType *cut_merge_order_ptr;
   IDType *ranks_ptr;
@@ -884,6 +914,9 @@ void DPSL::Init() {
 
   IDType size_row_ptr = RecvData(row_ptr, MPI_CSR_ROW_PTR, 0);
   IDType size_col = RecvData(col, MPI_CSR_COL, 0);
+  IDType size_ids = RecvData(ids, MPI_CSR_IDS, 0);
+  IDType size_inv_ids = RecvData(inv_ids, MPI_CSR_INV_IDS, 0);
+  IDType size_type = RecvData(type, MPI_CSR_TYPE, 0, MPI_CHAR);
   IDType size_partition = RecvData(partition, MPI_PARTITION, 0);
   IDType size_cut = RecvData(cut_ptr, MPI_CUT, 0);
   IDType size_cut_merge_order = RecvData(cut_merge_order_ptr, MPI_CUT_MERGE_ORDER, 0);
@@ -950,7 +983,7 @@ void DPSL::Init() {
   }
 
 
-  part_csr = new CSR(row_ptr, col, size_row_ptr - 1, size_col);
+  part_csr = new CSR(row_ptr, col, ids, inv_ids, type, size_row_ptr - 1, size_col);
   Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
 }
 

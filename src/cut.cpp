@@ -5,20 +5,24 @@ VertexCut::~VertexCut(){
     delete [] partition;  
 }
 
-VertexCut::VertexCut(CSR& csr, string part_file, string order_method, int np){
+
+VertexCut* VertexCut::Read(CSR& csr, string part_file, string order_method, int np){
+
+  VertexCut* vc = new VertexCut;
 
   cout << "Ordering..." << endl;
-  order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
+  vc->order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
 
   cout << "Ranking..." << endl;
-  ranks.resize(csr.n);
+  vc->ranks.resize(csr.n);
   for(IDType i=0; i<csr.n; i++){
-    ranks[order[i]] = i;
+    vc->ranks[vc->order[i]] = i;
   }
 
   ifstream part_ifs(part_file);
  
-  partition = new IDType[csr.n];
+  vc->partition = new IDType[csr.n];
+  auto& partition = vc->partition;
   int x;
   IDType i = 0;
   while(part_ifs >> x){
@@ -32,7 +36,7 @@ VertexCut::VertexCut(CSR& csr, string part_file, string order_method, int np){
   vector<bool> in_cut(csr.n, false);
   cout << "Calculating cut..." << endl;
   for(IDType i=csr.n-1; i>=0; i--){
-    IDType u = order[i];
+    IDType u = vc->order[i];
     IDType start = csr.row_ptr[u];
     IDType end = csr.row_ptr[u+1];
 
@@ -45,18 +49,18 @@ VertexCut::VertexCut(CSR& csr, string part_file, string order_method, int np){
           continue;
         }
 
-        if (ranks[u] > ranks[v]){
-          cut.insert(u);
+        if (vc->ranks[u] > vc->ranks[v]){
+          vc->cut.insert(u);
           in_cut[u] = true;
         } else {
-          cut.insert(v);
+          vc->cut.insert(v);
           in_cut[v] = true;
         }
       }
     }
   }
 
-  cout << "Cut Size: " << cut.size() << endl;
+  cout << "Cut Size: " << vc->cut.size() << endl;
 
   cout << "Calculating edges and nodes..." << endl;
   vector<vector<pair<IDType,IDType>>> edges(np);
@@ -93,7 +97,7 @@ VertexCut::VertexCut(CSR& csr, string part_file, string order_method, int np){
   }
 
   cout << "Constructing csrs..." << endl;
-  csrs.resize(np, nullptr);
+  vc->csrs.resize(np, nullptr);
   for(int i=0; i<np; i++){
     IDType n = csr.n;
     IDType m = edges[i].size();
@@ -116,8 +120,21 @@ VertexCut::VertexCut(CSR& csr, string part_file, string order_method, int np){
       row_ptr[j+1] = count + row_ptr[j];
     }
 
-    csrs[i] = new CSR(row_ptr, col, n, m);
+    IDType* ids = new IDType[n];
+    IDType* inv_ids = new IDType[n];
+    char* type = new char[n];
+
+#pragma omp parallel for num_threads(NUM_THREADS) default(shared)
+    for(IDType j=0; j<n; j++){
+      ids[j] = csr.ids[j];
+      inv_ids[j] = csr.inv_ids[j];
+      type[j] = csr.type[j];
+    }
+
+    vc->csrs[i] = new CSR(row_ptr, col, ids, inv_ids, type, n, m);
     cout << "M for P" << i << ": " << m << endl;
   }
+
+  return vc;
 
 }

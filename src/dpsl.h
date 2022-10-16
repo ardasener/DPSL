@@ -26,7 +26,9 @@ enum MPI_CONSTS {
   MPI_GLOBAL_N,
   MPI_CSR_ROW_PTR,
   MPI_CSR_COL,
-  MPI_CSR_NODES,
+  MPI_CSR_IDS,
+  MPI_CSR_INV_IDS,
+  MPI_CSR_TYPE,
   MPI_CUT,
   MPI_CUT_MERGE_ORDER,
   MPI_PARTITION,
@@ -66,6 +68,7 @@ public:
   int pid, np;
   IDType global_n;
   CSR *whole_csr = nullptr;
+  CSR *unordered_csr = nullptr;
   CSR *part_csr = nullptr;
   BP *global_bp = nullptr;
   IDType *partition;

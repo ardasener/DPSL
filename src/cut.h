@@ -17,8 +17,8 @@ public:
   vector<IDType> ranks;
   vector<IDType> order;
 
-  // VertexCut(CSR& csr, string order_method, int np, const toml::Value& config);
-  VertexCut(CSR& csr, string part_file, string order_method, int np);
+  static VertexCut* Partition(CSR& csr, string partitioner, string order_method, int np, bool merge_eqiuvalent, bool remove_degree1);
+  static VertexCut* Read(CSR& csr, string part_file, string order_method, int np);
   ~VertexCut();
 };
 

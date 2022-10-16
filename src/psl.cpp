@@ -79,11 +79,15 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
     }
   }
 
+  unordered_csr = new CSR(csr);
 
-  if(cut == nullptr)
+  if(cut == nullptr){
     csr.Reorder(order, nullptr, nullptr);
-  
+  }
 
+  if constexpr(COMPRESS){
+    csr.Compress(in_cut);
+  }
 
   local_min.resize(csr.n, false);
 
@@ -178,7 +182,7 @@ void PSL::QueryTest(int query_count){
     // cout << "Avg. Query Time: " << (end_time-start_time) / csr.n << " seconds" << endl;
 
     start_time = omp_get_wtime();
-    auto bfs_results = BFSQuery(csr, u);
+    auto bfs_results = BFSQuery(*unordered_csr, u);
     end_time = omp_get_wtime();
     
     // cout << "Avg. BFS Time: " << (end_time-start_time) / csr.n << " seconds" << endl;
@@ -210,18 +214,19 @@ void PSL::Query(IDType u, string filename){
 
   cout << "Avg. Query Time: " << (end_time-start_time) / csr.n << " seconds" << endl;
 
+
   start_time = omp_get_wtime();
-  auto bfs_results = BFSQuery(csr, u);
+  auto bfs_results = BFSQuery(*unordered_csr, u);
   end_time = omp_get_wtime();
   
   cout << "Avg. BFS Time: " << (end_time-start_time) / csr.n << " seconds" << endl;
   
 
-#ifdef DEBUG
+// #ifdef DEBUG
   ofstream ofs(filename);
   ofs << "Source: " << u << endl;
   ofs << "Target\tPSL_Distance\tBFS_Distance\tCorrectness" << endl;
-#endif
+// #endif
 
   bool all_correct = true;
   for(IDType i=0; i<csr.n; i++){
@@ -233,16 +238,16 @@ void PSL::Query(IDType u, string filename){
       all_correct = false;
     }
 
-#ifdef DEBUG
+// #ifdef DEBUG
     ofs << i << "\t" << psl_res << "\t" << bfs_res << "\t" << correctness << endl;
-#endif
+// #endif
   }
 
   cout << "Correctness: " << all_correct << endl;
 
-#ifdef DEBUG
+// #ifdef DEBUG
   ofs.close();
-#endif
+// #endif
 
   delete results;
   delete bfs_results;
@@ -251,19 +256,20 @@ void PSL::Query(IDType u, string filename){
 
 vector<IDType>* PSL::Query(IDType u) {
 
+  IDType u_inv = csr.inv_ids[u];
 
   vector<IDType>* results = new vector<IDType>(csr.n, MAX_DIST);
 
-  auto &labels_u = labels[u];
+  auto &labels_u = labels[u_inv];
 
   vector<char> cache(csr.n, -1);
 
-  if(local_min[u]){
+  if(local_min[u_inv]){
 
-    cache[u] = 0;
+    cache[u_inv] = 0;
     
-    IDType u_ngh_start = csr.row_ptr[u]; 
-    IDType u_ngh_end = csr.row_ptr[u+1]; 
+    IDType u_ngh_start = csr.row_ptr[u_inv]; 
+    IDType u_ngh_end = csr.row_ptr[u_inv+1]; 
 
     for(IDType i = u_ngh_start; i < u_ngh_end; i++){
       auto &labels_un = labels[csr.col[i]];
@@ -298,19 +304,26 @@ vector<IDType>* PSL::Query(IDType u) {
 
   for (IDType v = 0; v < csr.n; v++) {
 
-    auto& labels_v = labels[v];
+    IDType v_inv = csr.inv_ids[v]; 
+
+    if(v_inv == u_inv){
+      (*results)[v] = (u == v) ? 0 : max(csr.type[u], csr.type[v]);
+      continue;
+    }
+
+    auto& labels_v = labels[v_inv];
 
     int min_dist = MAX_DIST;
     
-    if(cache[v] != -1) min_dist = min(min_dist, (int) cache[v]);
+    if(cache[v_inv] != -1) min_dist = min(min_dist, (int) cache[v_inv]);
 
     if constexpr(USE_LOCAL_BP)
-      min_dist = min(min_dist, (int) local_bp->QueryByBp(u,v));
+      min_dist = min(min_dist, (int) local_bp->QueryByBp(u_inv, v_inv));
     
-    if(local_min[v]){
+    if(local_min[v_inv]){
       
-      IDType v_ngh_start = csr.row_ptr[v]; 
-      IDType v_ngh_end = csr.row_ptr[v+1]; 
+      IDType v_ngh_start = csr.row_ptr[v_inv]; 
+      IDType v_ngh_end = csr.row_ptr[v_inv+1]; 
       for (int d = 0; d + 1 < min_dist && d < last_dist; d++) {
         for(IDType i = v_ngh_start; i < v_ngh_end; i++){
           auto& labels_vn = labels[csr.col[i]];
