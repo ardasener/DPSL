@@ -511,10 +511,17 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
       }
 
       if constexpr(USE_LOCAL_BP){
-        if(local_bp->PruneByBp(u, w, d)){
-          CountPrune(PRUNE_LOCAL_BP);
-          continue;
-        }
+        #ifdef BIN_DPSL
+          if(!in_cut[w] && local_bp->PruneByBp(u, w, d)){
+            CountPrune(PRUNE_LOCAL_BP);
+            continue;
+          }
+        #else
+          if(local_bp->PruneByBp(u, w, d)){
+            CountPrune(PRUNE_LOCAL_BP);
+            continue;
+          }
+        #endif
       }
 
       used_vec[w] = true;

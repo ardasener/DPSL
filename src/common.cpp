@@ -335,7 +335,7 @@ void CSR::Compress(vector<bool>& in_cut){
   IDType curr_row_ptr = 0;
   for(IDType u = 0; u < n; u++){
 
-    if(in_cut[u] || (f1[u] == u && f2[u] == u)){
+    if(in_cut[u] || (f1[u] == u && f2[u] == u) || row_ptr[u] == row_ptr[u+1]){
 
       IDType start = row_ptr[u];
       IDType end = row_ptr[u+1];

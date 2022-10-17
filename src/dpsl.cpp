@@ -110,12 +110,12 @@ void DPSL::Query(IDType u, string filename) {
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
   for (IDType v = 0; v < part_csr->n; v++) {
 
+    if(partition[v] != pid) continue;
+
     IDType v_inv = part_csr->inv_ids[v];
-    // cout << "P" << pid << << ": V: " << v << " " << v_inv << endl;
 
     if(partition[u] == pid && v_inv == u_inv){
       local_dist[v] = (u == v) ? 0 : max(part_csr->type[u], part_csr->type[v]);
-      // if(v == 14) cout << local_dist[v] << "!!!" << endl;
       continue;
     }
 
