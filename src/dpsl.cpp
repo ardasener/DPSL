@@ -47,6 +47,13 @@ void DPSL::Query(IDType u, string filename) {
   double start_time, end_time;
 
   IDType u_inv = part_csr->inv_ids[u];
+
+  int leaf_add_u = 0;
+  if constexpr(ELIM_LEAF)
+    if(psl_ptr->leaf_root[u_inv] != -1){
+      u_inv = psl_ptr->leaf_root[u_inv];
+      leaf_add_u = 1;
+    }
   // cout << "P" << pid << ": U: " << u << " " << u_inv << endl;
 
   start_time = omp_get_wtime();
@@ -59,7 +66,7 @@ void DPSL::Query(IDType u, string filename) {
 
     if(psl_ptr->local_min[u_inv]){
         
-      cache[u_inv] = 0;
+      cache[u_inv] = 0 + leaf_add_u;
       
       IDType u_ngh_start = part_csr->row_ptr[u_inv]; 
       IDType u_ngh_end = part_csr->row_ptr[u_inv+1]; 
@@ -74,9 +81,9 @@ void DPSL::Query(IDType u, string filename) {
             IDType w = labels_un.vertices[j];
 
             if(cache[w] == -1)
-              cache[w] = d + 1;
+              cache[w] = d + 1 + leaf_add_u;
             else
-              cache[w] = min((int) cache[w], (int) d + 1);
+              cache[w] = min((int) cache[w], (int) d + 1 + leaf_add_u);
           }
         }
       } 
@@ -90,16 +97,24 @@ void DPSL::Query(IDType u, string filename) {
 
         for (IDType i = start; i < end; i++) {
           IDType v = labels_u.vertices[i];
-          cache[v] = d;
+          cache[v] = d + leaf_add_u;
         }
       }
     }
 
     Log("Broadcasting u's labels");
     BroadcastData(cache, part_csr->n, MPI_CHAR);
+    if constexpr(ELIM_LEAF)
+      BroadcastData(&leaf_add_u, 1, MPI_INT32_T);
   } else {
     Log("Recieving u's labels");
     RecvBroadcast(cache, partition[u], MPI_CHAR);
+    if constexpr(ELIM_LEAF){
+      int* temp;
+      RecvBroadcast(temp, partition[u], MPI_INT32_T);
+      leaf_add_u = *temp;
+      delete[] temp;
+    }
   }
 
   Barrier();
@@ -112,25 +127,49 @@ void DPSL::Query(IDType u, string filename) {
 
     if(partition[v] != pid) continue;
 
-    IDType v_inv = part_csr->inv_ids[v];
-
-    if(partition[u] == pid && v_inv == u_inv){
-      local_dist[v] = (u == v) ? 0 : max(part_csr->type[u], part_csr->type[v]);
+    if(u == v){
+      local_dist[v] = 0;
       continue;
     }
+
+    IDType v_inv = part_csr->inv_ids[v];
+
+    if constexpr(COMPRESS)
+      if(partition[u] == pid && v_inv == part_csr->inv_ids[u]){
+        // if(v == 2524) cout << v << " " << v_inv << " " << part_csr->type[v] << " | " << u << " " << u_inv << " " <<  (int) part_csr->type[u] << endl;
+        local_dist[v] = max(part_csr->type[u], part_csr->type[v]);
+        continue;
+      }
+
+    int leaf_add_v = 0;
+    if constexpr(ELIM_LEAF)
+      if(psl_ptr->leaf_root[v_inv] != -1){
+        
+        if(v == 2524) cout << v << " " << v_inv << " " << psl_ptr->leaf_root[v_inv] << " | " << u << " " << u_inv << " " << endl;
+
+        if(psl_ptr->leaf_root[v_inv] == u_inv){
+          local_dist[v] = 1 + leaf_add_u;
+          continue;
+        }
+
+        v_inv = psl_ptr->leaf_root[v_inv];
+        leaf_add_v = 1;
+      }     
 
     int min_dist = MAX_DIST;
 
     if(cache[v_inv] != -1){
-      min_dist = min((int) cache[v_inv], min_dist);
+      if(v == 2524) cout << v << " " << v_inv << " " << (int) cache[v_inv] << endl;
+      min_dist = min((int) cache[v_inv] + leaf_add_v, min_dist);
     }
 
     if constexpr (USE_GLOBAL_BP) {
-      min_dist = min(min_dist, (int) global_bp->QueryByBp(u_inv, v_inv));
+      int global_bp_dist = global_bp->QueryByBp(part_csr->inv_ids[u], part_csr->inv_ids[v]);
+      min_dist = min(min_dist, global_bp_dist);
     }
 
     if constexpr (USE_LOCAL_BP) {
-      int local_bp_dist = psl_ptr->local_bp->QueryByBp(u_inv, v_inv);
+      int local_bp_dist = psl_ptr->local_bp->QueryByBp(u_inv, v_inv) + leaf_add_v + leaf_add_u;
       min_dist = min(min_dist, local_bp_dist);
     }
 
@@ -150,7 +189,7 @@ void DPSL::Query(IDType u, string filename) {
               continue;
             }
 
-            int dist = d + 1 + (int) cache[w];
+            int dist = d + 1 + (int) cache[w] + leaf_add_v;
             min_dist = min(min_dist, dist);
           }
         }
@@ -174,7 +213,7 @@ void DPSL::Query(IDType u, string filename) {
             continue;
           }
 
-          int dist = d + (int) cache[w];
+          int dist = d + (int) cache[w] + leaf_add_v;
           min_dist = min(dist, min_dist);
 
           // if(v == 14){

@@ -98,7 +98,7 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
       if(csr.row_ptr[u] + 1 == csr.row_ptr[u+1]){
         IDType root = csr.col[csr.row_ptr[u]];
 
-        if(csr.row_ptr[root] + 1 < csr.row_ptr[root+1] && csr.type[u] == 0){
+        if(csr.row_ptr[root] + 1 < csr.row_ptr[root+1] && csr.type[u] == 0 && in_cut[u] == false){
           leaf_root[u] = csr.inv_ids[csr.ids[root]];
           leaf_count++;
         }
@@ -314,7 +314,7 @@ vector<IDType>* PSL::Query(IDType u) {
 
   if(local_min[u_inv]){
 
-    cache[u_inv] = 0;
+    cache[u_inv] = 0 + leaf_add_u;
     
     IDType u_ngh_start = csr.row_ptr[u_inv]; 
     IDType u_ngh_end = csr.row_ptr[u_inv+1]; 
