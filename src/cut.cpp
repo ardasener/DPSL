@@ -5,6 +5,58 @@ VertexCut::~VertexCut(){
     delete [] partition;  
 }
 
+VertexCut* VertexCut::Partition(CSR& csr, string partitioner, string params, string order_method, int np){
+  ofstream ofs("temp.graph");
+  ofs << csr.n << " " << csr.m / 2 << " " << 10 << endl;
+
+  for(IDType i = 0; i < csr.n; i++) {
+
+    ofs << 1 << " ";
+
+    IDType start = csr.row_ptr[i];
+    IDType end = csr.row_ptr[i+1];
+
+    for(IDType j = start; j<end; j++) {
+      IDType v = csr.col[j];
+      ofs << v+1 << " ";
+    }
+
+    ofs << endl;
+  }
+
+  ofs.close();
+
+  stringstream ss;
+  int ret_val;
+    
+  if(partitioner.find("gpmetis") != string::npos){
+    ss << partitioner << " --objtype=cut temp.graph "  << np;
+    ss << " " << params;
+    ss << " && " << "mv temp.graph.part." << np << " temp.part";
+    cout << "Running: " << ss.str() << endl;
+    ret_val = system(ss.str().c_str());
+  } else if(partitioner.find("mtmetis") != string::npos){
+    ss << partitioner << " temp.graph " << np << " temp.part";
+    ss << " " << params;
+    cout << "Running: " << ss.str() << endl;
+    ret_val = system(ss.str().c_str());
+  } else if(partitioner.find("pulp") != string::npos){
+    ss << partitioner << " temp.graph " << np << " -o temp.part";
+    ss << " " << params;
+    cout << "Running: " << ss.str() << endl;
+    ret_val = system(ss.str().c_str());
+  } else {
+    throw "Unknown partitioner";
+  }
+
+  cout << "Return Value: " << ret_val << endl; 
+  VertexCut* vc = VertexCut::Read(csr, "temp.part", order_method, np);
+  
+  ret_val = system("rm temp.part temp.graph");
+
+  return vc;
+}
+
 
 VertexCut* VertexCut::Read(CSR& csr, string part_file, string order_method, int np){
 

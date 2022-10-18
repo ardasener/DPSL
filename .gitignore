@@ -22,3 +22,5 @@ gmon.out
 analysis.txt
 callgrind*
 valgrind*
+temp.graph
+temp.part

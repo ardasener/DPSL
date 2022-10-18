@@ -81,7 +81,7 @@ public:
   int last_dist;
   char **caches;
   vector<bool>* used;
-  void InitP0(string vsep_file="");
+  void InitP0(string partition_str="", string partition_params="");
   void Init();
   void Index();
   void WriteLabelCounts(string filename);
@@ -90,7 +90,7 @@ public:
   void Log(string msg);
   void PrintTime(string tag, double time);
   PSL *psl_ptr;
-  DPSL(int pid, CSR *csr, int np, string vsep_file = "");
+  DPSL(int pid, CSR *csr, int np, string partition_str = "", string partition_params="");
   ~DPSL();
 };
 

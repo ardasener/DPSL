@@ -785,7 +785,7 @@ size_t DPSL::RecvData(T *&data, int tag, int from, MPI_Datatype type) {
   return full_size;
 }
 
-void DPSL::InitP0(string part_file) {
+void DPSL::InitP0(string partition_str, string partition_params) {
 
   double init_start = omp_get_wtime();
 
@@ -793,10 +793,12 @@ void DPSL::InitP0(string part_file) {
   CSR &csr = *whole_csr;
   global_n = csr.n;
 
-  if(part_file == "")
-    throw "Partition file is required";
+  if(partition_str == "")
+    throw "Partition file or partitioner is required";
+  else if(partition_str.find(".part") != string::npos)
+    vc_ptr = VertexCut::Read(csr, partition_str, order_method, np);
   else
-    vc_ptr = VertexCut::Read(csr, part_file, order_method, np);
+    vc_ptr = VertexCut::Partition(csr, partition_str, partition_params, order_method, np); 
 
   VertexCut &vc = *vc_ptr;
 
@@ -1288,10 +1290,10 @@ void DPSL::Index() {
 #endif
 }
 
-DPSL::DPSL(int pid, CSR *csr, int np, string vsep_file)
+DPSL::DPSL(int pid, CSR *csr, int np, string partition_str, string partition_params)
     : whole_csr(csr), pid(pid), np(np) {
   if (pid == 0) {
-    InitP0(vsep_file);
+    InitP0(partition_str, partition_params);
   } else {
     Init();
   }

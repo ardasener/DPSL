@@ -17,7 +17,7 @@ public:
   vector<IDType> ranks;
   vector<IDType> order;
 
-  static VertexCut* Partition(CSR& csr, string partitioner, string order_method, int np, bool merge_eqiuvalent, bool remove_degree1);
+  static VertexCut* Partition(CSR& csr, string partitioner, string params, string order_method, int np);
   static VertexCut* Read(CSR& csr, string part_file, string order_method, int np);
   ~VertexCut();
 };
