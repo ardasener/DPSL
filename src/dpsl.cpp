@@ -1030,7 +1030,7 @@ void DPSL::Index() {
         should_init = false;
     }
 
-    if constexpr(ELIMINATE_LOCAL_MIN)
+    if constexpr(ELIM_MIN)
       if(psl.local_min[u])
         should_init = false;
 
@@ -1070,7 +1070,7 @@ void DPSL::Index() {
         should_init = false;
     }
 
-    if constexpr(ELIMINATE_LOCAL_MIN)
+    if constexpr(ELIM_MIN)
       if(psl.local_min[u])
         should_init = false;
 
@@ -1131,7 +1131,7 @@ void DPSL::Index() {
       IDType u = nodes_to_process[i];
       /* cout << "Pulling for u=" << u << endl; */
 
-      if (ELIMINATE_LOCAL_MIN || should_run[u]) {
+      if (ELIM_MIN || should_run[u]) {
 
         if constexpr(SMART_DIST_CACHE_CUTOFF)
         {

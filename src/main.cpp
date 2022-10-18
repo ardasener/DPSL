@@ -68,7 +68,7 @@ int main(int argc, char* argv[]){
 	psl.WriteLabelCounts("output_psl_label_counts.txt");
 	cout << "PSL Querying..." << endl;
 	psl.QueryTest(5);
-	psl.Query(60703, "output_psl_query.txt"); // Writes to file only in Debug mode
+	psl.Query(299307, "output_psl_query.txt"); // Writes to file only in Debug mode
 #endif
 
 #ifdef BIN_DPSL 
@@ -87,14 +87,14 @@ int main(int argc, char* argv[]){
 			dpsl.Index();
 			dpsl.WriteLabelCounts("output_dpsl_label_counts.txt");
 			dpsl.QueryTest(5);
-			dpsl.Query(12, "output_dpsl_query.txt"); // Writes to file only in Debug mode
+			dpsl.Query(71030, "output_dpsl_query.txt"); // Writes to file only in Debug mode
 	
 		} else {
 			DPSL dpsl(pid, nullptr, np, "");
 			dpsl.Index();
 			dpsl.WriteLabelCounts(""); // Only P0 writes to the file, so filename is empty here
 			dpsl.QueryTest(5);
-			dpsl.Query(12, ""); // Again only P0 writes to the file
+			dpsl.Query(71030, ""); // Again only P0 writes to the file
 		}
 		MPI_Finalize();
 #endif

@@ -89,21 +89,61 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
     csr.Compress(in_cut);
   }
 
-  local_min.resize(csr.n, false);
+  size_t leaf_count = 0;
+  leaf_root.resize(csr.n, -1);
 
-  if constexpr(ELIMINATE_LOCAL_MIN){
-  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
+  if constexpr(ELIM_LEAF){
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : leaf_count)
+    for(IDType u = 0; u < csr.n; u++){
+      if(csr.row_ptr[u] + 1 == csr.row_ptr[u+1]){
+        IDType root = csr.col[csr.row_ptr[u]];
+
+        if(csr.row_ptr[root] + 1 < csr.row_ptr[root+1] && csr.type[u] == 0){
+          leaf_root[u] = csr.inv_ids[csr.ids[root]];
+          leaf_count++;
+        }
+      } 
+    }
+    cout << "Found and eliminated " << leaf_count << " leaves" << endl;
+  }
+
+
+  local_min.resize(csr.n, false);
+  size_t local_min_count = 0;
+
+  if constexpr(ELIM_MIN){
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : local_min_count)
     for(IDType u = 0; u <csr.n; u++){
       if(in_cut[u]) continue;
+      if(leaf_root[u] != -1) continue;
       
       IDType start = csr.row_ptr[u];
       IDType end = csr.row_ptr[u+1];
 
-      if(end == start || u < csr.col[start]){
+      if(end == start){
         local_min[u] = true;
+        local_min_count++;
+        continue;
+      }
+
+      for(IDType i=start; i<end; i++){
+        IDType v = csr.col[i];
+
+        if(u >= v && leaf_root[v] == -1){
+          break;
+        }
+
+        if(leaf_root[v] == -1){
+          local_min[u] = true;
+          local_min_count++;
+          break;
+        }
       }
     }
+    cout << "Found and eliminated " << local_min_count << " local min vertices" << endl;
   }
+
+  
 
   if constexpr(USE_LOCAL_BP){
     if constexpr(USE_GLOBAL_BP){
@@ -258,9 +298,17 @@ vector<IDType>* PSL::Query(IDType u) {
 
   IDType u_inv = csr.inv_ids[u];
 
+  int leaf_add_u = 0;
+  if constexpr(ELIM_LEAF)
+    if(leaf_root[u_inv] != -1){
+      u_inv = leaf_root[u_inv];
+      leaf_add_u = 1;
+    }
+
   vector<IDType>* results = new vector<IDType>(csr.n, MAX_DIST);
 
   auto &labels_u = labels[u_inv];
+
 
   vector<char> cache(csr.n, -1);
 
@@ -281,9 +329,9 @@ vector<IDType>* PSL::Query(IDType u) {
           IDType w = labels_un.vertices[j];
 
           if(cache[w] == -1)
-            cache[w] = d + 1;
+            cache[w] = d + 1 + leaf_add_u;
           else
-            cache[w] = min((int) cache[w], (int) d + 1);
+            cache[w] = min((int) cache[w], (int) d + 1 + leaf_add_u);
         }
       }
     }
@@ -295,7 +343,7 @@ vector<IDType>* PSL::Query(IDType u) {
 
       for (IDType i = dist_start; i < dist_end; i++) {
         IDType w = labels_u.vertices[i]; 
-        cache[w] = (char) d;
+        cache[w] = (char) d + leaf_add_u;
       }
     }
   }
@@ -304,21 +352,40 @@ vector<IDType>* PSL::Query(IDType u) {
 
   for (IDType v = 0; v < csr.n; v++) {
 
-    IDType v_inv = csr.inv_ids[v]; 
-
-    if(v_inv == u_inv){
-      (*results)[v] = (u == v) ? 0 : max(csr.type[u], csr.type[v]);
+    if(u == v){
+      (*results)[v] = 0;
       continue;
     }
+
+    IDType v_inv = csr.inv_ids[v]; 
+
+    if constexpr(COMPRESS)
+      if(v_inv == csr.inv_ids[u]){
+        (*results)[v] = max(csr.type[u], csr.type[v]);
+        continue;
+      }
+
+    int leaf_add_v = 0;
+    if constexpr(ELIM_LEAF)
+      if(leaf_root[v_inv] != -1){
+        
+        if(leaf_root[v_inv] == u_inv){
+          (*results)[v] = 1 + leaf_add_u;
+          continue;
+        }
+
+        v_inv = leaf_root[v_inv];
+        leaf_add_v = 1;
+      }
 
     auto& labels_v = labels[v_inv];
 
     int min_dist = MAX_DIST;
     
-    if(cache[v_inv] != -1) min_dist = min(min_dist, (int) cache[v_inv]);
+    if(cache[v_inv] != -1) min_dist = min(min_dist, (int) cache[v_inv] + leaf_add_v);
 
     if constexpr(USE_LOCAL_BP)
-      min_dist = min(min_dist, (int) local_bp->QueryByBp(u_inv, v_inv));
+      min_dist = min(min_dist, (int) local_bp->QueryByBp(u_inv, v_inv) + leaf_add_v + leaf_add_u);
     
     if(local_min[v_inv]){
       
@@ -337,7 +404,7 @@ vector<IDType>* PSL::Query(IDType u) {
               continue;
             }
 
-            int dist = d + 1 + (int) cache[w];
+            int dist = d + 1 + (int) cache[w] + leaf_add_v;
             min_dist = min(min_dist, dist);
           }
         }
@@ -354,7 +421,7 @@ vector<IDType>* PSL::Query(IDType u) {
             continue;
           }
 
-          int dist = d + (int) cache[w];
+          int dist = d + (int) cache[w] + leaf_add_v;
           min_dist = min(min_dist, dist);
         }
       }
@@ -418,8 +485,13 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
       return nullptr;
 
 
-  if constexpr(ELIMINATE_LOCAL_MIN)
+  if constexpr(ELIM_MIN)
     if(local_min[u]){
+      return nullptr;
+    }
+
+  if constexpr(ELIM_LEAF)
+    if(leaf_root[u] != -1){
       return nullptr;
     }
 
@@ -441,7 +513,7 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
     IDType v = csr.col[i];
     auto &labels_v = labels[v];
 
-    if constexpr(ELIMINATE_LOCAL_MIN){
+    if constexpr(ELIM_MIN){
       if(local_min[v]){
         IDType v_nghs_start = csr.row_ptr[v];
         IDType v_nghs_end = csr.row_ptr[v+1];
@@ -669,9 +741,14 @@ void PSL::Index() {
       if(global_bp->used[u])
         should_init = false;
 
-    if constexpr(ELIMINATE_LOCAL_MIN)
+    if constexpr(ELIM_MIN)
       if(local_min[u])
         should_init = false;
+
+ 
+    if constexpr(ELIM_LEAF)
+      if(leaf_root[u] != -1)
+        should_init = false;       
 
     if(should_init){
       labels[u].vertices.push_back(u);
@@ -730,7 +807,7 @@ void PSL::Index() {
     for (IDType u = 0; u < csr.n; u++) {
       int tid = omp_get_thread_num();
 
-      if(ELIMINATE_LOCAL_MIN || should_run[u]){
+      if(ELIM_MIN || should_run[u]){
 
         if constexpr(SMART_DIST_CACHE_CUTOFF)
         {

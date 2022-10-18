@@ -381,5 +381,6 @@ void CSR::Compress(vector<bool>& in_cut){
   n = new_row_ptr.size() - 1;
   m = new_col.size();
 
+  Sort();
   
 }

@@ -73,14 +73,19 @@
 
 // Eliminates local minimum nodes 
 // (Similar to the optimization in PSL*)
-#ifndef ELIMINATE_LOCAL_MIN
-#define ELIMINATE_LOCAL_MIN false
+#ifndef ELIM_MIN
+#define ELIM_MIN false
 #endif
 
 // Compresses the graph by removing, identical nodes 
 // (Similar to the optimization in PSL+)
 #ifndef COMPRESS
 #define COMPRESS false
+#endif
+
+// Eliminates leaf nodes (degree 1 nodes)
+#ifndef ELIM_LEAF
+#define ELIM_LEAF false
 #endif
 
 // Maximum message size for MPI sections
