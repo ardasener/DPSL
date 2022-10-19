@@ -1075,6 +1075,10 @@ void DPSL::Index() {
       if(psl.local_min[u])
         should_init = false;
 
+    if constexpr(ELIM_LEAF)
+      if(psl.leaf_root[u] != -1)
+        should_init = false; 
+
     if(should_init){
       psl.labels[u].vertices.push_back(u);
       init_labels[u] = psl.Init(u);
@@ -1114,6 +1118,10 @@ void DPSL::Index() {
     if constexpr(ELIM_MIN)
       if(psl.local_min[u])
         should_init = false;
+
+    if constexpr(ELIM_LEAF)
+      if(psl.leaf_root[u] != -1)
+        should_init = false; 
 
     if(should_init){
       labels.dist_ptrs.push_back(0);
