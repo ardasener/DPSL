@@ -794,8 +794,7 @@ void DPSL::InitP0(string partition_str, string partition_params) {
   global_n = csr.n;
 
   if(GLOBAL_COMPRESS){
-    vector<bool> in_cut_temp(csr.n, false);
-    csr.Compress(in_cut_temp);
+    csr.Compress();
   }
 
   if(partition_str == "")

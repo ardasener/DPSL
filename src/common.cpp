@@ -320,7 +320,7 @@ void CSR::ComputeF1F2(vector<size_t>& f1, vector<size_t>& f2){
 }
 
 
-void CSR::Compress(vector<bool>& in_cut){
+void CSR::Compress(){
  
   vector<size_t> f1(n, 0);
   vector<size_t> f2(n, 0);
@@ -335,7 +335,7 @@ void CSR::Compress(vector<bool>& in_cut){
   IDType curr_row_ptr = 0;
   for(IDType u = 0; u < n; u++){
 
-    if(in_cut[u] || (f1[u] == u && f2[u] == u) || row_ptr[u] == row_ptr[u+1]){
+    if(f1[u] == u && f2[u] == u){
 
       IDType start = row_ptr[u];
       IDType end = row_ptr[u+1];
@@ -344,7 +344,7 @@ void CSR::Compress(vector<bool>& in_cut){
       for(IDType i = start; i < end; i++){
         IDType v = col[i];
 
-        if(in_cut[v] || (f1[v] == v && f2[v] == v)){
+        if(f1[v] == v && f2[v] == v){
           new_col.push_back(v);
           inserted++;
         }

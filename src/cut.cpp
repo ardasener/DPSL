@@ -11,11 +11,13 @@ VertexCut* VertexCut::Partition(CSR& csr, string partitioner, string params, str
 
   for(IDType i = 0; i < csr.n; i++) {
 
-    ofs << 1 << " ";
 
     IDType start = csr.row_ptr[i];
     IDType end = csr.row_ptr[i+1];
 
+    ofs << end - start << " ";
+    // ofs << 1 << " ";
+    
     for(IDType j = start; j<end; j++) {
       IDType v = csr.col[j];
       ofs << v+1 << " ";

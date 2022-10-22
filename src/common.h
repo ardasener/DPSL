@@ -169,7 +169,7 @@ struct CSR {
   void Reorder(vector<IDType>& order, vector<IDType>* cut = nullptr, vector<bool>* in_cut = nullptr);
   void Sort();
   void InitIds();
-  void Compress(vector<bool>& in_cut);
+  void Compress();
   void ComputeF1F2(vector<size_t>& f1, vector<size_t>& f2);
 };
 

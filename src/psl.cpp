@@ -61,6 +61,10 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
   cand_counts.resize(csr.n, 0);
 #endif
 
+  if constexpr(LOCAL_COMPRESS){
+    csr.Compress();
+  }
+
   if(ranks_ptr == nullptr){
     order = gen_order<IDType>(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
     ranks.resize(csr.n);
@@ -83,10 +87,6 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
 
   if(cut == nullptr){
     csr.Reorder(order, nullptr, nullptr);
-  }
-
-  if constexpr(LOCAL_COMPRESS){
-    csr.Compress(in_cut);
   }
 
   size_t leaf_count = 0;
