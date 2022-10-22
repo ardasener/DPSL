@@ -85,7 +85,7 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
     csr.Reorder(order, nullptr, nullptr);
   }
 
-  if constexpr(COMPRESS){
+  if constexpr(LOCAL_COMPRESS){
     csr.Compress(in_cut);
   }
 
@@ -153,7 +153,10 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
     }
   }
 
-  max_ranks.resize(csr.n, -1);
+  if constexpr(MAX_RANK_PRUNE){
+    max_ranks.resize(csr.n, -1);
+    prev_max_ranks.resize(csr.n, -1);
+  }
 }
 
 
@@ -359,7 +362,7 @@ vector<IDType>* PSL::Query(IDType u) {
 
     IDType v_inv = csr.inv_ids[v]; 
 
-    if constexpr(COMPRESS)
+    if constexpr(LOCAL_COMPRESS)
       if(v_inv == csr.inv_ids[u]){
         (*results)[v] = max(csr.type[u], csr.type[v]);
         continue;
@@ -644,9 +647,10 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
 
     new_labels->push_back(w);
 
-    if(w > max_ranks[u]){
-      max_ranks[u] = w;
-    }
+    if constexpr(MAX_RANK_PRUNE)
+      if(w > max_ranks[u]){
+        max_ranks[u] = w;
+      }
 
   }
 
@@ -668,7 +672,7 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
 
 vector<IDType>* PSL::Init(IDType u){
 
-  max_ranks[u] = u;
+  if constexpr(MAX_RANK_PRUNE) max_ranks[u] = u;
 
   vector<IDType>* init_labels = new vector<IDType>;
 
@@ -691,8 +695,9 @@ vector<IDType>* PSL::Init(IDType u){
 
       init_labels->push_back(v);
 
-      if(v > max_ranks[u])
-        max_ranks[u] = v;
+      if constexpr(MAX_RANK_PRUNE)
+        if(v > max_ranks[u])
+          max_ranks[u] = v;
     }
   }
 
@@ -772,11 +777,14 @@ void PSL::Index() {
       for(IDType i=ngh_start; i<ngh_end; i++){
         IDType v = csr.col[i];
 
-        if(v < max_ranks[u])
-          should_run[v] = true;
+        if(MAX_RANK_PRUNE && v < max_ranks[u]) should_run[v] = true;
       }
 
-      max_ranks[u] = -1;
+      if constexpr(MAX_RANK_PRUNE){
+        prev_max_ranks[u] = max_ranks[u];
+        max_ranks[u] = -1;
+      }
+
 
     } else {
       labels[u].dist_ptrs.push_back(0);
@@ -807,7 +815,10 @@ void PSL::Index() {
     for (IDType u = 0; u < csr.n; u++) {
       int tid = omp_get_thread_num();
 
-      if(ELIM_MIN || should_run[u]){
+      bool run = true;
+      if constexpr(MAX_RANK_PRUNE) run = should_run[u];
+
+      if(run){
 
         if constexpr(SMART_DIST_CACHE_CUTOFF)
         {
@@ -834,37 +845,48 @@ void PSL::Index() {
 
     
     long long level_count = 0;      
-    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : level_count)
+    // #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : level_count)
     for (IDType u = 0; u < csr.n; u++) {
       
       auto& labels_u = labels[u];
 
       if(new_labels[u] == nullptr){
         labels_u.dist_ptrs.push_back(labels_u.vertices.size());
-        continue;
+      } else {
+        labels_u.vertices.insert(labels_u.vertices.end(), new_labels[u]->begin(), new_labels[u]->end());
+        labels_u.dist_ptrs.push_back(labels_u.vertices.size());
+        level_count += (labels_u.vertices.size() - labels_u.dist_ptrs[d]);
+        delete new_labels[u];
+        new_labels[u] = nullptr;
       }
 
-      /* sort(new_labels[u]->begin(), new_labels[u]->end(), [this](int u, int v){ */
-      /*   return this->ranks[u] > this->ranks[v]; */
-      /* }); */
-
-      labels_u.vertices.insert(labels_u.vertices.end(), new_labels[u]->begin(), new_labels[u]->end());
-      labels_u.dist_ptrs.push_back(labels_u.vertices.size());
-      level_count += (labels_u.vertices.size() - labels_u.dist_ptrs[d]);
-      delete new_labels[u];
-      new_labels[u] = nullptr;
+      if constexpr(!MAX_RANK_PRUNE){
+        continue;
+      }
 
       IDType start = csr.row_ptr[u]; 
       IDType end = csr.row_ptr[u+1];
 
-      for(IDType i=start; i<end; i++){
-        IDType v = csr.col[i];
-        if(v < max_ranks[u]){
-          should_run[v] = true;
-        }
-      } 
 
+      if constexpr(ELIM_MIN)
+        if(local_min[u]){
+          for(IDType i=start; i<end; i++){
+            IDType v = csr.col[i];
+            max_ranks[u] = max(max_ranks[u], prev_max_ranks[v]);
+          }
+        }
+
+      if(max_ranks[u] != -1)
+        for(IDType i=start; i<end; i++){
+          IDType v = csr.col[i];
+          if(v < max_ranks[u]){
+            should_run[v] = true;
+          }
+        }
+
+      if constexpr(ELIM_MIN) prev_max_ranks[u] = max_ranks[u];
       max_ranks[u] = -1;
+
     }
 
 #ifdef DEBUG

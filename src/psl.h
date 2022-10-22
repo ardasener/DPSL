@@ -58,6 +58,7 @@ public:
   vector<LabelSet> labels;
   vector<Stats> stats_vec;
   vector<IDType> max_ranks;
+  vector<IDType> prev_max_ranks;
   vector<bool> in_cut;
   vector<bool> local_min;
   vector<IDType> leaf_root;

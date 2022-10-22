@@ -79,13 +79,27 @@
 
 // Compresses the graph by removing, identical nodes 
 // (Similar to the optimization in PSL+)
-#ifndef COMPRESS
-#define COMPRESS false
+// On DPSL, this causes the compression to happen on each node separetely
+#ifndef LOCAL_COMPRESS
+#define LOCAL_COMPRESS false
+#endif
+
+// Compresses the graph by removing, identical nodes 
+// (Similar to the optimization in PSL+)
+// On DPSL, this causes the compression to happen on each node separetely
+#ifndef GLOBAL_COMPRESS
+#define GLOBAL_COMPRESS false
 #endif
 
 // Eliminates leaf nodes (degree 1 nodes)
 #ifndef ELIM_LEAF
 #define ELIM_LEAF false
+#endif
+
+// Performs an early prune operation by keeping track of the maximum ranks
+// Vertices which would never pull any labels based on their rank will not attempt pull at all
+#ifndef MAX_RANK_PRUNE
+#define MAX_RANK_PRUNE true
 #endif
 
 // Maximum message size for MPI sections

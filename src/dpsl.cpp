@@ -134,7 +134,7 @@ void DPSL::Query(IDType u, string filename) {
 
     IDType v_inv = part_csr->inv_ids[v];
 
-    if constexpr(COMPRESS)
+    if constexpr(GLOBAL_COMPRESS || LOCAL_COMPRESS)
       if(partition[u] == pid && v_inv == part_csr->inv_ids[u]){
         // if(v == 2524) cout << v << " " << v_inv << " " << part_csr->type[v] << " | " << u << " " << u_inv << " " <<  (int) part_csr->type[u] << endl;
         local_dist[v] = max(part_csr->type[u], part_csr->type[v]);
@@ -793,6 +793,11 @@ void DPSL::InitP0(string partition_str, string partition_params) {
   CSR &csr = *whole_csr;
   global_n = csr.n;
 
+  if(GLOBAL_COMPRESS){
+    vector<bool> in_cut_temp(csr.n, false);
+    csr.Compress(in_cut_temp);
+  }
+
   if(partition_str == "")
     throw "Partition file or partitioner is required";
   else if(partition_str.find(".part") != string::npos)
@@ -1110,10 +1115,9 @@ void DPSL::Index() {
     auto &labels = psl.labels[u];
 
     bool should_init = true; 
-    if constexpr(USE_GLOBAL_BP){
+    if constexpr(USE_GLOBAL_BP)
       if(global_bp->used[u])
         should_init = false;
-    }
 
     if constexpr(ELIM_MIN)
       if(psl.local_min[u])
@@ -1138,6 +1142,7 @@ void DPSL::Index() {
           should_run[v] = true;
       }
 
+      psl.prev_max_ranks[u] = psl.max_ranks[u];
       psl.max_ranks[u] = -1;
 
       delete init_labels[u];
@@ -1180,7 +1185,7 @@ void DPSL::Index() {
       IDType u = nodes_to_process[i];
       /* cout << "Pulling for u=" << u << endl; */
 
-      if (ELIM_MIN || should_run[u]) {
+      if (should_run[u]) {
 
         if constexpr(SMART_DIST_CACHE_CUTOFF)
         {
@@ -1237,11 +1242,19 @@ void DPSL::Index() {
         delete new_labels[u];
         new_labels[u] = nullptr;
       }
+
+      IDType start_neighbors = csr.row_ptr[u];
+      IDType end_neighbors = csr.row_ptr[u + 1];
+
+      if constexpr(ELIM_MIN)
+        if(psl.local_min[u]){
+          for(IDType i=start_neighbors; i<end_neighbors; i++){
+            IDType v = csr.col[i];
+            psl.max_ranks[u] = max(psl.max_ranks[u], psl.prev_max_ranks[v]);
+          }
+        }
      
-      IDType labels_u_dist_size = labels_u.dist_ptrs.size(); 
-      if(labels_u.dist_ptrs[labels_u_dist_size-2] != labels_u.dist_ptrs[labels_u_dist_size-1]){
-        IDType start_neighbors = csr.row_ptr[u];
-        IDType end_neighbors = csr.row_ptr[u + 1];
+      if(psl.max_ranks[u] != -1){
         for (IDType i = start_neighbors; i < end_neighbors; i++) {
           IDType v = csr.col[i];
           if (v < psl.max_ranks[u]) {
@@ -1250,6 +1263,7 @@ void DPSL::Index() {
         }
       }
 
+      if constexpr(ELIM_MIN) psl.prev_max_ranks[u] = psl.max_ranks[u];
       psl.max_ranks[u] = -1;
     }
 
