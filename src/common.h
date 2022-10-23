@@ -152,19 +152,27 @@ struct CSR {
   IDType n;
   IDType m;
 
+  // Should be used after reorder
   // Given an index in the CSR, gives the ID number of the vertex at that index
   IDType *ids = nullptr; 
+  
+  // Should be used after reorder
   // Given the ID number of a vertex, gives the index of that vertex in the CSR
   IDType *inv_ids = nullptr; 
+  
   // Stores the type of the vertex (indexed with real_ids)
   // 0 indicates the vertex is still in the graph
   // 1 indicates the vertex is compressed out, but has an edge to its root (ie, can be reached with 1 hop)
   // 2 indicates the vertex is compressed out, and has no edge to its root (ie, requires 2 hops to reach)
   char* type = nullptr;
 
+  // Should be used after compress
+  // Given the ID number of a vertex, gives its new ID post-compression
+  IDType *comp_ids = nullptr;
+
   ~CSR();
   CSR(CSR& csr);
-  CSR(IDType * row_ptr, IDType *col, IDType* ids, IDType* inv_ids, char* type, IDType n, IDType m);
+  CSR(IDType * row_ptr, IDType *col, IDType* ids, IDType* inv_ids, char* type, IDType* comp_ids, IDType n, IDType m);
   CSR(string filename);
   void Reorder(vector<IDType>& order, vector<IDType>* cut = nullptr, vector<bool>* in_cut = nullptr);
   void Sort();

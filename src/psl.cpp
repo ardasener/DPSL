@@ -61,6 +61,8 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
   cand_counts.resize(csr.n, 0);
 #endif
 
+  unordered_csr = new CSR(csr);
+
   if constexpr(LOCAL_COMPRESS){
     csr.Compress();
   }
@@ -83,7 +85,6 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
     }
   }
 
-  unordered_csr = new CSR(csr);
 
   if(cut == nullptr){
     csr.Reorder(order, nullptr, nullptr);
@@ -99,7 +100,7 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
         IDType root = csr.col[csr.row_ptr[u]];
 
         if(csr.row_ptr[root] + 1 < csr.row_ptr[root+1] && csr.type[u] == 0 && in_cut[u] == false){
-          leaf_root[u] = csr.inv_ids[csr.ids[root]];
+          leaf_root[u] = root;
           leaf_count++;
         }
       } 
@@ -126,7 +127,7 @@ PSL::PSL(CSR& csr_, string order_method, vector<IDType>* cut, BP* global_bp, vec
         continue;
       }
 
-      for(IDType i=start; i<end; i++){
+      for(IDType i=end-1; i >= start; i--){
         IDType v = csr.col[i];
 
         if(u >= v && leaf_root[v] == -1){
@@ -299,8 +300,14 @@ void PSL::Query(IDType u, string filename){
 
 vector<IDType>* PSL::Query(IDType u) {
 
-  IDType u_inv = csr.inv_ids[u];
+  IDType u_comp = u;
+  
+  if constexpr(LOCAL_COMPRESS){
+    u_comp = csr.comp_ids[u];
+  }
 
+  IDType u_inv = csr.inv_ids[u_comp];
+  
   int leaf_add_u = 0;
   if constexpr(ELIM_LEAF)
     if(leaf_root[u_inv] != -1){
@@ -311,7 +318,6 @@ vector<IDType>* PSL::Query(IDType u) {
   vector<IDType>* results = new vector<IDType>(csr.n, MAX_DIST);
 
   auto &labels_u = labels[u_inv];
-
 
   vector<char> cache(csr.n, -1);
 
@@ -360,10 +366,18 @@ vector<IDType>* PSL::Query(IDType u) {
       continue;
     }
 
-    IDType v_inv = csr.inv_ids[v]; 
+    IDType v_comp = csr.comp_ids[v];
+
+    if constexpr(LOCAL_COMPRESS){
+      v_comp = csr.comp_ids[v];
+    }
+
+    IDType v_inv = csr.inv_ids[v_comp]; 
+ 
+    // if(v == 0) cout << u << " " << u_comp << " " << u_inv << " " << (int) csr.type[u] << " | " << v << " " << v_comp << " " << v_inv << " " << (int) csr.type[v] << endl;
 
     if constexpr(LOCAL_COMPRESS)
-      if(v_inv == csr.inv_ids[u]){
+      if(v_comp == u_comp){
         (*results)[v] = max(csr.type[u], csr.type[v]);
         continue;
       }
@@ -478,32 +492,8 @@ bool PSL::Prune(IDType u, IDType v, int d, char* cache) {
 template<bool use_cache = true>
 vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) {
 
-  if constexpr(USE_LOCAL_BP)
-    if(local_bp->used[u])
-      return nullptr;
-    
-
-  if constexpr(USE_GLOBAL_BP)
-    if(global_bp->used[u])
-      return nullptr;
-
-
-  if constexpr(ELIM_MIN)
-    if(local_min[u]){
-      return nullptr;
-    }
-
-  if constexpr(ELIM_LEAF)
-    if(leaf_root[u] != -1){
-      return nullptr;
-    }
-
   IDType start = csr.row_ptr[u];
   IDType end = csr.row_ptr[u + 1];
-  
-  if(end == start){
-    return nullptr;
-  }
 
   auto &labels_u = labels[u];
 
@@ -512,7 +502,6 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
 
   for (IDType i = start; i < end; i++) {
 
-    
     IDType v = csr.col[i];
     auto &labels_v = labels[v];
 
@@ -532,7 +521,7 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
 
             if (u >= w) {
               CountPrune(PRUNE_RANK);
-              continue;
+              break;
             }
 
             if(used_vec[w]){
@@ -571,7 +560,7 @@ vector<IDType>* PSL::Pull(IDType u, int d, char* cache, vector<bool>& used_vec) 
 
       if (u >= w) {
 	      CountPrune(PRUNE_RANK);
-        continue;
+        break;
       }
 
       if(used_vec[w]){
@@ -682,24 +671,27 @@ vector<IDType>* PSL::Init(IDType u){
   for (IDType j = start; j < end; j++) {
     IDType v = csr.col[j];
 
-    if (v > u) {
-      if constexpr(USE_LOCAL_BP)
-        if(local_bp->used[v]){
-          continue;
-        }
-
-      if constexpr(USE_GLOBAL_BP)
-        if(global_bp->used[v]){
-          continue;
-        }
-
-      init_labels->push_back(v);
-
-      if constexpr(MAX_RANK_PRUNE)
-        if(v > max_ranks[u])
-          max_ranks[u] = v;
+    if (u >= v) {
+      break;
     }
-  }
+
+    if constexpr(USE_LOCAL_BP)
+      if(local_bp->used[v]){
+        continue;
+      }
+
+    if constexpr(USE_GLOBAL_BP)
+      if(global_bp->used[v]){
+        continue;
+      }
+
+    init_labels->push_back(v);
+
+    if constexpr(MAX_RANK_PRUNE)
+      if(v > max_ranks[u])
+        max_ranks[u] = v;
+
+  } 
 
   return init_labels;
 
@@ -800,6 +792,31 @@ void PSL::Index() {
   // long long cacheless_pull = 0;
   // long long cacheful_pull = 0;
 
+  IDType* nodes_to_process = new IDType[csr.n];
+  IDType num_nodes = 0;
+  for(IDType u=0; u<csr.n; u++){
+    if constexpr(USE_LOCAL_BP)
+      if(local_bp->used[u])
+        continue;
+      
+    if constexpr(USE_GLOBAL_BP)
+      if(global_bp->used[u])
+        continue;
+
+    if constexpr(ELIM_MIN)
+      if(local_min[u])
+        continue;
+
+    if constexpr(ELIM_LEAF)
+      if(leaf_root[u] != -1)
+        continue;
+
+    if(csr.row_ptr[u] != csr.row_ptr[u+1]){
+      nodes_to_process[num_nodes++] = u;
+    }
+  }
+
+
   vector<vector<IDType>*> new_labels(csr.n, nullptr);
   bool updated = true;
 
@@ -812,7 +829,10 @@ void PSL::Index() {
 
     // TODO: Reverse this loop
     #pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(||:updated) schedule(SCHEDULE)
-    for (IDType u = 0; u < csr.n; u++) {
+    for (IDType i = 0; i < num_nodes; i++) {
+
+      IDType u = nodes_to_process[i];
+
       int tid = omp_get_thread_num();
 
       bool run = true;
@@ -845,7 +865,7 @@ void PSL::Index() {
 
     
     long long level_count = 0;      
-    // #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : level_count)
+    #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : level_count)
     for (IDType u = 0; u < csr.n; u++) {
       
       auto& labels_u = labels[u];
@@ -853,6 +873,7 @@ void PSL::Index() {
       if(new_labels[u] == nullptr){
         labels_u.dist_ptrs.push_back(labels_u.vertices.size());
       } else {
+        sort(new_labels[u]->begin(), new_labels[u]->end(), greater<IDType>());
         labels_u.vertices.insert(labels_u.vertices.end(), new_labels[u]->begin(), new_labels[u]->end());
         labels_u.dist_ptrs.push_back(labels_u.vertices.size());
         level_count += (labels_u.vertices.size() - labels_u.dist_ptrs[d]);

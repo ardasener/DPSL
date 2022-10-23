@@ -46,7 +46,13 @@ void DPSL::Query(IDType u, string filename) {
 
   double start_time, end_time;
 
-  IDType u_inv = part_csr->inv_ids[u];
+  IDType u_comp = u;
+
+  if constexpr(GLOBAL_COMPRESS || LOCAL_COMPRESS){
+    u_comp = part_csr->comp_ids[u];
+  }
+
+  IDType u_inv = part_csr->inv_ids[u_comp];
 
   int leaf_add_u = 0;
   if constexpr(ELIM_LEAF)
@@ -60,7 +66,9 @@ void DPSL::Query(IDType u, string filename) {
 
   char* cache;
 
-  if (partition[u] == pid) {
+  if (partition[u_comp] == pid) {
+    // cout << pid << " " << u << " " << u_comp << " " << u_inv << " " <<  (int) part_csr->type[u] << endl;
+
     cache = new char[part_csr->n];
     fill(cache, cache + part_csr->n, -1);
 
@@ -108,10 +116,10 @@ void DPSL::Query(IDType u, string filename) {
       BroadcastData(&leaf_add_u, 1, MPI_INT32_T);
   } else {
     Log("Recieving u's labels");
-    RecvBroadcast(cache, partition[u], MPI_CHAR);
+    RecvBroadcast(cache, partition[u_comp], MPI_CHAR);
     if constexpr(ELIM_LEAF){
       int* temp;
-      RecvBroadcast(temp, partition[u], MPI_INT32_T);
+      RecvBroadcast(temp, partition[u_comp], MPI_INT32_T);
       leaf_add_u = *temp;
       delete[] temp;
     }
@@ -125,18 +133,26 @@ void DPSL::Query(IDType u, string filename) {
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
   for (IDType v = 0; v < part_csr->n; v++) {
 
-    if(partition[v] != pid) continue;
+    IDType v_comp = v;
+  
+    if constexpr(GLOBAL_COMPRESS || LOCAL_COMPRESS){
+      v_comp = part_csr->comp_ids[v];
+    }
+
+    if(partition[v_comp] != pid) continue;
 
     if(u == v){
       local_dist[v] = 0;
       continue;
     }
 
-    IDType v_inv = part_csr->inv_ids[v];
+    IDType v_inv = part_csr->inv_ids[v_comp];
+
+    // if(v == 119) cout << partition[v] <<  " " << v << " "  << v_comp << " " <<  v_inv << " " << (int) part_csr->type[v] << endl;
+    // if(v == 36) cout << partition[v] <<  " " << v << " "  << v_comp << " " <<  v_inv << " " << (int) part_csr->type[v] << endl;
 
     if constexpr(GLOBAL_COMPRESS || LOCAL_COMPRESS)
-      if(partition[u] == pid && v_inv == part_csr->inv_ids[u]){
-        // if(v == 2524) cout << v << " " << v_inv << " " << part_csr->type[v] << " | " << u << " " << u_inv << " " <<  (int) part_csr->type[u] << endl;
+      if(v_comp == u_comp){
         local_dist[v] = max(part_csr->type[u], part_csr->type[v]);
         continue;
       }
@@ -145,7 +161,7 @@ void DPSL::Query(IDType u, string filename) {
     if constexpr(ELIM_LEAF)
       if(psl_ptr->leaf_root[v_inv] != -1){
         
-        if(v == 2524) cout << v << " " << v_inv << " " << psl_ptr->leaf_root[v_inv] << " | " << u << " " << u_inv << " " << endl;
+        // if(v == 2524) cout << v << " " << v_inv << " " << psl_ptr->leaf_root[v_inv] << " | " << u << " " << u_inv << " " << endl;
 
         if(psl_ptr->leaf_root[v_inv] == u_inv){
           local_dist[v] = 1 + leaf_add_u;
@@ -159,12 +175,12 @@ void DPSL::Query(IDType u, string filename) {
     int min_dist = MAX_DIST;
 
     if(cache[v_inv] != -1){
-      if(v == 2524) cout << v << " " << v_inv << " " << (int) cache[v_inv] << endl;
+      // if(v == 2524) cout << v << " " << v_inv << " " << (int) cache[v_inv] << endl;
       min_dist = min((int) cache[v_inv] + leaf_add_v, min_dist);
     }
 
     if constexpr (USE_GLOBAL_BP) {
-      int global_bp_dist = global_bp->QueryByBp(part_csr->inv_ids[u], part_csr->inv_ids[v]);
+      int global_bp_dist = global_bp->QueryByBp(part_csr->inv_ids[u_comp], part_csr->inv_ids[v_comp]);
       min_dist = min(min_dist, global_bp_dist);
     }
 
@@ -257,13 +273,13 @@ void DPSL::Query(IDType u, string filename) {
 
     end_time = omp_get_wtime();
 
-    cout << "Avg. Query Time: " << (end_time-start_time) / whole_csr->n << " seconds" << endl;
+    // cout << "Avg. Query Time: " << (end_time-start_time) / whole_csr->n << " seconds" << endl;
 
     start_time = omp_get_wtime();
     vector<int> *bfs_results = BFSQuery(*unordered_csr, u);
     end_time = omp_get_wtime();
 
-    cout << "Avg. BFS Time: " << (end_time-start_time) / whole_csr->n << " seconds" << endl;;
+    // cout << "Avg. BFS Time: " << (end_time-start_time) / whole_csr->n << " seconds" << endl;;
 
     bool all_correct = true;
     
@@ -587,6 +603,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *>& new_labels, PSL &psl) {
         updated = true;
         max_rank = *max_element(recv_merge_labels + start, recv_merge_labels + end);
         auto& labels_u = psl.labels[u].vertices;
+        sort(recv_merge_labels + start, recv_merge_labels + end, greater<IDType>());
         labels_u.insert(labels_u.end(), recv_merge_labels + start, recv_merge_labels + end);
       }
 
@@ -793,6 +810,8 @@ void DPSL::InitP0(string partition_str, string partition_params) {
   CSR &csr = *whole_csr;
   global_n = csr.n;
 
+  unordered_csr = new CSR(csr);
+  
   if(GLOBAL_COMPRESS){
     csr.Compress();
   }
@@ -823,7 +842,6 @@ void DPSL::InitP0(string partition_str, string partition_params) {
 
   auto &csrs = vc.csrs;
 
-  unordered_csr = new CSR(csr);
   csr.Reorder(order, &cut, &in_cut);
   
   for(int p=0; p<np; p++)
@@ -854,7 +872,7 @@ void DPSL::InitP0(string partition_str, string partition_params) {
 
   partition = new IDType[csr.n]; 
   for(int i=0; i<csr.n; i++){
-    IDType new_id = csr.inv_ids[i];
+    // IDType new_id = csr.inv_ids[i];
     partition[i] = vc.partition[i];
   }
 
@@ -876,6 +894,7 @@ void DPSL::InitP0(string partition_str, string partition_params) {
     SendData(csrs[i]->ids, csrs[i]->n, MPI_CSR_IDS, i);
     SendData(csrs[i]->inv_ids, csrs[i]->n, MPI_CSR_INV_IDS, i);
     SendData(csrs[i]->type, csrs[i]->n, MPI_CSR_TYPE, i, MPI_CHAR);
+    SendData(csrs[i]->comp_ids, csrs[i]->n, MPI_CSR_COMP_IDS, i);
     SendData(partition, csr.n, MPI_PARTITION, i);
     SendData(cut.data(), cut.size(), MPI_CUT, i);
     SendData(cut_merge_order.data(), cut_merge_order.size(), MPI_CUT_MERGE_ORDER, i);
@@ -944,6 +963,7 @@ void DPSL::Init() {
   IDType* ids;
   IDType* inv_ids;
   char* type;
+  IDType* comp_ids;
   IDType *cut_ptr;
   IDType *cut_merge_order_ptr;
   IDType *ranks_ptr;
@@ -962,6 +982,7 @@ void DPSL::Init() {
   IDType size_ids = RecvData(ids, MPI_CSR_IDS, 0);
   IDType size_inv_ids = RecvData(inv_ids, MPI_CSR_INV_IDS, 0);
   IDType size_type = RecvData(type, MPI_CSR_TYPE, 0, MPI_CHAR);
+  IDType size_comp_ids = RecvData(comp_ids, MPI_CSR_COMP_IDS, 0);
   IDType size_partition = RecvData(partition, MPI_PARTITION, 0);
   IDType size_cut = RecvData(cut_ptr, MPI_CUT, 0);
   IDType size_cut_merge_order = RecvData(cut_merge_order_ptr, MPI_CUT_MERGE_ORDER, 0);
@@ -1028,7 +1049,7 @@ void DPSL::Init() {
   }
 
 
-  part_csr = new CSR(row_ptr, col, ids, inv_ids, type, size_row_ptr - 1, size_col);
+  part_csr = new CSR(row_ptr, col, ids, inv_ids, type, comp_ids, size_row_ptr - 1, size_col);
   Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
 }
 
@@ -1159,6 +1180,22 @@ void DPSL::Index() {
   IDType* nodes_to_process = new IDType[csr.n];
   IDType num_nodes = 0;
   for(IDType u=0; u<csr.n; u++){
+    if constexpr(USE_LOCAL_BP)
+      if(psl_ptr->local_bp->used[u])
+        continue;
+      
+    if constexpr(USE_GLOBAL_BP)
+      if(psl_ptr->global_bp->used[u])
+        continue;
+
+    if constexpr(ELIM_MIN)
+      if(psl_ptr->local_min[u])
+        continue;
+
+    if constexpr(ELIM_LEAF)
+      if(psl_ptr->leaf_root[u] != -1)
+        continue;
+
     if(csr.row_ptr[u] != csr.row_ptr[u+1]){
       nodes_to_process[num_nodes++] = u;
     }
@@ -1214,6 +1251,7 @@ void DPSL::Index() {
       IDType u = nodes_to_process[i];
       if (!in_cut[u] && new_labels[u] != nullptr && !new_labels[u]->empty()) {
         auto &labels = psl.labels[u].vertices;
+        sort(new_labels[u]->begin(), new_labels[u]->end(), greater<IDType>());
         labels.insert(labels.end(), new_labels[u]->begin(),
                       new_labels[u]->end());
       }

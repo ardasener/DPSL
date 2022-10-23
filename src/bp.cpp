@@ -158,17 +158,6 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
   vector<IDType> roots;
   roots.reserve(N_ROOTS);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
-  for(IDType i=0; i<csr.n; i++){
-    IDType start = csr.row_ptr[i];
-    IDType end = csr.row_ptr[i+1];
-
-    if(end-start > 64)
-      sort(csr.col+start, csr.col+end, [](IDType u, IDType v){
-	      return u > v;
-	    });
-  }
-
   priority_queue<pair<int64_t, IDType>, vector<pair<int64_t, IDType>>, less<pair<int64_t, IDType>>> candidates;
   if constexpr(BP_RERANK){
     vector<int64_t> ngh_ranks(csr.n, 0);
@@ -263,7 +252,7 @@ BP::BP(CSR& csr, vector<IDType>& ranks, vector<IDType>& order, vector<IDType>* c
 
   cout << "BP Root Count: " << roots.size() << endl;
 
-//#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for(int i=0; i<number_of_roots_used; i++){
     vector<IDType>& Sr = Srs[i];
     IDType root = roots[i];

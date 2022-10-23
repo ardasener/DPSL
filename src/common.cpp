@@ -61,6 +61,12 @@ CSR::~CSR(){
 
     if(ids != nullptr)
       delete[] ids;
+
+    if(comp_ids != nullptr)
+      delete[] comp_ids;
+    
+    if(type != nullptr)
+      delete[] type;
 }
 
   CSR::CSR(CSR& csr){
@@ -68,6 +74,7 @@ CSR::~CSR(){
     col = new IDType[csr.m];
     ids = new IDType[csr.n];
     inv_ids = new IDType[csr.n];
+    comp_ids = new IDType[csr.n];
     type = new char[csr.n];
 
 #pragma omp parallel for num_threads(NUM_THREADS)
@@ -84,6 +91,7 @@ CSR::~CSR(){
     for(IDType i=0; i<csr.n; i++){
       ids[i] = csr.ids[i];
       inv_ids[i] = csr.inv_ids[i];
+      comp_ids[i] = csr.comp_ids[i];
       type[i] = csr.type[i];
     }
 
@@ -95,8 +103,8 @@ CSR::~CSR(){
 
   }
 
-  CSR::CSR(IDType * row_ptr, IDType *col, IDType* ids, IDType* inv_ids, char* type, IDType n, IDType m): 
-    row_ptr(row_ptr), col(col), ids(ids), inv_ids(inv_ids), type(type), n(n), m(m) {
+  CSR::CSR(IDType * row_ptr, IDType *col, IDType* ids, IDType* inv_ids, char* type, IDType* comp_ids, IDType n, IDType m): 
+    row_ptr(row_ptr), col(col), ids(ids), inv_ids(inv_ids), type(type), comp_ids(comp_ids), n(n), m(m) {
     }
 
   CSR::CSR(string filename) {
@@ -166,8 +174,8 @@ CSR::~CSR(){
     free(coo_row);
     free(coo_col);
 
-    Sort();
     InitIds();
+    Sort();
   }
 
   void CSR::Reorder(vector<IDType>& order, vector<IDType>* cut, vector<bool>* in_cut){
@@ -247,7 +255,7 @@ void CSR::Sort(){
     for(IDType u = 0; u < n; u++){
       IDType start = row_ptr[u];
       IDType end = row_ptr[u+1];
-      sort(col + start, col + end);
+      sort(col + start, col + end, greater<IDType>());
     }
 }
 
@@ -256,12 +264,14 @@ void CSR::InitIds(){
   ids = new IDType[n];
   inv_ids = new IDType[n];
   type = new char[n];
+  comp_ids = new IDType[n];
 
 #pragma omp parallel for default(shared) schedule(SCHEDULE) num_threads(NUM_THREADS)
   for(IDType i=0; i<n; i++){
     ids[i] = i;
     inv_ids[i] = i; 
     type[i] = 0;
+    comp_ids[i] = i;
   }
 }
 
@@ -321,7 +331,7 @@ void CSR::ComputeF1F2(vector<size_t>& f1, vector<size_t>& f2){
 
 
 void CSR::Compress(){
- 
+
   vector<size_t> f1(n, 0);
   vector<size_t> f2(n, 0);
 
@@ -337,6 +347,9 @@ void CSR::Compress(){
 
     if(f1[u] == u && f2[u] == u){
 
+      comp_ids[u] = u;
+      type[u] = 0;
+      
       IDType start = row_ptr[u];
       IDType end = row_ptr[u+1];
 
@@ -355,15 +368,8 @@ void CSR::Compress(){
 
     } else {
       new_row_ptr.push_back(curr_row_ptr);
-      IDType curr_id = u;
-      IDType real_id = ids[u];
-
-      IDType new_curr_id = (f1[u] != u) ? f1[u] : f2[u];
-      IDType new_real_id = ids[new_curr_id];
-
-      ids[curr_id] = new_real_id;
-      inv_ids[real_id] = new_curr_id;
-      type[real_id] = (f1[u] != u) ? 2 : 1;
+      comp_ids[u] = (f1[u] != u) ? f1[u] : f2[u];
+      type[u] = (f1[u] != u) ? 2 : 1;
     }
 
   }

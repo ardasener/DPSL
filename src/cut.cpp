@@ -176,16 +176,18 @@ VertexCut* VertexCut::Read(CSR& csr, string part_file, string order_method, int 
 
     IDType* ids = new IDType[n];
     IDType* inv_ids = new IDType[n];
+    IDType* comp_ids = new IDType[n];
     char* type = new char[n];
 
 #pragma omp parallel for num_threads(NUM_THREADS) default(shared)
     for(IDType j=0; j<n; j++){
       ids[j] = csr.ids[j];
       inv_ids[j] = csr.inv_ids[j];
+      comp_ids[j] = csr.comp_ids[j];
       type[j] = csr.type[j];
     }
 
-    vc->csrs[i] = new CSR(row_ptr, col, ids, inv_ids, type, n, m);
+    vc->csrs[i] = new CSR(row_ptr, col, ids, inv_ids, type, comp_ids, n, m);
     cout << "M for P" << i << ": " << m << endl;
   }
 
