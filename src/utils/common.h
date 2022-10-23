@@ -18,7 +18,7 @@
 
 // Method used for ordering (ranking) of the vertices
 #ifndef ORDER_METHOD
-#define ORDER_METHOD "degree"
+#define ORDER_METHOD "degree_eigen_cent"
 #endif
 
 // Whether the ranks of vertices on the cut should be artifically increased

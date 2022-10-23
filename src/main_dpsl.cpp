@@ -1,10 +1,10 @@
+#include "dpsl/dpsl.h"
+#include "mpi.h"
 #include "utils/common.h"
 #include <cstddef>
 #include <iostream>
 #include <string>
 #include <vector>
-#include "dpsl/dpsl.h"
-#include "mpi.h"
 
 int main(int argc, char *argv[]) {
   if (argc < 3) {
@@ -35,18 +35,16 @@ int main(int argc, char *argv[]) {
     cout << "Number of Processes:" << np << endl;
     DPSL dpsl(pid, &csr, np, partition, partition_params);
     dpsl.Index();
-    dpsl.WriteLabelCounts("output_dpsl_label_counts.txt");
+    // dpsl.WriteLabelCounts("output_dpsl_label_counts.txt");
     dpsl.QueryTest(5);
-    dpsl.Query(12,
-               "output_dpsl_query.txt"); // Writes to file only in Debug mode
+    // dpsl.Query(12, "output_dpsl_query.txt");
 
   } else {
     DPSL dpsl(pid, nullptr, np, "", "");
     dpsl.Index();
-    dpsl.WriteLabelCounts(
-        ""); // Only P0 writes to the file, so filename is empty here
+    // dpsl.WriteLabelCounts("");
     dpsl.QueryTest(5);
-    dpsl.Query(12, ""); // Again only P0 writes to the file
+    // dpsl.Query(12, "");
   }
   MPI_Finalize();
 }

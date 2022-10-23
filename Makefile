@@ -1,18 +1,32 @@
 # Options
-MODE=Release # Can be Debug or Release, Release mode enables optimizations and turns off some debug code
-NUM_THREADS=16 # Number of threads used by OpenMP sections
-SCHEDULE=dynamic,256 # Scheduling strategy for OpenMP sections
-USE_BP=true # Whether Bit-Parallel labels should be constructed & used
-N_ROOTS=15 # Number of roots used for Bit-Parallel labels
-USE_64_BIT=false # [EXPERIMENTAL] Enables 64-bit support
-ORDER_METHOD=degree_eigen_cent # Metric used to rank/order the vertices (see, src/external/order/order.hpp for the supported methods)
-SMART_DIST_CACHE_CUTOFF=0 # [EXPERIMENTAL] Vertices with less labels than this will be processed without using the distance cache
-DPSL_BIN_FILE=dpsl # Sets the output binary name for DPSL
-PSL_BIN_FILE=psl # Sets the output binary name for PSL
-ELIM_MIN=false # Toggles elimination of local minimum nodes (optimization from PSL*)
-ELIM_LEAF=false # Toggles elimination of leaf (degree 1) nodes
-COMPRESS=false # Toggles the compression of the graph by removing identical nodes (optimization from PSL+)
-COMP_LVL=-1 # Override for the compression and elimination options (0 -> no compression, 1 -> COMPRESS, 2 -> COMPRESS + ELIM_MIN, 3 -> COMPRESS + ELIM_MIN + ELIM_LEAF)
+# Can be Debug or Release, Release mode enables optimizations and turns off some debug code
+MODE=Release
+# Number of threads used by OpenMP sections
+NUM_THREADS=16
+# Scheduling strategy for OpenMP sections
+SCHEDULE=dynamic,256
+# Whether Bit-Parallel labels should be constructed & used
+USE_BP=true
+# Number of roots used for Bit-Parallel labels
+N_ROOTS=15
+# [EXPERIMENTAL] Enables 64-bit support
+USE_64_BIT=false
+# Metric used to rank/order the vertices (see, src/external/order/order.hpp for the supported methods)
+ORDER_METHOD=degree_eigen_cent
+# [EXPERIMENTAL] Vertices with less labels than this will be processed without using the distance cache
+SMART_DIST_CACHE_CUTOFF=0
+# Sets the output binary name for DPSL
+DPSL_BIN_FILE=dpsl
+# Sets the output binary name for PSL
+PSL_BIN_FILE=psl
+# Toggles elimination of local minimum nodes (optimization from PSL*)
+ELIM_MIN=false
+# Toggles elimination of leaf (degree 1) nodes
+ELIM_LEAF=false
+# Toggles the compression of the graph by removing identical nodes (optimization from PSL+)
+COMPRESS=false
+# Override for the compression and elimination options (0 -> no compression, 1 -> COMPRESS, 2 -> COMPRESS + ELIM_MIN, 3 -> COMPRESS + ELIM_MIN + ELIM_LEAF)
+COMP_LVL=-1
 
 # Compression level overrides the COMPRESS, ELIM_MIN, ELIM_LEAF options
 ifeq ($(COMP_LVL), 0)
