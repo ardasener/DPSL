@@ -42,8 +42,8 @@ CXX_FLAGS= -fopenmp -std=c++17 -DNUM_THREADS=$(NUM_THREADS) -DORDER_METHOD=\"$(O
 CXX_RELEASE_FLAGS= -O3
 CXX_DEBUG_FLAGS= -O0 -DDEBUG -g
 CXX_PROFILE_FLAGS= -O1 -g -fno-inline -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address
-PSL_SOURCE_FILES=src/main_psl.cpp src/psl.cpp src/bp.cpp src/common.cpp
-DPSL_SOURCE_FILES=src/main_dpsl.cpp src/dpsl.cpp src/cut.cpp src/psl.cpp src/bp.cpp src/common.cpp
+PSL_SOURCE_FILES=src/main_psl.cpp src/utils/*.cpp src/psl/*.cpp
+DPSL_SOURCE_FILES=src/main_dpsl.cpp src/utils/*.cpp src/psl/*.cpp src/dpsl/*.cpp
 DPSL_FLAGS= -DUSE_GLOBAL_BP=$(USE_BP) -DUSE_LOCAL_BP=false -DGLOBAL_COMPRESS=$(COMPRESS) -DLOCAL_COMPRESS=false -DBIN_DPSL 
 PSL_FLAGS= -DUSE_GLOBAL_BP=false -DUSE_LOCAL_BP=$(USE_BP) -DGLOBAL_COMPRESS=false -DLOCAL_COMPRESS=$(COMPRESS) -DBIN_PSL
 

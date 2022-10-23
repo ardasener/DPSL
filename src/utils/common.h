@@ -1,15 +1,15 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#include "external/pigo/pigo.hpp"
-#include <unordered_map>
-#include <unordered_set>
+#include "../external/pigo/pigo.hpp"
 #include <algorithm>
 #include <climits>
-#include <iostream>
-#include <fstream>
 #include <cstdint>
+#include <fstream>
+#include <iostream>
 #include <limits>
+#include <unordered_map>
+#include <unordered_set>
 
 // Number of roots used for BP
 #ifndef N_ROOTS
@@ -50,11 +50,12 @@
 
 // Scheduling strategy to be used in OpenMP sections
 #ifndef SCHEDULE
-#define SCHEDULE dynamic,256
+#define SCHEDULE dynamic, 256
 #endif
 
 // Experimental feature !!!
-// If != 0, vertices with less labels then this value will be processed without distance cache
+// If != 0, vertices with less labels then this value will be processed without
+// distance cache
 #ifndef SMART_DIST_CACHE_CUTOFF
 #define SMART_DIST_CACHE_CUTOFF 0
 #endif
@@ -71,20 +72,20 @@
 #define BP_RERANK false
 #endif
 
-// Eliminates local minimum nodes 
+// Eliminates local minimum nodes
 // (Similar to the optimization in PSL*)
 #ifndef ELIM_MIN
 #define ELIM_MIN false
 #endif
 
-// Compresses the graph by removing, identical nodes 
+// Compresses the graph by removing, identical nodes
 // (Similar to the optimization in PSL+)
 // On DPSL, this causes the compression to happen on each node separetely
 #ifndef LOCAL_COMPRESS
 #define LOCAL_COMPRESS false
 #endif
 
-// Compresses the graph by removing, identical nodes 
+// Compresses the graph by removing, identical nodes
 // (Similar to the optimization in PSL+)
 // On DPSL, this causes the compression to happen on each node separetely
 #ifndef GLOBAL_COMPRESS
@@ -97,13 +98,14 @@
 #endif
 
 // Performs an early prune operation by keeping track of the maximum ranks
-// Vertices which would never pull any labels based on their rank will not attempt pull at all
+// Vertices which would never pull any labels based on their rank will not
+// attempt pull at all
 #ifndef MAX_RANK_PRUNE
 #define MAX_RANK_PRUNE true
 #endif
 
 // Maximum message size for MPI sections
-#define MAX_COMM_SIZE 1<<30
+#define MAX_COMM_SIZE 1 << 30
 
 // Sizes of the chunks during the merge algorithm of DPSL
 // If set to a high number, more memory will be used during merge
@@ -111,8 +113,6 @@
 #define MERGE_CHUNK_SIZE 1000000
 
 using namespace std;
-
-
 
 #ifdef USE_64_BIT
 using IDType = int64_t;
@@ -127,12 +127,11 @@ using PigoCOO = pigo::COO<IDType, IDType, IDType *, true, false, true, false,
 
 const char MAX_DIST = CHAR_MAX;
 
-struct pair_hash
-{
-    template <class T1, class T2>
-    std::size_t operator() (const std::pair<T1, T2> &pair) const {
-        return std::hash<T1>()(pair.first) ^ std::hash<T2>()(pair.second);
-    }
+struct pair_hash {
+  template <class T1, class T2>
+  std::size_t operator()(const std::pair<T1, T2> &pair) const {
+    return std::hash<T1>()(pair.first) ^ std::hash<T2>()(pair.second);
+  }
 };
 
 struct Stats {
@@ -145,7 +144,6 @@ struct Stats {
   double time_elapsed;
 };
 
-
 struct CSR {
   IDType *row_ptr;
   IDType *col;
@@ -154,36 +152,38 @@ struct CSR {
 
   // Should be used after reorder
   // Given an index in the CSR, gives the ID number of the vertex at that index
-  IDType *ids = nullptr; 
-  
+  IDType *ids = nullptr;
+
   // Should be used after reorder
   // Given the ID number of a vertex, gives the index of that vertex in the CSR
-  IDType *inv_ids = nullptr; 
-  
+  IDType *inv_ids = nullptr;
+
   // Stores the type of the vertex (indexed with real_ids)
   // 0 indicates the vertex is still in the graph
-  // 1 indicates the vertex is compressed out, but has an edge to its root (ie, can be reached with 1 hop)
-  // 2 indicates the vertex is compressed out, and has no edge to its root (ie, requires 2 hops to reach)
-  char* type = nullptr;
+  // 1 indicates the vertex is compressed out, but has an edge to its root (ie,
+  // can be reached with 1 hop) 2 indicates the vertex is compressed out, and
+  // has no edge to its root (ie, requires 2 hops to reach)
+  char *type = nullptr;
 
   // Should be used after compress
   // Given the ID number of a vertex, gives its new ID post-compression
   IDType *comp_ids = nullptr;
 
   ~CSR();
-  CSR(CSR& csr);
-  CSR(IDType * row_ptr, IDType *col, IDType* ids, IDType* inv_ids, char* type, IDType* comp_ids, IDType n, IDType m);
+  CSR(CSR &csr);
+  CSR(IDType *row_ptr, IDType *col, IDType *ids, IDType *inv_ids, char *type,
+      IDType *comp_ids, IDType n, IDType m);
   CSR(string filename);
-  void Reorder(vector<IDType>& order, vector<IDType>* cut = nullptr, vector<bool>* in_cut = nullptr);
+  void Reorder(vector<IDType> &order, vector<IDType> *cut = nullptr,
+               vector<bool> *in_cut = nullptr);
   void Sort();
   void InitIds();
   void Compress();
-  void ComputeF1F2(vector<size_t>& f1, vector<size_t>& f2);
+  void ComputeF1F2(vector<size_t> &f1, vector<size_t> &f2);
 };
 
-
-void WriteStats(const vector<Stats>& stats_vec, string filename);
-vector<int>* BFSQuery(CSR& csr, IDType u);
-size_t random_range(const size_t & min, const size_t & max);
+void WriteStats(const vector<Stats> &stats_vec, string filename);
+vector<int> *BFSQuery(CSR &csr, IDType u);
+size_t random_range(const size_t &min, const size_t &max);
 
 #endif
