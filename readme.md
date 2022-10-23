@@ -26,21 +26,11 @@ make -B <binary> <options>
 This project currently includes 3 different binaries that could be build:
 - `dpsl` : The main result of the project, the distributed PSL implementation
 - `psl` : A reimplementation of the original PSL algorithm. According to our tests this version is faster than the original. It also provides several quality-of-life features like being able to read different file formats.
-- `gpsl` : An experimental CPU-GPU hybrid implementation (currently WIP)
+- `gpsl` : An experimental GPU implementation (currently WIP)
 
 ### Options
 
-Options can be passed to make as `OPTION_NAME=OPTION_VALUE`.
-- USE_BP: whether BP (Bit-Parallel) labels should be used (true or false) (default: true)
-- N_ROOTS: number of roots used for the BP (Bit-Parallel) labels (integer, typically should be in the 16-128 range) (default: 16)
-- NUM_THREADS: number of threads that the application should use (integer, usually the number of cores of the CPU) (default: 16)
-- ORDER_METHOD: method used to order (and rank) the nodes, see the relevant section for more info (string) (default: degree_eigen_cent)
-- USE_64_BIT: activates experimental support for 64-bit integer vertex IDs (allowing larger graphs to be processed) (true or false) (default: false)
-- MODE: Build mode determines whether debug flags and optimizations should be compiled (Release or Debug) (default: Release)
-- CXX_COMPILER: the compiler used for PSL (path) (default: g++)
-- MPICXX_COMPILER: the compiler used for DPSL and GPSL must be an openmpi compiler (path) (default: mpic++)
-- CUDA_COMPILER: the CUDA compiler used for GPSL (path) (default: nvcc)
-- SCHEDULE: OpenMP scheduling to be used, set to runtime to use the environment variable OMP_SCHEDULE (default: dynamic,256)
+Please see `Makefile` for the options. Note that options marked experimental are not guaranteed to work.
 
 ### Examples
 
@@ -68,6 +58,8 @@ The PSL binary takes a single argument which is the graph file to be used. The f
 
 ### DPSL
 
+#### Usage 1
+
 ``` bash
 mpirun --bind-to none -n <node_count> ./dpsl <graph_file> <part_file>
 ```
@@ -76,3 +68,18 @@ mpirun --bind-to none -n <node_count> ./dpsl <graph_file> <part_file>
 - `-n <node_count>`: Node count is the number of nodes we want to run the program on. It should much the number of partitions on the `<part_file>`.
 - `<graph_file>`: Same as PSL.
 - `<part_file>`: Each line of this file should contain a single integer which should be the partition id for the corresponding vertex. Outputs from `metis` or `mtmetis` should work fine here. As mentioned before the number of partitions should match the number of nodes.
+
+> Note that this might not work well with the COMPRESS option turned on, as the load balance will be thrown off due to the removal of some vertices.
+> When used with the COMPRESS option we suggest Usage 2.
+
+#### Usage 2
+
+``` bash
+mpirun --bind-to none -n <node_count> ./dpsl <graph_file> <partitioner> <partitioner_params>
+```
+
+- `--bind-to none`: This part ensures that all the cores on the node are available to the program.
+- `-n <node_count>`: Node count is the number of nodes we want to run the program on. It should much the number of partitions on the `<part_file>`.
+- `<graph_file>`: Same as PSL.
+- `<partitioner>`: A partitioner binary. Currently `gpmetis`, `pulp` and `mtmetis` are supported.
+- `<partitioner_params>` : Parameters to be passed to the partitioner. (Please surround these with quotes to ensure they are passed as a single argument)
