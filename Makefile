@@ -51,6 +51,11 @@ override ELIM_LEAF = true
 override ELIM_MIN = true
 endif
 
+# If BP roots are set to zero, they are turned off
+ifeq ($(N_ROOTS), 0)
+override USE_BP = false
+endif
+
 # C++ flags
 CXX_COMPILER=g++
 MPICXX_COMPILER=mpic++

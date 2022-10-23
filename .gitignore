@@ -3,6 +3,7 @@ new_graphs/*
 vsep/*
 vsep_output/*
 part_graphs/*
+graphs/*
 part_output/*
 *.out
 output*.txt
@@ -12,6 +13,7 @@ cutter
 dpsl
 gpsl
 psl
+!src/*
 parts
 *.tar*
 mtmetis
@@ -24,3 +26,4 @@ callgrind*
 valgrind*
 temp.graph
 temp.part
+runs/*
