@@ -27,3 +27,5 @@ valgrind*
 temp.graph
 temp.part
 runs/*
+run.log
+run.res

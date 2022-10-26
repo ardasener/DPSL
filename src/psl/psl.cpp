@@ -529,21 +529,7 @@ vector<IDType> *PSL::Pull(IDType u, int d, char *cache,
             if (used_vec[w]) {
               continue;
             }
-
-            if constexpr (USE_GLOBAL_BP) {
-              if (global_bp->PruneByBp(u, w, d)) {
-                CountPrune(PRUNE_GLOBAL_BP);
-                continue;
-              }
-            }
-
-            if constexpr (USE_LOCAL_BP) {
-              if (local_bp->PruneByBp(u, w, d)) {
-                CountPrune(PRUNE_LOCAL_BP);
-                continue;
-              }
-            }
-
+            
             used_vec[w] = true;
             candidates.push_back(w);
           }
@@ -565,27 +551,6 @@ vector<IDType> *PSL::Pull(IDType u, int d, char *cache,
 
       if (used_vec[w]) {
         continue;
-      }
-
-      if constexpr (USE_GLOBAL_BP) {
-        if (global_bp->PruneByBp(u, w, d)) {
-          CountPrune(PRUNE_GLOBAL_BP);
-          continue;
-        }
-      }
-
-      if constexpr (USE_LOCAL_BP) {
-#ifdef BIN_DPSL
-        if (!in_cut[w] && local_bp->PruneByBp(u, w, d)) {
-          CountPrune(PRUNE_LOCAL_BP);
-          continue;
-        }
-#else
-        if (local_bp->PruneByBp(u, w, d)) {
-          CountPrune(PRUNE_LOCAL_BP);
-          continue;
-        }
-#endif
       }
 
       used_vec[w] = true;
@@ -622,6 +587,27 @@ vector<IDType> *PSL::Pull(IDType u, int d, char *cache,
       if (cache[w] <= d) {
         continue;
       }
+
+    if constexpr (USE_GLOBAL_BP) {
+      if (global_bp->PruneByBp(u, w, d)) {
+        CountPrune(PRUNE_GLOBAL_BP);
+        continue;
+      }
+    }
+
+    if constexpr (USE_LOCAL_BP) {
+#ifdef BIN_DPSL
+      if (!in_cut[w] && local_bp->PruneByBp(u, w, d)) {
+        CountPrune(PRUNE_LOCAL_BP);
+        continue;
+      }
+#else
+      if (local_bp->PruneByBp(u, w, d)) {
+        CountPrune(PRUNE_LOCAL_BP);
+        continue;
+      }
+#endif
+    }
 
     if (Prune<use_cache>(u, w, d, cache)) {
       CountPrune(PRUNE_LABEL);
@@ -760,8 +746,11 @@ void PSL::Index() {
       for (IDType i = ngh_start; i < ngh_end; i++) {
         IDType v = csr.col[i];
 
-        if (MAX_RANK_PRUNE && v < max_ranks[u])
-          should_run[v] = true;
+        if constexpr (MAX_RANK_PRUNE){
+          if(v < max_ranks[u]){
+            should_run[v] = true;
+          }          
+        }
       }
 
       if constexpr (MAX_RANK_PRUNE) {
@@ -816,8 +805,7 @@ void PSL::Index() {
 
 // TODO: Reverse this loop
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)              \
-    reduction(||                                                               \
-              : updated) schedule(SCHEDULE)
+    reduction(|| : updated) schedule(SCHEDULE)
     for (IDType i = 0; i < num_nodes; i++) {
 
       IDType u = nodes_to_process[i];
@@ -879,21 +867,25 @@ void PSL::Index() {
         if (local_min[u]) {
           for (IDType i = start; i < end; i++) {
             IDType v = csr.col[i];
-            max_ranks[u] = max(max_ranks[u], prev_max_ranks[v]);
+            if constexpr(MAX_RANK_PRUNE) max_ranks[u] = max(max_ranks[u], prev_max_ranks[v]);
           }
         }
 
-      if (max_ranks[u] != -1)
-        for (IDType i = start; i < end; i++) {
-          IDType v = csr.col[i];
-          if (v < max_ranks[u]) {
-            should_run[v] = true;
-          }
-        }
+      if constexpr(MAX_RANK_PRUNE)
+        if (max_ranks[u] != -1)
+          for (IDType i = start; i < end; i++) {
+            IDType v = csr.col[i];
 
-      if constexpr (ELIM_MIN)
+              if (v < max_ranks[u]) {
+                should_run[v] = true;
+              }
+          }
+
+      if constexpr (ELIM_MIN && MAX_RANK_PRUNE)
         prev_max_ranks[u] = max_ranks[u];
-      max_ranks[u] = -1;
+
+      if constexpr(MAX_RANK_PRUNE)
+        max_ranks[u] = -1;
     }
 
 #ifdef DEBUG
