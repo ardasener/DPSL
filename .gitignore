@@ -29,3 +29,4 @@ temp.part
 runs/*
 run.log
 run.res
+mtmetis/*

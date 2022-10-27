@@ -14,8 +14,18 @@ DPSL is a distributed partitioning based implementation of the Parallel Short-di
 
 - GNU Make (tested with version 4.2.1)
 - g++ (tested with versions 7.0.0 and 9.3.0)
-- (For DPSL and GPSL only) openmpi (with `mpic++` compiler and `mpirun` tool) (tested with version 3.0.0)
+- (For DPSL only) openmpi (with `mpic++` compiler and `mpirun` tool) (tested with version 3.0.0)
+- (For DPSL only) mtmetis (.a and .h files)
 - (For GPSL only) Nvidia CUDA (with `nvcc` compiler) (tested with version 11.2)
+
+## MTMetis Dependency
+
+For DPSL, we need the mtmetis partitioner available [here](http://glaros.dtc.umn.edu/gkhome/metis/metis/overview).
+On most Linux systems, you can use `scripts/get_mtmetis.py` script to obtain and build it automatically.
+
+> Please run the script on the project root. Like: `python3 scripts/get_mtmetis.py`.
+
+Otherwise you will need to build it manually and place the `libmtmetis.a` and `mtmetis.h` files in the `mtmetis` directory.
 
 ## Building
 
@@ -85,5 +95,11 @@ mpirun --bind-to none -n <node_count> ./dpsl <graph_file> <partitioner> <partiti
 - `--bind-to none`: This part ensures that all the cores on the node are available to the program.
 - `-n <node_count>`: Node count is the number of nodes we want to run the program on. It should much the number of partitions on the `<part_file>`.
 - `<graph_file>`: Same as PSL.
-- `<partitioner>`: A partitioner binary. Currently `gpmetis`, `pulp` and `mtmetis` are supported.
-- `<partitioner_params>` : Parameters to be passed to the partitioner. (Please surround these with quotes to ensure they are passed as a single argument)
+- `<partitioner>`: A partitioner name. Currently only "mtmetis" is supported.
+
+# Datasets
+
+We used data from [SuiteSparse](https://sparse.tamu.edu/) and [Network Repository](https://networkrepository.com/) for evaluation.
+The `scripts/download.py` script can be used to automatically download our dataset on most Linux systems.
+
+> Please run the script on the project root. Like: `python3 scripts/download.py`.

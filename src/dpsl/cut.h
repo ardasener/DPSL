@@ -21,6 +21,7 @@ public:
                               string order_method, int np);
   static VertexCut *Read(CSR &csr, string part_file, string order_method,
                          int np);
+  void Init(CSR& csr, int np);
   ~VertexCut();
 };
 

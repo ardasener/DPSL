@@ -29,7 +29,8 @@ COMPRESS=false
 COMP_LVL=-1
 # Prunes nodes prematurely by keeping the maximum rank of the last label set additions and updating the neighbors before the pull operation
 MAX_RANK_PRUNE=true
-
+# Directory for the MTMetis library, should contain libmtmetis.a and mtmetis.h files
+MT_METIS_DIR=mtmetis
 
 # Compression level overrides the COMPRESS, ELIM_MIN, ELIM_LEAF options
 ifeq ($(COMP_LVL), 0)
@@ -68,7 +69,7 @@ CXX_DEBUG_FLAGS= -O0 -DDEBUG -g
 CXX_PROFILE_FLAGS= -O1 -g -fno-inline -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address
 PSL_SOURCE_FILES=src/main_psl.cpp src/utils/*.cpp src/psl/*.cpp
 DPSL_SOURCE_FILES=src/main_dpsl.cpp src/utils/*.cpp src/psl/*.cpp src/dpsl/*.cpp
-DPSL_FLAGS= -DUSE_GLOBAL_BP=$(USE_BP) -DUSE_LOCAL_BP=false -DGLOBAL_COMPRESS=$(COMPRESS) -DLOCAL_COMPRESS=false -DBIN_DPSL 
+DPSL_FLAGS= -DUSE_GLOBAL_BP=$(USE_BP) -DUSE_LOCAL_BP=false -DGLOBAL_COMPRESS=$(COMPRESS) -DLOCAL_COMPRESS=false -DBIN_DPSL -L $(MT_METIS_DIR) -I $(MT_METIS_DIR) -l:libmtmetis.a
 PSL_FLAGS= -DUSE_GLOBAL_BP=false -DUSE_LOCAL_BP=$(USE_BP) -DGLOBAL_COMPRESS=false -DLOCAL_COMPRESS=$(COMPRESS) -DBIN_PSL
 
 # CUDA flags

@@ -52,6 +52,9 @@ def NetRepoDownloader(name, link):
     
     sp.run("rm" + " -f" +  " graphs/readme*" + " graphs/*.zip", shell=True)
 
+
+sp.run(["mkdir", "-p", "graphs"])
+
 for line in links.split("\n"):
 
     if line == "":
