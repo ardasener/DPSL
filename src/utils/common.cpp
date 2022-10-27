@@ -62,6 +62,13 @@ vector<int> *BFSQuery(CSR &csr, IDType u) {
   }
 
   delete[] q;
+  
+  for(int& d : *dists){
+    if(d >= MAX_DIST){
+      d = -1;
+    }
+  }
+
 
   return dists;
 }

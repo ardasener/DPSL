@@ -14,6 +14,10 @@ FBA,https://nrvis.com/download/data/socfb/socfb-A-anon.zip
 FBB,https://nrvis.com/download/data/socfb/socfb-B-anon.zip
 POKE,https://suitesparse-collection-website.herokuapp.com/MM/SNAP/soc-Pokec.tar.gz
 LIVE,https://suitesparse-collection-website.herokuapp.com/MM/LAW/ljournal-2008.tar.gz
+SKIT,https://suitesparse-collection-website.herokuapp.com/MM/SNAP/as-Skitter.tar.gz
+INDO,https://suitesparse-collection-website.herokuapp.com/MM/LAW/indochina-2004.tar.gz
+RCAL,https://suitesparse-collection-website.herokuapp.com/MM/SNAP/roadNet-CA.tar.gz
+RTEX,https://suitesparse-collection-website.herokuapp.com/MM/SNAP/roadNet-TX.tar.gz
 """
 
 def FindMtx(dir):

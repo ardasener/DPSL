@@ -12,7 +12,7 @@ N_ROOTS=15
 # [EXPERIMENTAL] Enables 64-bit support
 USE_64_BIT=false
 # Metric used to rank/order the vertices (see, src/external/order/order.hpp for the supported methods)
-ORDER_METHOD=degree_eigen_cent
+ORDER_METHOD=degree
 # [EXPERIMENTAL] Vertices with less labels than this will be processed without using the distance cache
 SMART_DIST_CACHE_CUTOFF=0
 # Sets the output binary name for DPSL
@@ -27,6 +27,9 @@ ELIM_LEAF=false
 COMPRESS=false
 # Override for the compression and elimination options (0 -> no compression, 1 -> COMPRESS, 2 -> COMPRESS + ELIM_MIN, 3 -> COMPRESS + ELIM_MIN + ELIM_LEAF)
 COMP_LVL=-1
+# Prunes nodes prematurely by keeping the maximum rank of the last label set additions and updating the neighbors before the pull operation
+MAX_RANK_PRUNE=true
+
 
 # Compression level overrides the COMPRESS, ELIM_MIN, ELIM_LEAF options
 ifeq ($(COMP_LVL), 0)
@@ -59,7 +62,7 @@ endif
 # C++ flags
 CXX_COMPILER=g++
 MPICXX_COMPILER=mpic++
-CXX_FLAGS= -fopenmp -std=c++17 -DNUM_THREADS=$(NUM_THREADS) -DORDER_METHOD=\"$(ORDER_METHOD)\" -DN_ROOTS=$(N_ROOTS) -DSCHEDULE=$(SCHEDULE) -DSMART_DIST_CACHE_CUTOFF=$(SMART_DIST_CACHE_CUTOFF) -DELIM_MIN=$(ELIM_MIN) -DELIM_LEAF=$(ELIM_LEAF)
+CXX_FLAGS= -fopenmp -std=c++17 -DNUM_THREADS=$(NUM_THREADS) -DORDER_METHOD=\"$(ORDER_METHOD)\" -DN_ROOTS=$(N_ROOTS) -DSCHEDULE=$(SCHEDULE) -DSMART_DIST_CACHE_CUTOFF=$(SMART_DIST_CACHE_CUTOFF) -DELIM_MIN=$(ELIM_MIN) -DELIM_LEAF=$(ELIM_LEAF) -DMAX_RANK_PRUNE=$(MAX_RANK_PRUNE)
 CXX_RELEASE_FLAGS= -O3
 CXX_DEBUG_FLAGS= -O0 -DDEBUG -g
 CXX_PROFILE_FLAGS= -O1 -g -fno-inline -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address

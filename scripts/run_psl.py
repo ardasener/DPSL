@@ -34,18 +34,18 @@ res = open("run.res", "w+")
 n_runs = 3
 timeout = 2000
 
-exclude = ["DELI", "LAST", "DIGG", "FLIX", "DBLP", "TOPC", "CITE"]
+include = ["FLIX", "CITE", "DBLP", "TOPC"]
 
-def ShouldExclude(graph):
-    for ex in exclude:
-        if ex in graph:
+def ShouldRun(graph):
+    for i in include:
+        if i in graph:
             return True
     return False
 
 
 for graph in graphs:
 
-    if ShouldExclude(graph):
+    if not ShouldRun(graph):
         continue;
 
     tot_time = 0

@@ -2,7 +2,11 @@
 
 DPSL is a distributed partitioning based implementation of the Parallel Short-distance Labelling (PSL) algorithm. DPSL can run on multiple nodes distributing the graph and labels among the nodes. This results in both faster indexing times by allowing the use of more computation resources and less storage requirements for each node since the resulting labels will be distributed among them with minimal duplication.
 
-
+> Disclamer: This work is designed specifically for social networks, web graphs and other low diameter graphs.
+> It will not work well on road networks. 
+> And in fact with certain features turned on, it might give incorrect results due to overflows on high diameter graphs.
+> On such graphs, we suggest using "ORDER_METHOD=b_cent COMP_LVL=1 USE_BP=false".
+> Note that there is a limit on the maximum distance.
 
 # Building & Running
 

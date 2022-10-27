@@ -11,6 +11,11 @@
 #include <unordered_map>
 #include <unordered_set>
 
+// CAUTION !!!!
+// The default values defined here may be overwritten in the Makefile 
+// Please check the values there not here
+
+
 // Number of roots used for BP
 #ifndef N_ROOTS
 #define N_ROOTS 15
@@ -18,7 +23,7 @@
 
 // Method used for ordering (ranking) of the vertices
 #ifndef ORDER_METHOD
-#define ORDER_METHOD "degree_eigen_cent"
+#define ORDER_METHOD "degree"
 #endif
 
 // Whether the ranks of vertices on the cut should be artifically increased
