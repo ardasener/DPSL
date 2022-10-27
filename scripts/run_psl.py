@@ -1,6 +1,10 @@
 from cmath import exp
 import os
 import subprocess as sp
+import statistics as stat
+import sys
+
+# Usage: <script> <psl_exe>
 
 def get_number(s):
     s = s.replace("\n", "")
@@ -28,13 +32,11 @@ def get_stats(out):
 
 graphs = [os.path.join("graphs", file) for file in os.listdir("graphs") if ".mtx" in file]
 
-log = open("run.log", "w+")
-res = open("run.res", "w+")
-
 n_runs = 3
 timeout = 2000
+psl_exe = sys.argv[1]
 
-include = ["FLIX", "CITE", "DBLP", "TOPC"]
+include = ["DELI", "LAST"]
 
 def ShouldRun(graph):
     for i in include:
@@ -43,25 +45,32 @@ def ShouldRun(graph):
     return False
 
 
+res = "\n\n\ngraph,avg_time,stdev_time,mem\n"
 for graph in graphs:
 
     if not ShouldRun(graph):
         continue;
 
-    tot_time = 0
-    tot_memory = 0
+    name = graph.split("/")[-1].replace(".mtx", "")
+
+    error = False
+    times = []
+    memory = []
     print("Running:", graph)
-    log.write("Running: " + graph + "\n")
     for i in range(0,n_runs):
         try:
-            out = sp.check_output(["./psl", graph], timeout=timeout).decode("utf-8")
-            log.write(out + "\n")
+            out = sp.check_output([psl_exe, graph], timeout=timeout).decode("utf-8")
+            print(out)
             time, mem = get_stats(out)
-            tot_time += time
-            tot_memory += mem
+            times.append(time)
+            memory.append(mem)
         except Exception as ex:
+            error = True
             print("Exception:", ex)
-            log.write("Exception: ", ex)
-            res.write(graph + "," + "INF" + "," + "INF" + "\n")
+            res += name + "," + "INF" + "," + "INF" + "," + "INF" + "\n"
             break
-    res.write(graph + "," + str(tot_time / n_runs) + "," + str(tot_memory / n_runs) + "\n")
+
+    if not error:
+        res += name + "," + str(sum(times) / n_runs) + "," + str(stat.stdev(times)) + "," + str(sum(memory) / n_runs) + "\n"
+
+print(res)
