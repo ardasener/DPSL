@@ -1,6 +1,8 @@
 #include "common.h"
-#include <random>
+
 #include <time.h>
+
+#include <random>
 
 size_t random_range(const size_t &min, const size_t &max) {
   static mt19937 generator(time(0));
@@ -34,7 +36,6 @@ void WriteStats(const vector<Stats> &stats_vec, string filename) {
 }
 
 vector<int> *BFSQuery(CSR &csr, IDType u) {
-
   vector<int> *dists = new vector<int>(csr.n, -1);
   auto &dist = *dists;
 
@@ -62,13 +63,12 @@ vector<int> *BFSQuery(CSR &csr, IDType u) {
   }
 
   delete[] q;
-  
-  for(int& d : *dists){
-    if(d >= MAX_DIST){
+
+  for (int &d : *dists) {
+    if (d >= MAX_DIST) {
       d = -1;
     }
   }
-
 
   return dists;
 }
@@ -77,17 +77,13 @@ CSR::~CSR() {
   delete[] row_ptr;
   delete[] col;
 
-  if (inv_ids != nullptr)
-    delete[] inv_ids;
+  if (inv_ids != nullptr) delete[] inv_ids;
 
-  if (ids != nullptr)
-    delete[] ids;
+  if (ids != nullptr) delete[] ids;
 
-  if (comp_ids != nullptr)
-    delete[] comp_ids;
+  if (comp_ids != nullptr) delete[] comp_ids;
 
-  if (type != nullptr)
-    delete[] type;
+  if (type != nullptr) delete[] type;
 }
 
 CSR::CSR(CSR &csr) {
@@ -125,11 +121,16 @@ CSR::CSR(CSR &csr) {
 
 CSR::CSR(IDType *row_ptr, IDType *col, IDType *ids, IDType *inv_ids, char *type,
          IDType *comp_ids, IDType n, IDType m)
-    : row_ptr(row_ptr), col(col), ids(ids), inv_ids(inv_ids), type(type),
-      comp_ids(comp_ids), n(n), m(m) {}
+    : row_ptr(row_ptr),
+      col(col),
+      ids(ids),
+      inv_ids(inv_ids),
+      type(type),
+      comp_ids(comp_ids),
+      n(n),
+      m(m) {}
 
 CSR::CSR(string filename) {
-
   bool is_mtx = false;
   if (filename.find(".mtx") != string::npos) {
     is_mtx = true;
@@ -226,7 +227,7 @@ void CSR::Reorder(vector<IDType> &order, vector<IDType> *cut,
 
   vector<IDType> ranks(n);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)              \
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
     schedule(SCHEDULE)
   for (int i = 0; i < new_order.size(); i++) {
     ranks[new_order[i]] = i;
@@ -249,14 +250,14 @@ void CSR::Reorder(vector<IDType> &order, vector<IDType> *cut,
     new_row_ptr[i + 1] = last_index;
   }
 
-#pragma omp parallel for default(shared) schedule(SCHEDULE)                    \
+#pragma omp parallel for default(shared) schedule(SCHEDULE) \
     num_threads(NUM_THREADS)
   for (IDType i = 0; i < n; i++) {
     ids[ranks[i]] = i;
     inv_ids[i] = ranks[i];
   }
 
-#pragma omp parallel for default(shared) schedule(SCHEDULE)                    \
+#pragma omp parallel for default(shared) schedule(SCHEDULE) \
     num_threads(NUM_THREADS)
   for (IDType i = 0; i < m; i++) {
     new_col[i] = ranks[new_col[i]];
@@ -272,7 +273,7 @@ void CSR::Reorder(vector<IDType> &order, vector<IDType> *cut,
 }
 
 void CSR::Sort() {
-#pragma omp parallel for default(shared) schedule(SCHEDULE)                    \
+#pragma omp parallel for default(shared) schedule(SCHEDULE) \
     num_threads(NUM_THREADS)
   for (IDType u = 0; u < n; u++) {
     IDType start = row_ptr[u];
@@ -287,7 +288,7 @@ void CSR::InitIds() {
   type = new char[n];
   comp_ids = new IDType[n];
 
-#pragma omp parallel for default(shared) schedule(SCHEDULE)                    \
+#pragma omp parallel for default(shared) schedule(SCHEDULE) \
     num_threads(NUM_THREADS)
   for (IDType i = 0; i < n; i++) {
     ids[i] = i;
@@ -356,7 +357,6 @@ void CSR::ComputeF1F2(vector<size_t> &f1, vector<size_t> &f2) {
 }
 
 void CSR::Compress() {
-
   vector<size_t> f1(n, 0);
   vector<size_t> f2(n, 0);
 
@@ -369,9 +369,7 @@ void CSR::Compress() {
 
   IDType curr_row_ptr = 0;
   for (IDType u = 0; u < n; u++) {
-
     if (f1[u] == u && f2[u] == u) {
-
       comp_ids[u] = u;
       type[u] = 0;
 

@@ -1,14 +1,14 @@
-#include "utils/common.h"
-#include "psl/psl.h"
 #include <cstddef>
 #include <iostream>
 #include <string>
 #include <vector>
 
+#include "psl/psl.h"
+#include "utils/common.h"
+
 using namespace std;
 
 int main(int argc, char *argv[]) {
-
   if (argc < 2) {
     cerr << "Usage: <exe> graph_file" << endl;
     return 1;

@@ -1,15 +1,14 @@
 #include "bp.h"
+
 #include <queue>
 
 BP::BP(vector<BPLabel> &bp_labels, vector<bool> &used)
     : bp_labels(bp_labels), used(used) {}
 
 bool BP::PruneByBp(IDType u, IDType v, int d) {
-
   BPLabel &idx_u = bp_labels[u], &idx_v = bp_labels[v];
 
   for (int i = 0; i < N_ROOTS; ++i) {
-
     int td = idx_u.bp_dists[i] + idx_v.bp_dists[i];
 
     /* TRY THIS
@@ -34,12 +33,10 @@ bool BP::PruneByBp(IDType u, IDType v, int d) {
 }
 
 int BP::QueryByBp(IDType u, IDType v) {
-
   BPLabel &idx_u = bp_labels[u], &idx_v = bp_labels[v];
 
   int d = MAX_DIST;
   for (int i = 0; i < N_ROOTS; ++i) {
-
     int td = idx_u.bp_dists[i] + idx_v.bp_dists[i];
     if (td - 2 <= d)
       td += (idx_u.bp_sets[i][0] & idx_v.bp_sets[i][0]) ? -2
@@ -57,7 +54,6 @@ int BP::QueryByBp(IDType u, IDType v) {
 }
 
 void BP::InitBPForRoot(IDType r, vector<IDType> &Sr, int bp_index, CSR &csr) {
-
   vector<pair<uint64_t, uint64_t>> bp_sets(csr.n,
                                            make_pair((uint64_t)0, (uint64_t)0));
   vector<uint8_t> bp_dists(csr.n, (uint8_t)MAX_DIST);
@@ -139,11 +135,10 @@ void BP::InitBPForRoot(IDType r, vector<IDType> &Sr, int bp_index, CSR &csr) {
 
 BP::BP(CSR &csr, vector<IDType> &ranks, vector<IDType> &order,
        vector<IDType> *cut, Mode mode) {
-
   double start_time = omp_get_wtime();
 
   bp_labels.resize(csr.n);
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)              \
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
     schedule(SCHEDULE)
   for (IDType i = 0; i < csr.n; i++) {
     for (int j = 0; j < N_ROOTS; j++) {
@@ -163,7 +158,7 @@ BP::BP(CSR &csr, vector<IDType> &ranks, vector<IDType> &order,
   if constexpr (BP_RERANK) {
     vector<int64_t> ngh_ranks(csr.n, 0);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)              \
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
     schedule(SCHEDULE)
     for (IDType i = 0; i < csr.n; i++) {
       IDType start = csr.row_ptr[i];
@@ -186,7 +181,6 @@ BP::BP(CSR &csr, vector<IDType> &ranks, vector<IDType> &order,
       }
 
   } else {
-
     if (cut == nullptr)
       for (IDType i = 0; i < csr.n; i++) {
         candidates.emplace(0, i);
@@ -203,7 +197,6 @@ BP::BP(CSR &csr, vector<IDType> &ranks, vector<IDType> &order,
   // TODO: can we add the same node twice? If it has > 64 nghboors
   IDType number_of_roots_used = 0;
   for (IDType i = 0; i < N_ROOTS; i++) {
-
     int64_t bp_rank = -1;
     IDType root = -1;
     while (!candidates.empty()) {

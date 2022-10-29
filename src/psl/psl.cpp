@@ -1,7 +1,6 @@
 #include "psl.h"
 
 void PSL::CountStats(double time) {
-
   long long total_label_count = 0;
   for (IDType u = 0; u < csr.n; u++) {
     total_label_count += labels[u].vertices.size();
@@ -22,11 +21,9 @@ void PSL::CountStats(double time) {
 }
 
 PSL::~PSL() {
-  if (local_bp != nullptr)
-    delete local_bp;
+  if (local_bp != nullptr) delete local_bp;
 
   if (caches != nullptr) {
-
     for (int i = 0; i < NUM_THREADS; i++) {
       delete[] caches[i];
     }
@@ -55,7 +52,6 @@ void PSL::CountPrune(int i) {
 PSL::PSL(CSR &csr_, string order_method, vector<IDType> *cut, BP *global_bp,
          vector<IDType> *ranks_ptr, vector<IDType> *order_ptr)
     : csr(csr_), labels(csr.n), global_bp(global_bp) {
-
 #ifdef DEBUG
   cand_counts.resize(csr.n, 0);
 #endif
@@ -113,10 +109,8 @@ PSL::PSL(CSR &csr_, string order_method, vector<IDType> *cut, BP *global_bp,
   if constexpr (ELIM_MIN) {
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : local_min_count)
     for (IDType u = 0; u < csr.n; u++) {
-      if (in_cut[u])
-        continue;
-      if (leaf_root[u] != -1)
-        continue;
+      if (in_cut[u]) continue;
+      if (leaf_root[u] != -1) continue;
 
       IDType start = csr.row_ptr[u];
       IDType end = csr.row_ptr[u + 1];
@@ -206,7 +200,6 @@ void PSL::WriteLabelCounts(string filename) {
 }
 
 void PSL::QueryTest(int query_count) {
-
   vector<IDType> sources;
   sources.reserve(query_count);
   for (int i = 0; i < query_count; i++) {
@@ -295,7 +288,6 @@ void PSL::Query(IDType u, string filename) {
 }
 
 vector<IDType> *PSL::Query(IDType u) {
-
   IDType u_comp = u;
 
   if constexpr (LOCAL_COMPRESS) {
@@ -318,7 +310,6 @@ vector<IDType> *PSL::Query(IDType u) {
   vector<char> cache(csr.n, -1);
 
   if (local_min[u_inv]) {
-
     cache[u_inv] = 0 + leaf_add_u;
 
     IDType u_ngh_start = csr.row_ptr[u_inv];
@@ -330,7 +321,7 @@ vector<IDType> *PSL::Query(IDType u) {
         IDType dist_start = labels_un.dist_ptrs[d];
         IDType dist_end = labels_un.dist_ptrs[d + 1];
 
-        #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
         for (IDType j = dist_start; j < dist_end; j++) {
           IDType w = labels_un.vertices[j];
 
@@ -343,7 +334,7 @@ vector<IDType> *PSL::Query(IDType u) {
     }
 
   } else {
-    #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
     for (int d = 0; d < last_dist; d++) {
       IDType dist_start = labels_u.dist_ptrs[d];
       IDType dist_end = labels_u.dist_ptrs[d + 1];
@@ -355,10 +346,8 @@ vector<IDType> *PSL::Query(IDType u) {
     }
   }
 
-
-  #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for (IDType v = 0; v < csr.n; v++) {
-
     if (u == v) {
       (*results)[v] = 0;
       continue;
@@ -385,7 +374,6 @@ vector<IDType> *PSL::Query(IDType u) {
     int leaf_add_v = 0;
     if constexpr (ELIM_LEAF)
       if (leaf_root[v_inv] != -1) {
-
         if (leaf_root[v_inv] == u_inv) {
           (*results)[v] = 1 + leaf_add_u;
           continue;
@@ -407,7 +395,6 @@ vector<IDType> *PSL::Query(IDType u) {
                                    leaf_add_v + leaf_add_u);
 
     if (local_min[v_inv]) {
-
       IDType v_ngh_start = csr.row_ptr[v_inv];
       IDType v_ngh_end = csr.row_ptr[v_inv + 1];
       for (int d = 0; d + 1 < min_dist && d < last_dist; d++) {
@@ -493,7 +480,6 @@ bool PSL::Prune(IDType u, IDType v, int d, char *cache) {
 template <bool use_cache = true>
 vector<IDType> *PSL::Pull(IDType u, int d, char *cache,
                           vector<bool> &used_vec) {
-
   IDType start = csr.row_ptr[u];
   IDType end = csr.row_ptr[u + 1];
 
@@ -503,7 +489,6 @@ vector<IDType> *PSL::Pull(IDType u, int d, char *cache,
   vector<IDType> candidates;
 
   for (IDType i = start; i < end; i++) {
-
     IDType v = csr.col[i];
     auto &labels_v = labels[v];
 
@@ -513,7 +498,6 @@ vector<IDType> *PSL::Pull(IDType u, int d, char *cache,
         IDType v_nghs_end = csr.row_ptr[v + 1];
 
         for (IDType k = v_nghs_start; k < v_nghs_end; k++) {
-
           auto &labels_vn = labels[csr.col[k]];
           IDType labels_start = labels_vn.dist_ptrs[d - 2];
           IDType labels_end = labels_vn.dist_ptrs[d - 1];
@@ -529,7 +513,7 @@ vector<IDType> *PSL::Pull(IDType u, int d, char *cache,
             if (used_vec[w]) {
               continue;
             }
-            
+
             used_vec[w] = true;
             candidates.push_back(w);
           }
@@ -579,11 +563,9 @@ vector<IDType> *PSL::Pull(IDType u, int d, char *cache,
       }
     }
 
-
   new_labels = new vector<IDType>;
 
   for (IDType w : candidates) {
-
     used_vec[w] = false;
 
     if constexpr (use_cache)
@@ -625,7 +607,7 @@ vector<IDType> *PSL::Pull(IDType u, int d, char *cache,
       }
   }
 
-  if(new_labels->empty()){
+  if (new_labels->empty()) {
     delete new_labels;
     new_labels = nullptr;
   }
@@ -644,9 +626,7 @@ vector<IDType> *PSL::Pull(IDType u, int d, char *cache,
 }
 
 vector<IDType> *PSL::Init(IDType u) {
-
-  if constexpr (MAX_RANK_PRUNE)
-    max_ranks[u] = u;
+  if constexpr (MAX_RANK_PRUNE) max_ranks[u] = u;
 
   vector<IDType> *init_labels = new vector<IDType>;
 
@@ -673,15 +653,13 @@ vector<IDType> *PSL::Init(IDType u) {
     init_labels->push_back(v);
 
     if constexpr (MAX_RANK_PRUNE)
-      if (v > max_ranks[u])
-        max_ranks[u] = v;
+      if (v > max_ranks[u]) max_ranks[u] = v;
   }
 
   return init_labels;
 }
 
 void PSL::Index() {
-
   double start_time, end_time, all_start_time, all_end_time;
   all_start_time = omp_get_wtime();
 
@@ -709,23 +687,18 @@ void PSL::Index() {
   start_time = omp_get_wtime();
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : l0_count, l1_count)
   for (IDType u = 0; u < csr.n; u++) {
-
     bool should_init = true;
     if constexpr (USE_LOCAL_BP)
-      if (local_bp->used[u])
-        should_init = false;
+      if (local_bp->used[u]) should_init = false;
 
     if constexpr (USE_GLOBAL_BP)
-      if (global_bp->used[u])
-        should_init = false;
+      if (global_bp->used[u]) should_init = false;
 
     if constexpr (ELIM_MIN)
-      if (local_min[u])
-        should_init = false;
+      if (local_min[u]) should_init = false;
 
     if constexpr (ELIM_LEAF)
-      if (leaf_root[u] != -1)
-        should_init = false;
+      if (leaf_root[u] != -1) should_init = false;
 
     if (should_init) {
       labels[u].vertices.push_back(u);
@@ -750,10 +723,10 @@ void PSL::Index() {
       for (IDType i = ngh_start; i < ngh_end; i++) {
         IDType v = csr.col[i];
 
-        if constexpr (MAX_RANK_PRUNE){
-          if(v < max_ranks[u]){
+        if constexpr (MAX_RANK_PRUNE) {
+          if (v < max_ranks[u]) {
             should_run[v] = true;
-          }          
+          }
         }
       }
 
@@ -779,20 +752,16 @@ void PSL::Index() {
   IDType num_nodes = 0;
   for (IDType u = 0; u < csr.n; u++) {
     if constexpr (USE_LOCAL_BP)
-      if (local_bp->used[u])
-        continue;
+      if (local_bp->used[u]) continue;
 
     if constexpr (USE_GLOBAL_BP)
-      if (global_bp->used[u])
-        continue;
+      if (global_bp->used[u]) continue;
 
     if constexpr (ELIM_MIN)
-      if (local_min[u])
-        continue;
+      if (local_min[u]) continue;
 
     if constexpr (ELIM_LEAF)
-      if (leaf_root[u] != -1)
-        continue;
+      if (leaf_root[u] != -1) continue;
 
     if (csr.row_ptr[u] != csr.row_ptr[u + 1]) {
       nodes_to_process[num_nodes++] = u;
@@ -803,25 +772,22 @@ void PSL::Index() {
   bool updated = true;
 
   for (int d = 2; d < MAX_DIST && updated; d++) {
-
     start_time = omp_get_wtime();
     updated = false;
 
 // TODO: Reverse this loop
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)              \
-    reduction(|| : updated) schedule(SCHEDULE)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
+    reduction(||                                                  \
+              : updated) schedule(SCHEDULE)
     for (IDType i = 0; i < num_nodes; i++) {
-
       IDType u = nodes_to_process[i];
 
       int tid = omp_get_thread_num();
 
       bool run = true;
-      if constexpr (MAX_RANK_PRUNE)
-        run = should_run[u];
+      if constexpr (MAX_RANK_PRUNE) run = should_run[u];
 
       if (run) {
-
         if constexpr (SMART_DIST_CACHE_CUTOFF) {
           if (labels[u].vertices.size() <= SMART_DIST_CACHE_CUTOFF) {
             new_labels[u] = Pull<false>(u, d, caches[tid], used[tid]);
@@ -845,7 +811,6 @@ void PSL::Index() {
     long long level_count = 0;
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : level_count)
     for (IDType u = 0; u < csr.n; u++) {
-
       auto &labels_u = labels[u];
 
       if (new_labels[u] == nullptr) {
@@ -871,25 +836,25 @@ void PSL::Index() {
         if (local_min[u]) {
           for (IDType i = start; i < end; i++) {
             IDType v = csr.col[i];
-            if constexpr(MAX_RANK_PRUNE) max_ranks[u] = max(max_ranks[u], prev_max_ranks[v]);
+            if constexpr (MAX_RANK_PRUNE)
+              max_ranks[u] = max(max_ranks[u], prev_max_ranks[v]);
           }
         }
 
-      if constexpr(MAX_RANK_PRUNE)
+      if constexpr (MAX_RANK_PRUNE)
         if (max_ranks[u] != -1)
           for (IDType i = start; i < end; i++) {
             IDType v = csr.col[i];
 
-              if (v < max_ranks[u]) {
-                should_run[v] = true;
-              }
+            if (v < max_ranks[u]) {
+              should_run[v] = true;
+            }
           }
 
       if constexpr (ELIM_MIN && MAX_RANK_PRUNE)
         prev_max_ranks[u] = max_ranks[u];
 
-      if constexpr(MAX_RANK_PRUNE)
-        max_ranks[u] = -1;
+      if constexpr (MAX_RANK_PRUNE) max_ranks[u] = -1;
     }
 
 #ifdef DEBUG

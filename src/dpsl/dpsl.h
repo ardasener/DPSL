@@ -1,16 +1,17 @@
 #ifndef DPSL_H
 #define DPSL_H
 
-#include "../utils/common.h"
-#include "cut.h"
-#include "mpi.h"
-#include "../psl/psl.h"
 #include <algorithm>
 #include <fstream>
 #include <ostream>
 #include <set>
 #include <string>
 #include <unordered_set>
+
+#include "../psl/psl.h"
+#include "../utils/common.h"
+#include "cut.h"
+#include "mpi.h"
 
 using namespace std;
 
@@ -43,8 +44,7 @@ enum MPI_CONSTS {
 };
 
 class DPSL {
-
-public:
+ public:
   template <typename T>
   void SendData(T *data, size_t size, int tag, int to,
                 MPI_Datatype type = MPI_IDType);

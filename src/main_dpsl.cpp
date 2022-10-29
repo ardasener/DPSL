@@ -1,10 +1,11 @@
-#include "dpsl/dpsl.h"
-#include "mpi.h"
-#include "utils/common.h"
 #include <cstddef>
 #include <iostream>
 #include <string>
 #include <vector>
+
+#include "dpsl/dpsl.h"
+#include "mpi.h"
+#include "utils/common.h"
 
 int main(int argc, char *argv[]) {
   if (argc < 3) {

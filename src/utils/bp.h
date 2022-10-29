@@ -13,7 +13,7 @@ struct BPLabel {
 enum Mode { GLOBAL_BP_MODE, LOCAL_BP_MODE };
 
 class BP {
-public:
+ public:
   vector<BPLabel> bp_labels;
   vector<bool> used;
 

@@ -38,7 +38,6 @@ void DPSL::QueryTest(int query_count) {
 }
 
 void DPSL::Query(IDType u, string filename) {
-
   Log("Starting Query");
   Log("Global N: " + to_string(global_n));
   Barrier();
@@ -73,7 +72,6 @@ void DPSL::Query(IDType u, string filename) {
     fill(cache, cache + part_csr->n, -1);
 
     if (psl_ptr->local_min[u_inv]) {
-
       cache[u_inv] = 0 + leaf_add_u;
 
       IDType u_ngh_start = part_csr->row_ptr[u_inv];
@@ -85,7 +83,7 @@ void DPSL::Query(IDType u, string filename) {
           IDType dist_start = labels_un.dist_ptrs[d];
           IDType dist_end = labels_un.dist_ptrs[d + 1];
 
-        #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS)
           for (IDType j = dist_start; j < dist_end; j++) {
             IDType w = labels_un.vertices[j];
 
@@ -97,7 +95,6 @@ void DPSL::Query(IDType u, string filename) {
         }
       }
     } else {
-
       auto &labels_u = psl_ptr->labels[u_inv];
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
       for (IDType d = 0; d < last_dist; d++) {
@@ -113,8 +110,7 @@ void DPSL::Query(IDType u, string filename) {
 
     Log("Broadcasting u's labels");
     BroadcastData(cache, part_csr->n, MPI_CHAR);
-    if constexpr (ELIM_LEAF)
-      BroadcastData(&leaf_add_u, 1, MPI_INT32_T);
+    if constexpr (ELIM_LEAF) BroadcastData(&leaf_add_u, 1, MPI_INT32_T);
   } else {
     Log("Recieving u's labels");
     RecvBroadcast(cache, partition[u_comp], MPI_CHAR);
@@ -132,15 +128,13 @@ void DPSL::Query(IDType u, string filename) {
   vector<int> local_dist(part_csr->n, MAX_DIST);
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS)
   for (IDType v = 0; v < part_csr->n; v++) {
-
     IDType v_comp = v;
 
     if constexpr (GLOBAL_COMPRESS || LOCAL_COMPRESS) {
       v_comp = part_csr->comp_ids[v];
     }
 
-    if (partition[v_comp] != pid)
-      continue;
+    if (partition[v_comp] != pid) continue;
 
     if (u == v) {
       local_dist[v] = 0;
@@ -163,7 +157,6 @@ void DPSL::Query(IDType u, string filename) {
     int leaf_add_v = 0;
     if constexpr (ELIM_LEAF)
       if (psl_ptr->leaf_root[v_inv] != -1) {
-
         // if(v == 2524) cout << v << " " << v_inv << " " <<
         // psl_ptr->leaf_root[v_inv] << " | " << u << " " << u_inv << " " <<
         // endl;
@@ -219,7 +212,6 @@ void DPSL::Query(IDType u, string filename) {
         }
       }
     } else {
-
       auto &labels_v = psl_ptr->labels[v_inv];
 
       // if(v == 14){
@@ -261,7 +253,7 @@ void DPSL::Query(IDType u, string filename) {
     fill(all_dists, all_dists + whole_csr->n, MAX_DIST);
     fill(source, source + whole_csr->n, 0);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)              \
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
     schedule(SCHEDULE)
     for (IDType i = 0; i < local_dist.size(); i++) {
       all_dists[i] = local_dist[i];
@@ -270,7 +262,7 @@ void DPSL::Query(IDType u, string filename) {
     for (int p = 1; p < np; p++) {
       int *dists;
       size_t size = RecvData(dists, 0, p, MPI_INT32_T);
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)              \
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
     schedule(SCHEDULE)
       for (int i = 0; i < whole_csr->n; i++) {
         if (dists[i] < all_dists[i]) {
@@ -295,10 +287,10 @@ void DPSL::Query(IDType u, string filename) {
 
     bool all_correct = true;
 
-    #ifdef DEBUG
+#ifdef DEBUG
     ofstream ofs(filename);
     ofs << "Vertex\tDPSL(source)\tBFS\tCorrectness" << endl;
-    #endif
+#endif
 
     for (IDType i = 0; i < whole_csr->n; i++) {
       int psl_res = all_dists[i];
@@ -312,19 +304,19 @@ void DPSL::Query(IDType u, string filename) {
         all_correct = false;
       }
 
-      #ifdef DEBUG
+#ifdef DEBUG
       ofs << i << "\t" << psl_res << "(" << source[i] << ")"
           << "\t" << bfs_res << "\t" << correctness << endl;
-      #endif
+#endif
     }
 
     delete bfs_results;
     delete[] all_dists;
     delete[] source;
 
-    #ifdef DEBUG
+#ifdef DEBUG
     ofs.close();
-    #endif
+#endif
 
     cout << "Correctness of Query: " << all_correct << endl;
 
@@ -334,7 +326,6 @@ void DPSL::Query(IDType u, string filename) {
 }
 
 void DPSL::WriteLabelCounts(string filename) {
-
   Barrier();
   CSR &csr = *part_csr;
 
@@ -351,16 +342,15 @@ void DPSL::WriteLabelCounts(string filename) {
   }
 
   if (pid == 0) {
-
     int *source = new int[whole_csr->n];
     IDType *all_counts = new IDType[whole_csr->n];
     fill(all_counts, all_counts + whole_csr->n, -1);
     fill(source, source + whole_csr->n,
-         -1); // -1 indicates free floating vertex
+         -1);  // -1 indicates free floating vertex
 
     for (IDType i = 0; i < part_csr->n; i++) {
       all_counts[i] = counts[i];
-      source[i] = 0; // 0 indicates cut vertex as well as partition 0
+      source[i] = 0;  // 0 indicates cut vertex as well as partition 0
     }
 
     delete[] counts;
@@ -369,12 +359,12 @@ void DPSL::WriteLabelCounts(string filename) {
       IDType *recv_counts;
       size_t size = RecvData(recv_counts, 0, p);
       for (IDType i = 0; i < size; i++) {
-        if (recv_counts[i] != -1) { // Count recieved
+        if (recv_counts[i] != -1) {  // Count recieved
           if (vc_ptr->cut.find(i) == vc_ptr->cut.end() &&
-              all_counts[i] < recv_counts[i]) { // vertex not in cut and counted
-                                                // on the recieved data
+              all_counts[i] < recv_counts[i]) {  // vertex not in cut and
+                                                 // counted on the recieved data
 
-            all_counts[i] = recv_counts[i]; // Update count
+            all_counts[i] = recv_counts[i];  // Update count
             source[i] = p;
           }
         }
@@ -388,8 +378,7 @@ void DPSL::WriteLabelCounts(string filename) {
       if (!in_cut[i]) {
         total_per_source[source[i]] += all_counts[i];
       } else {
-        for (int j = 0; j < np; j++)
-          total_per_source[j] += all_counts[i];
+        for (int j = 0; j < np; j++) total_per_source[j] += all_counts[i];
       }
     }
 
@@ -426,7 +415,6 @@ void DPSL::WriteLabelCounts(string filename) {
 }
 
 bool DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
-
   Barrier();
 
   // Keeps track of whether or not new labels were added to the vertices
@@ -435,7 +423,6 @@ bool DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
   // Outer Loop: Processes the data in rounds
   for (size_t round_start = 0; round_start < cut.size();
        round_start += MERGE_CHUNK_SIZE) {
-
     // cout << "NEW ROUND: " << round_start << endl;
     size_t round_size = min((size_t)MERGE_CHUNK_SIZE, cut.size() - round_start);
     size_t per_node_chunk_size = (round_size / np) + 1;
@@ -471,7 +458,6 @@ bool DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
     iota(processes.begin(), processes.end(), 0);
 
     for (int k = 0; k < np - 1; k++) {
-
       // Everyone pairs up with the node accross them in the representation
       // shown above
       int self_index =
@@ -606,8 +592,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
       for (size_t i = 0; i < per_node_chunk_size; i++) {
         size_t cut_index = round_start + p * per_node_chunk_size + i;
 
-        if (cut_index >= cut_merge_order.size())
-          continue;
+        if (cut_index >= cut_merge_order.size()) continue;
 
         IDType u = cut_merge_order[cut_index];
 
@@ -634,14 +619,12 @@ bool DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
       // This will delete the received data
       // But note that on the broadcasting node it deletes the constructed data
       // too
-      if (recv_merge_indices != nullptr)
-        delete[] recv_merge_indices;
-      if (recv_merge_labels != nullptr)
-        delete[] recv_merge_labels;
+      if (recv_merge_indices != nullptr) delete[] recv_merge_indices;
+      if (recv_merge_labels != nullptr) delete[] recv_merge_labels;
 
-    } // Broadcast loop
+    }  // Broadcast loop
 
-  } // Outer loop
+  }  // Outer loop
 
   return updated;
 }
@@ -649,7 +632,6 @@ bool DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
 size_t DPSL::CompressCutLabels(IDType *&comp_indices, IDType *&comp_labels,
                                vector<vector<IDType> *> &new_labels,
                                size_t start_index, size_t end_index) {
-
   // Ensures we don't overflow the array
   start_index = min(start_index, cut_merge_order.size());
   end_index = min(end_index, cut_merge_order.size());
@@ -712,7 +694,6 @@ void DPSL::SendData(T *data, size_t size, int tag, int to, MPI_Datatype type) {
   MPI_Send(&size, 1, MPI_INT64_T, to, size_tag, MPI_COMM_WORLD);
 
   if (size != 0 && data != nullptr) {
-
     int send_id = 1;
     while (size > MAX_COMM_SIZE) {
       cout << "Large size data (" << size << ") in Send" << endl;
@@ -731,7 +712,6 @@ void DPSL::SendData(T *data, size_t size, int tag, int to, MPI_Datatype type) {
 
 template <typename T>
 void DPSL::BroadcastData(T *data, size_t size, MPI_Datatype type) {
-
   Barrier();
   MPI_Bcast(&size, 1, MPI_INT64_T, pid, MPI_COMM_WORLD);
 
@@ -772,7 +752,6 @@ size_t DPSL::RecvBroadcast(T *&data, int from, MPI_Datatype type) {
     }
 
     if (size > 0) {
-
       Barrier();
       MPI_Bcast(data + sent, size, type, from, MPI_COMM_WORLD);
     }
@@ -823,7 +802,6 @@ size_t DPSL::RecvData(T *&data, int tag, int from, MPI_Datatype type) {
 }
 
 void DPSL::InitP0(string partition_str, string partition_params) {
-
   double init_start = omp_get_wtime();
 
   string order_method = ORDER_METHOD;
@@ -865,8 +843,7 @@ void DPSL::InitP0(string partition_str, string partition_params) {
 
   csr.Reorder(order, &cut, &in_cut);
 
-  for (int p = 0; p < np; p++)
-    csrs[p]->Reorder(order, &cut, &in_cut);
+  for (int p = 0; p < np; p++) csrs[p]->Reorder(order, &cut, &in_cut);
 
   part_csr = csrs[0];
 
@@ -1075,7 +1052,6 @@ void DPSL::Init() {
 }
 
 void DPSL::Index() {
-
   Barrier();
   double start, end, alg_start, alg_end;
   double total_merge_time = 0;
@@ -1109,23 +1085,19 @@ void DPSL::Index() {
   start = omp_get_wtime();
   alg_start = omp_get_wtime();
   vector<vector<IDType> *> init_labels(csr.n, nullptr);
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)              \
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
     schedule(SCHEDULE)
   for (IDType u = 0; u < csr.n; u++) {
-
     bool should_init = true;
     if constexpr (USE_GLOBAL_BP) {
-      if (global_bp->used[u])
-        should_init = false;
+      if (global_bp->used[u]) should_init = false;
     }
 
     if constexpr (ELIM_MIN)
-      if (psl.local_min[u])
-        should_init = false;
+      if (psl.local_min[u]) should_init = false;
 
     if constexpr (ELIM_LEAF)
-      if (psl.leaf_root[u] != -1)
-        should_init = false;
+      if (psl.leaf_root[u] != -1) should_init = false;
 
     if (should_init) {
       psl.labels[u].vertices.push_back(u);
@@ -1133,7 +1105,7 @@ void DPSL::Index() {
     }
   }
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)              \
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
     schedule(SCHEDULE)
   for (IDType u = 0; u < csr.n; u++) {
     if (!in_cut[u] && init_labels[u] != nullptr && !init_labels[u]->empty()) {
@@ -1153,23 +1125,20 @@ void DPSL::Index() {
   total_merge_time += end - start;
   Log("Merging Initial Labels End");
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)              \
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
     schedule(SCHEDULE)
   for (IDType u = 0; u < csr.n; u++) {
     auto &labels = psl.labels[u];
 
     bool should_init = true;
     if constexpr (USE_GLOBAL_BP)
-      if (global_bp->used[u])
-        should_init = false;
+      if (global_bp->used[u]) should_init = false;
 
     if constexpr (ELIM_MIN)
-      if (psl.local_min[u])
-        should_init = false;
+      if (psl.local_min[u]) should_init = false;
 
     if constexpr (ELIM_LEAF)
-      if (psl.leaf_root[u] != -1)
-        should_init = false;
+      if (psl.leaf_root[u] != -1) should_init = false;
 
     if (should_init) {
       labels.dist_ptrs.push_back(0);
@@ -1182,8 +1151,7 @@ void DPSL::Index() {
       for (IDType i = ngh_start; i < ngh_end; i++) {
         IDType v = csr.col[i];
 
-        if (v < psl.max_ranks[u])
-          should_run[v] = true;
+        if (v < psl.max_ranks[u]) should_run[v] = true;
       }
 
       psl.prev_max_ranks[u] = psl.max_ranks[u];
@@ -1203,20 +1171,16 @@ void DPSL::Index() {
   IDType num_nodes = 0;
   for (IDType u = 0; u < csr.n; u++) {
     if constexpr (USE_LOCAL_BP)
-      if (psl_ptr->local_bp->used[u])
-        continue;
+      if (psl_ptr->local_bp->used[u]) continue;
 
     if constexpr (USE_GLOBAL_BP)
-      if (psl_ptr->global_bp->used[u])
-        continue;
+      if (psl_ptr->global_bp->used[u]) continue;
 
     if constexpr (ELIM_MIN)
-      if (psl_ptr->local_min[u])
-        continue;
+      if (psl_ptr->local_min[u]) continue;
 
     if constexpr (ELIM_LEAF)
-      if (psl_ptr->leaf_root[u] != -1)
-        continue;
+      if (psl_ptr->leaf_root[u] != -1) continue;
 
     if (csr.row_ptr[u] != csr.row_ptr[u + 1]) {
       nodes_to_process[num_nodes++] = u;
@@ -1227,7 +1191,6 @@ void DPSL::Index() {
   bool updated = true;
   last_dist = 1;
   for (int d = 2; d < MAX_DIST; d++) {
-
     Barrier();
     vector<vector<IDType> *> new_labels(csr.n, nullptr);
 
@@ -1235,18 +1198,16 @@ void DPSL::Index() {
     last_dist = d;
     updated = false;
     Log("Pulling...");
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)              \
-    reduction(||                                                               \
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
+    reduction(||                                                  \
               : updated) schedule(SCHEDULE)
     for (IDType i = 0; i < num_nodes; i++) {
-
       int tid = omp_get_thread_num();
 
       IDType u = nodes_to_process[i];
       /* cout << "Pulling for u=" << u << endl; */
 
       if (should_run[u]) {
-
         if constexpr (SMART_DIST_CACHE_CUTOFF) {
           if (psl.labels[u].vertices.size() <= SMART_DIST_CACHE_CUTOFF) {
             new_labels[u] = psl.Pull<false>(u, d, caches[tid], used[tid]);
@@ -1267,7 +1228,7 @@ void DPSL::Index() {
     end = omp_get_wtime();
     PrintTime("Level " + to_string(d), end - start);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)              \
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
     schedule(SCHEDULE)
     for (IDType i = 0; i < num_nodes; i++) {
       IDType u = nodes_to_process[i];
@@ -1292,7 +1253,7 @@ void DPSL::Index() {
 
     fill(should_run, should_run + csr.n, false);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS)              \
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
     schedule(SCHEDULE)
     for (IDType u = 0; u < csr.n; u++) {
       auto &labels_u = psl.labels[u];
@@ -1323,8 +1284,7 @@ void DPSL::Index() {
         }
       }
 
-      if constexpr (ELIM_MIN)
-        psl.prev_max_ranks[u] = psl.max_ranks[u];
+      if constexpr (ELIM_MIN) psl.prev_max_ranks[u] = psl.max_ranks[u];
       psl.max_ranks[u] = -1;
     }
 
@@ -1386,7 +1346,6 @@ DPSL::DPSL(int pid, CSR *csr, int np, string partition_str,
 }
 
 DPSL::~DPSL() {
-
   for (int i = 0; i < NUM_THREADS; i++) {
     delete[] caches[i];
   }
@@ -1394,8 +1353,7 @@ DPSL::~DPSL() {
 
   delete[] used;
 
-  if (part_csr != nullptr)
-    delete part_csr;
+  if (part_csr != nullptr) delete part_csr;
 
   // if(whole_csr != nullptr)
   //   delete whole_csr;
@@ -1404,9 +1362,7 @@ DPSL::~DPSL() {
 
   delete[] partition;
 
-  if (vc_ptr != nullptr)
-    delete vc_ptr;
+  if (vc_ptr != nullptr) delete vc_ptr;
 
-  if (global_bp != nullptr)
-    delete global_bp;
+  if (global_bp != nullptr) delete global_bp;
 }

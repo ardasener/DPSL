@@ -1,29 +1,31 @@
 #ifndef PSL_H
 #define PSL_H
 
-#include "../utils/bp.h"
-#include "../utils/common.h"
-#include "../external/order/order.hpp"
-#include "../external/pigo/pigo.hpp"
+#include <omp.h>
+#include <stdio.h>
+
 #include <algorithm>
 #include <climits>
 #include <cstdint>
 #include <fstream>
-#include <omp.h>
-#include <stdio.h>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "../external/order/order.hpp"
+#include "../external/pigo/pigo.hpp"
+#include "../utils/bp.h"
+#include "../utils/common.h"
+
 using namespace std;
 
 // Stores the labels for each vertex
 struct LabelSet {
-  vector<IDType> vertices;  // global vertex ids in order of distances - log(n)
-  vector<IDType> dist_ptrs; // indices for the vertices vector denoting distance
-                            // starts - max_dist
+  vector<IDType> vertices;   // global vertex ids in order of distances - log(n)
+  vector<IDType> dist_ptrs;  // indices for the vertices vector denoting
+                             // distance starts - max_dist
 };
 
 enum PruneIDs {
@@ -34,8 +36,7 @@ enum PruneIDs {
 };
 
 class PSL {
-
-public:
+ public:
   CSR &csr;
   CSR *unordered_csr = nullptr;
   vector<IDType> ranks;

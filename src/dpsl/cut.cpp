@@ -1,49 +1,50 @@
 #include "cut.h"
+
 #include <omp.h>
 #include <stdio.h>
+
 #include "mtmetis.h"
 
 VertexCut::~VertexCut() {
-  if (partition != nullptr)
-    delete[] partition;
+  if (partition != nullptr) delete[] partition;
 }
 
 VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
                                 string order_method, int np) {
-
-
   VertexCut *vc = new VertexCut;
 
-  if(partitioner == "mtmetis"){
+  if (partitioner == "mtmetis") {
     const uint32_t nvtxs = csr.n;
     const uint32_t ncon = csr.m;
-    uint32_t* xadj = (uint32_t*) csr.row_ptr; 
-    uint32_t* adj = (uint32_t*) csr.col;
-    int32_t* vwgt = new int32_t[csr.n];
-    const uint32_t vsize = csr.n; // Unused
-    int32_t* adjwgt = nullptr;
+    uint32_t *xadj = (uint32_t *)csr.row_ptr;
+    uint32_t *adj = (uint32_t *)csr.col;
+    int32_t *vwgt = new int32_t[csr.n];
+    const uint32_t vsize = csr.n;  // Unused
+    int32_t *adjwgt = nullptr;
     const uint32_t nparts = np;
-    float* tpwgts = nullptr;
+    float *tpwgts = nullptr;
     const float ubvec = 1;
     int32_t r_edgecut;
-    uint32_t* where = new uint32_t[csr.n];
+    uint32_t *where = new uint32_t[csr.n];
 
 #pragma omp parallel for num_threads(NUM_THREADS)
-    for(IDType i=0; i<csr.n; i++){
-      vwgt[i] = csr.row_ptr[i+1] - csr.row_ptr[i];
+    for (IDType i = 0; i < csr.n; i++) {
+      vwgt[i] = csr.row_ptr[i + 1] - csr.row_ptr[i];
     }
 
-    double* options = mtmetis_init_options();
-    options[MTMETIS_OPTION_NTHREADS] = (double) NUM_THREADS;
+    double *options = mtmetis_init_options();
+    options[MTMETIS_OPTION_NTHREADS] = (double)NUM_THREADS;
 
     double part_time = omp_get_wtime();
-    MTMETIS_PartGraphKway(&nvtxs, &ncon, xadj, adj, vwgt, &vsize, adjwgt, &nparts, tpwgts, &ubvec, options, &r_edgecut, where);
-    cout << "Partition Time: " << omp_get_wtime() - part_time << " seconds" << endl;
+    MTMETIS_PartGraphKway(&nvtxs, &ncon, xadj, adj, vwgt, &vsize, adjwgt,
+                          &nparts, tpwgts, &ubvec, options, &r_edgecut, where);
+    cout << "Partition Time: " << omp_get_wtime() - part_time << " seconds"
+         << endl;
 
     delete[] vwgt;
 
-    vc->partition = (IDType *) where;
-    
+    vc->partition = (IDType *)where;
+
     cout << "Ordering..." << endl;
     vc->order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
 
@@ -63,9 +64,7 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
   return vc;
 }
 
-
-void VertexCut::Init(CSR& csr, int np){
-
+void VertexCut::Init(CSR &csr, int np) {
   vector<bool> in_cut(csr.n, false);
   cout << "Calculating cut..." << endl;
   for (IDType i = csr.n - 1; i >= 0; i--) {
@@ -77,7 +76,6 @@ void VertexCut::Init(CSR& csr, int np){
       IDType v = csr.col[j];
 
       if (partition[u] != partition[v]) {
-
         if (in_cut[v] || in_cut[u]) {
           continue;
         }
@@ -170,12 +168,10 @@ void VertexCut::Init(CSR& csr, int np){
     csrs[i] = new CSR(row_ptr, col, ids, inv_ids, type, comp_ids, n, m);
     cout << "M for P" << i << ": " << m << endl;
   }
-
 }
 
 VertexCut *VertexCut::Read(CSR &csr, string part_file, string order_method,
                            int np) {
-
   VertexCut *vc = new VertexCut;
 
   cout << "Ordering..." << endl;

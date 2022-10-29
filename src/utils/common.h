@@ -1,7 +1,6 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#include "../external/pigo/pigo.hpp"
 #include <algorithm>
 #include <climits>
 #include <cstdint>
@@ -11,10 +10,11 @@
 #include <unordered_map>
 #include <unordered_set>
 
-// CAUTION !!!!
-// The default values defined here may be overwritten in the Makefile 
-// Please check the values there not here
+#include "../external/pigo/pigo.hpp"
 
+// CAUTION !!!!
+// The default values defined here may be overwritten in the Makefile
+// Please check the values there not here
 
 // Number of roots used for BP
 #ifndef N_ROOTS
