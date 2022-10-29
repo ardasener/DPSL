@@ -579,12 +579,15 @@ vector<IDType> *PSL::Pull(IDType u, int d, char *cache,
       }
     }
 
+
+  new_labels = new vector<IDType>;
+
   for (IDType w : candidates) {
 
     used_vec[w] = false;
 
     if constexpr (use_cache)
-      if (cache[w] <= d) {
+      if (cache[w] < d) {
         continue;
       }
 
@@ -614,16 +617,17 @@ vector<IDType> *PSL::Pull(IDType u, int d, char *cache,
       continue;
     }
 
-    if (new_labels == nullptr) {
-      new_labels = new vector<IDType>;
-    }
-
     new_labels->push_back(w);
 
     if constexpr (MAX_RANK_PRUNE)
       if (w > max_ranks[u]) {
         max_ranks[u] = w;
       }
+  }
+
+  if(new_labels->empty()){
+    delete new_labels;
+    new_labels = nullptr;
   }
 
   if constexpr (use_cache) {

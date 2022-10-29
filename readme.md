@@ -1,6 +1,6 @@
 # DPSL
 
-DPSL is a distributed partitioning based implementation of the Parallel Short-distance Labelling (PSL) algorithm. DPSL can run on multiple nodes distributing the graph and labels among the nodes. This results in both faster indexing times by allowing the use of more computation resources and less storage requirements for each node since the resulting labels will be distributed among them with minimal duplication.
+DPSL is a distributed partitioning based implementation of the Parallel Shortest-distance Labelling (PSL) algorithm. DPSL can run on multiple nodes distributing the graph and labels among the nodes. This results in both faster indexing times by allowing the use of more computation resources and less storage requirements for each node since the resulting labels will be distributed among them with minimal duplication.
 
 > Disclamer: This work is designed specifically for social networks, web graphs and other low diameter graphs.
 > It will not work well on road networks. 
@@ -46,6 +46,11 @@ This project currently includes 3 different binaries that could be build:
 
 Please see `Makefile` for the options. Note that options marked experimental are not guaranteed to work.
 
+> Some of the options for ORDER_METHOD are estimated values and are calculated using a multi-threaded approach that may result in slighly different results from run to run.
+> As a result certain metrics like memory usage may vary when they are used.
+> Furthermore the graph is assumed to be connected for many of these calculations and the program may perform poorly if it is not.
+> For precise measurements, we suggest sticking to "degree" ordering.
+
 ### Examples
 
 - Building PSL with 16 threads and BP turned off:
@@ -79,7 +84,7 @@ mpirun --bind-to none -n <node_count> ./dpsl <graph_file> <part_file>
 ```
 
 - `--bind-to none`: This part ensures that all the cores on the node are available to the program.
-- `-n <node_count>`: Node count is the number of nodes we want to run the program on. It should much the number of partitions on the `<part_file>`.
+- `-n <node_count>`: Node count is the number of nodes we want to run the program on. It should match the number of partitions on the `<part_file>`.
 - `<graph_file>`: Same as PSL.
 - `<part_file>`: Each line of this file should contain a single integer which should be the partition id for the corresponding vertex. Outputs from `metis` or `mtmetis` should work fine here. As mentioned before the number of partitions should match the number of nodes.
 
