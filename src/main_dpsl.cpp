@@ -27,8 +27,13 @@ int main(int argc, char *argv[]) {
   int pid, np;
   MPI_Comm_rank(MPI_COMM_WORLD, &pid);
   MPI_Comm_size(MPI_COMM_WORLD, &np);
+  
+  char name_buffer[MPI_MAX_PROCESSOR_NAME];
+  int name_size;
+  MPI_Get_processor_name(name_buffer, &name_size);
+  string name_str(name_buffer, name_size);  
 
-  cout << "PID=" << pid << endl;
+  cout << "PID=" << pid << " HOST=" << name_str << endl;
 
   if (pid == 0) {
     cout << "Reading " << filename << "..." << endl;
