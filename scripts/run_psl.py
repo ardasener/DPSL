@@ -68,6 +68,8 @@ for graph in graphs:
             error = True
             print("Called Process Error: ", ex.cmd, ex.returncode)
             print(ex.output)
+            res += name + "," + "INF" + "," + "INF" + "," + "INF" + "\n"
+            break
         except Exception as ex:
             error = True
             print("Exception:", ex)

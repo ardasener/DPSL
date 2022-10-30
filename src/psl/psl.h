@@ -77,8 +77,6 @@ class PSL {
   template <bool use_cache = true>
   vector<IDType> *Pull(IDType u, int d, char *cache, vector<bool> &used_vec);
 
-  void PrintLabelHash();
-
 #ifdef GPU
   void setDevice(int device);
   void LoadGPU(CSR &csr);
