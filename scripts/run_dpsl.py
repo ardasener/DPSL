@@ -84,6 +84,10 @@ for graph in graphs:
             merge_times.append(merge)
             tot_memory.append(tot_mem)
             max_memory.append(max_mem)
+        except sp.CalledProcessError as ex:
+            error = True
+            print("Called Process Error: ", ex.cmd, ex.returncode)
+            print(ex.output)
         except Exception as ex:
             print("Exception:", ex)
             error = True

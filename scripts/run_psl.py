@@ -64,6 +64,10 @@ for graph in graphs:
             time, mem = get_stats(out)
             times.append(time)
             memory.append(mem)
+        except sp.CalledProcessError as ex:
+            error = True
+            print("Called Process Error: ", ex.cmd, ex.returncode)
+            print(ex.output)
         except Exception as ex:
             error = True
             print("Exception:", ex)
