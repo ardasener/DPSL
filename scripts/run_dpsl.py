@@ -87,7 +87,8 @@ for graph in graphs:
         except sp.CalledProcessError as ex:
             error = True
             print("Called Process Error: ", ex.cmd, ex.returncode)
-            print(ex.output)
+            print(ex.stdout)
+            print(ex.stderr)
             res += name + "," + "INF" + "," + "INF" + "," + "INF" + "\n"
             break
         except Exception as ex:
