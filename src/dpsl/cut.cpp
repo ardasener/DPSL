@@ -34,6 +34,7 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
 
     double *options = mtmetis_init_options();
     options[MTMETIS_OPTION_NTHREADS] = (double)NUM_THREADS;
+    options[MTMETIS_OPTION_SEED] = (double)42;
 
     double part_time = omp_get_wtime();
     MTMETIS_PartGraphKway(&nvtxs, &ncon, xadj, adj, vwgt, &vsize, adjwgt,
