@@ -1199,15 +1199,17 @@ void DPSL::Index() {
     updated = false;
     Log("Pulling...");
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
-    reduction(||                                                  \
-              : updated) schedule(SCHEDULE)
+    reduction(|| : updated) schedule(SCHEDULE)
     for (IDType i = 0; i < num_nodes; i++) {
       int tid = omp_get_thread_num();
 
       IDType u = nodes_to_process[i];
       /* cout << "Pulling for u=" << u << endl; */
 
-      if (should_run[u]) {
+      bool run = true;
+      if constexpr (MAX_RANK_PRUNE) run = should_run[u];
+
+      if (run) {
         if constexpr (SMART_DIST_CACHE_CUTOFF) {
           if (psl.labels[u].vertices.size() <= SMART_DIST_CACHE_CUTOFF) {
             new_labels[u] = psl.Pull<false>(u, d, caches[tid], used[tid]);
@@ -1221,7 +1223,7 @@ void DPSL::Index() {
         }
 
         if (new_labels[u] != nullptr && !new_labels[u]->empty()) {
-          updated = updated || true;
+          updated = true;
         }
       }
     }
@@ -1264,28 +1266,32 @@ void DPSL::Index() {
         new_labels[u] = nullptr;
       }
 
-      IDType start_neighbors = csr.row_ptr[u];
-      IDType end_neighbors = csr.row_ptr[u + 1];
 
-      if constexpr (ELIM_MIN)
-        if (psl.local_min[u]) {
+      if constexpr (MAX_RANK_PRUNE){
+
+        IDType start_neighbors = csr.row_ptr[u];
+        IDType end_neighbors = csr.row_ptr[u + 1];
+
+        if constexpr (ELIM_MIN)
+          if (psl.local_min[u]) {
+            for (IDType i = start_neighbors; i < end_neighbors; i++) {
+              IDType v = csr.col[i];
+              psl.max_ranks[u] = max(psl.max_ranks[u], psl.prev_max_ranks[v]);
+            }
+          }
+
+        if (psl.max_ranks[u] != -1) {
           for (IDType i = start_neighbors; i < end_neighbors; i++) {
             IDType v = csr.col[i];
-            psl.max_ranks[u] = max(psl.max_ranks[u], psl.prev_max_ranks[v]);
+            if (v < psl.max_ranks[u]) {
+              should_run[v] = true;
+            }
           }
         }
 
-      if (psl.max_ranks[u] != -1) {
-        for (IDType i = start_neighbors; i < end_neighbors; i++) {
-          IDType v = csr.col[i];
-          if (v < psl.max_ranks[u]) {
-            should_run[v] = true;
-          }
-        }
+        if constexpr (ELIM_MIN) psl.prev_max_ranks[u] = psl.max_ranks[u];
+        psl.max_ranks[u] = -1;
       }
-
-      if constexpr (ELIM_MIN) psl.prev_max_ranks[u] = psl.max_ranks[u];
-      psl.max_ranks[u] = -1;
     }
 
     // Stops the execution once all processes agree that they are done

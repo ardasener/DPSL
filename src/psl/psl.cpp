@@ -777,8 +777,7 @@ void PSL::Index() {
 
 // TODO: Reverse this loop
 #pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
-    reduction(||                                                  \
-              : updated) schedule(SCHEDULE)
+    reduction(|| : updated) schedule(SCHEDULE)
     for (IDType i = 0; i < num_nodes; i++) {
       IDType u = nodes_to_process[i];
 

@@ -2,6 +2,7 @@
 
 #include <omp.h>
 #include <stdio.h>
+#include <cmath>
 
 #include "mtmetis.h"
 
@@ -12,6 +13,25 @@ VertexCut::~VertexCut() {
 VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
                                 string order_method, int np) {
   VertexCut *vc = new VertexCut;
+
+  cout << "Ordering..." << endl;
+  vc->order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
+
+  cout << "Ranking..." << endl;
+  vc->ranks.resize(csr.n);
+  for (IDType i = 0; i < csr.n; i++) {
+    vc->ranks[vc->order[i]] = i;
+  }
+
+#pragma omp parallel for num_threads(NUM_THREADS)
+  for(IDType u = 0; u < csr.n; u++){
+    IDType start = csr.row_ptr[u];
+    IDType end = csr.row_ptr[u+1];
+
+    sort(csr.col + start, csr.col + end, [vc](IDType x, IDType y){
+      return vc->ranks[x] < vc->ranks[y];
+    });
+  }
 
   if (partitioner == "mtmetis") {
     const uint32_t nvtxs = csr.n;
@@ -27,14 +47,43 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
     int32_t r_edgecut;
     uint32_t *where = new uint32_t[csr.n];
 
+
+  // 0 -> uniform
+  // 1 -> degree
+  // 2 -> degree_log
+  int weight_strat = 0;
+
+  if(PART_WEIGHTS == "uniform"){
+    weight_strat = 0;
+  } else if(PART_WEIGHTS == "degree"){
+    weight_strat = 1;
+  } else {
+    weight_strat = 2;
+  }
+
 #pragma omp parallel for num_threads(NUM_THREADS)
-    for (IDType i = 0; i < csr.n; i++) {
-      vwgt[i] = csr.row_ptr[i + 1] - csr.row_ptr[i];
+    for (IDType u = 0; u < csr.n; u++) {
+
+      IDType start = csr.row_ptr[u];
+      IDType end = csr.row_ptr[u+1];
+
+      int32_t weight = (weight_strat == 2) ? std::log(end - start) + 1 : (weight_strat == 1) ? end - start + 1 : 1;
+      
+      // Stranded or Leaf or Local Minimum
+      if constexpr(PART_LB_FIX)
+        if(start == end || start + 1 == end || vc->ranks[u] < vc->ranks[csr.row_ptr[start]]){
+          weight = 0;
+        } 
+      
+      vwgt[u] = weight;
+
     }
 
     double *options = mtmetis_init_options();
     options[MTMETIS_OPTION_NTHREADS] = (double)NUM_THREADS;
-    options[MTMETIS_OPTION_SEED] = (double)42;
+    options[MTMETIS_OPTION_NRUNS] = (double)8;
+    options[MTMETIS_OPTION_RUNSTATS] = (double)1;
+    options[MTMETIS_OPTION_UBFACTOR] = (double) 1.03;
 
     double part_time = omp_get_wtime();
     MTMETIS_PartGraphKway(&nvtxs, &ncon, xadj, adj, vwgt, &vsize, adjwgt,
@@ -45,15 +94,6 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
     delete[] vwgt;
 
     vc->partition = (IDType *)where;
-
-    cout << "Ordering..." << endl;
-    vc->order = gen_order(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
-
-    cout << "Ranking..." << endl;
-    vc->ranks.resize(csr.n);
-    for (IDType i = 0; i < csr.n; i++) {
-      vc->ranks[vc->order[i]] = i;
-    }
 
     vc->Init(csr, np);
 

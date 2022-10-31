@@ -109,6 +109,15 @@
 #define MAX_RANK_PRUNE true
 #endif
 
+#ifndef PART_WEIGHTS
+#define PART_WEIGHTS "degree_log"
+#endif
+
+#ifndef PART_LB_FIX
+#define PART_LB_FIX true
+#endif
+
+
 // Maximum message size for MPI sections
 #define MAX_COMM_SIZE 1 << 30
 
