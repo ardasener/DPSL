@@ -113,8 +113,8 @@
 #define PART_WEIGHTS "degree_log"
 #endif
 
-#ifndef PART_LB_FIX
-#define PART_LB_FIX true
+#ifndef PART_LB_OFFSET
+#define PART_LB_OFFSET 5
 #endif
 
 

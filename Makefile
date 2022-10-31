@@ -31,8 +31,8 @@ COMP_LVL=-1
 MAX_RANK_PRUNE=true
 # Weights used for the partition support uniform, degree, degree_log
 PART_WEIGHTS=degree_log
-# An attempt at a fix for load balance issues in partitioning due to compression
-PART_LB_FIX=true
+# An attempt at a fix for load balance issues in partitioning due to compression (Setting to -1 turns it off)
+PART_LB_OFFSET=5
 
 
 # Directory for the MTMetis library, should contain libmtmetis.a and mtmetis.h files
@@ -70,7 +70,7 @@ endif
 # C++ flags
 CXX_COMPILER=g++
 MPICXX_COMPILER=mpic++
-CXX_FLAGS= -fopenmp -std=c++17 -DNUM_THREADS=$(NUM_THREADS) -DORDER_METHOD=\"$(ORDER_METHOD)\" -DN_ROOTS=$(N_ROOTS) -DSCHEDULE=$(SCHEDULE) -DSMART_DIST_CACHE_CUTOFF=$(SMART_DIST_CACHE_CUTOFF) -DELIM_MIN=$(ELIM_MIN) -DELIM_LEAF=$(ELIM_LEAF) -DMAX_RANK_PRUNE=$(MAX_RANK_PRUNE) -DPART_WEIGHTS=\"$(PART_WEIGHTS)\" -DPART_LB_FIX=$(PART_LB_FIX)
+CXX_FLAGS= -fopenmp -std=c++17 -DNUM_THREADS=$(NUM_THREADS) -DORDER_METHOD=\"$(ORDER_METHOD)\" -DN_ROOTS=$(N_ROOTS) -DSCHEDULE=$(SCHEDULE) -DSMART_DIST_CACHE_CUTOFF=$(SMART_DIST_CACHE_CUTOFF) -DELIM_MIN=$(ELIM_MIN) -DELIM_LEAF=$(ELIM_LEAF) -DMAX_RANK_PRUNE=$(MAX_RANK_PRUNE) -DPART_WEIGHTS=\"$(PART_WEIGHTS)\" -DPART_LB_OFFSET=$(PART_LB_OFFSET)
 CXX_RELEASE_FLAGS= -O3
 CXX_DEBUG_FLAGS= -O0 -DDEBUG -g
 CXX_PROFILE_FLAGS= -O1 -g -fno-inline -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address

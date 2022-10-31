@@ -68,9 +68,10 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
       IDType end = csr.row_ptr[u+1];
 
       int32_t weight = (weight_strat == 2) ? std::log(end - start) + 1 : (weight_strat == 1) ? end - start + 1 : 1;
+      if constexpr(PART_LB_OFFSET != -1) weight += PART_LB_OFFSET;
       
       // Stranded or Leaf or Local Minimum
-      if constexpr(PART_LB_FIX)
+      if constexpr(PART_LB_OFFSET != -1)
         if(start == end || start + 1 == end || vc->ranks[u] < vc->ranks[csr.row_ptr[start]]){
           weight = 0;
         } 
