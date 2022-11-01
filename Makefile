@@ -35,8 +35,9 @@ PART_WEIGHTS=degree_log
 PART_LB_OFFSET=5
 
 
-# Directory for the MTMetis library, should contain libmtmetis.a and mtmetis.h files
-MT_METIS_DIR=mtmetis
+# Directory for the dependencies, should contain .a and .h files for pulp and metis
+# You can use the scripts/get_deps.sh script to get them automatically on most Linux systems
+LIBS_DIR=libs
 
 
 # Compression level overrides the COMPRESS, ELIM_MIN, ELIM_LEAF options
@@ -76,7 +77,7 @@ CXX_DEBUG_FLAGS= -O0 -DDEBUG -g
 CXX_PROFILE_FLAGS= -O1 -g -fno-inline -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address
 PSL_SOURCE_FILES=src/main_psl.cpp src/utils/*.cpp src/psl/*.cpp
 DPSL_SOURCE_FILES=src/main_dpsl.cpp src/utils/*.cpp src/psl/*.cpp src/dpsl/*.cpp
-DPSL_FLAGS= -DUSE_GLOBAL_BP=$(USE_BP) -DUSE_LOCAL_BP=false -DGLOBAL_COMPRESS=$(COMPRESS) -DLOCAL_COMPRESS=false -DBIN_DPSL -L $(MT_METIS_DIR) -I $(MT_METIS_DIR) -l:libmtmetis.a
+DPSL_FLAGS= -DUSE_GLOBAL_BP=$(USE_BP) -DUSE_LOCAL_BP=false -DGLOBAL_COMPRESS=$(COMPRESS) -DLOCAL_COMPRESS=false -DBIN_DPSL -L $(LIBS_DIR) -I $(LIBS_DIR) -l:libmetis.a -l:libpulp.a
 PSL_FLAGS= -DUSE_GLOBAL_BP=false -DUSE_LOCAL_BP=$(USE_BP) -DGLOBAL_COMPRESS=false -DLOCAL_COMPRESS=$(COMPRESS) -DBIN_PSL
 
 # CUDA flags

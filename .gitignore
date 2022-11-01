@@ -30,3 +30,5 @@ runs/*
 run.log
 run.res
 mtmetis/*
+libs/*
+temp/*

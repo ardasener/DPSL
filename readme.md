@@ -18,14 +18,19 @@ DPSL is a distributed partitioning based implementation of the Parallel Shortest
 - (For DPSL only) mtmetis (.a and .h files)
 - (For GPSL only) Nvidia CUDA (with `nvcc` compiler) (tested with version 11.2)
 
-## MTMetis Dependency
+## Other Dependencies
 
-For DPSL, we need the mtmetis partitioner available [here](http://glaros.dtc.umn.edu/gkhome/metis/metis/overview).
-On most Linux systems, you can use `scripts/get_mtmetis.py` script to obtain and build it automatically.
+For DPSL, we need several partitioning libraries.
 
-> Please run the script on the project root. Like: `python3 scripts/get_mtmetis.py`.
+Currently these are:
+- [PULP](https://github.com/HPCGraphAnalysis/PuLP)
+- [METIS](http://glaros.dtc.umn.edu/gkhome/metis/metis/download)
 
-Otherwise you will need to build it manually and place the `libmtmetis.a` and `mtmetis.h` files in the `mtmetis` directory.
+On most Linux systems, you can use `scripts/get_deps.sh` script to obtain and build them automatically.
+
+> Please run the script on the project root. Like: `bash scripts/get_deps.sh`.
+
+Otherwise you will need to build them manually and place the `.a` and `.h` files in the `mtmetis` directory.
 
 ## Building
 
@@ -100,7 +105,7 @@ mpirun --bind-to none -n <node_count> ./dpsl <graph_file> <partitioner> <partiti
 - `--bind-to none`: This part ensures that all the cores on the node are available to the program.
 - `-n <node_count>`: Node count is the number of nodes we want to run the program on. It should much the number of partitions on the `<part_file>`.
 - `<graph_file>`: Same as PSL.
-- `<partitioner>`: A partitioner name. Currently only "mtmetis" is supported.
+- `<partitioner>`: A partitioner name. Currently "pulp" and "metis" are supported.
 
 # Datasets
 

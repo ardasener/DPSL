@@ -4,7 +4,9 @@
 #include <stdio.h>
 #include <cmath>
 
-#include "mtmetis.h"
+// #include "mtmetis.h"
+#include "metis.h"
+#include "pulp.h"
 
 VertexCut::~VertexCut() {
   if (partition != nullptr) delete[] partition;
@@ -19,6 +21,8 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
 
   cout << "Ranking..." << endl;
   vc->ranks.resize(csr.n);
+
+#pragma omp parallel for num_threads(NUM_THREADS)
   for (IDType i = 0; i < csr.n; i++) {
     vc->ranks[vc->order[i]] = i;
   }
@@ -33,21 +37,7 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
     });
   }
 
-  if (partitioner == "mtmetis") {
-    const uint32_t nvtxs = csr.n;
-    const uint32_t ncon = csr.m;
-    uint32_t *xadj = (uint32_t *)csr.row_ptr;
-    uint32_t *adj = (uint32_t *)csr.col;
-    int32_t *vwgt = new int32_t[csr.n];
-    const uint32_t vsize = csr.n;  // Unused
-    int32_t *adjwgt = nullptr;
-    const uint32_t nparts = np;
-    float *tpwgts = nullptr;
-    const float ubvec = 1;
-    int32_t r_edgecut;
-    uint32_t *where = new uint32_t[csr.n];
-
-
+  int* weights = new int[csr.n];
   // 0 -> uniform
   // 1 -> degree
   // 2 -> degree_log
@@ -61,46 +51,95 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
     weight_strat = 2;
   }
 
+  size_t weight_sum = 0;
 #pragma omp parallel for num_threads(NUM_THREADS)
-    for (IDType u = 0; u < csr.n; u++) {
+  for (IDType u = 0; u < csr.n; u++) {
 
-      IDType start = csr.row_ptr[u];
-      IDType end = csr.row_ptr[u+1];
+    IDType start = csr.row_ptr[u];
+    IDType end = csr.row_ptr[u+1];
 
-      int32_t weight = (weight_strat == 2) ? std::log(end - start) + 1 : (weight_strat == 1) ? end - start + 1 : 1;
-      if constexpr(PART_LB_OFFSET != -1) weight += PART_LB_OFFSET;
-      
-      // Stranded or Leaf or Local Minimum
-      if constexpr(PART_LB_OFFSET != -1)
-        if(start == end || start + 1 == end || vc->ranks[u] < vc->ranks[csr.row_ptr[start]]){
-          weight = 0;
-        } 
-      
-      vwgt[u] = weight;
+    int32_t weight = (weight_strat == 2) ? std::log(end - start) + 1 : (weight_strat == 1) ? end - start + 1 : 1;
+    if constexpr(PART_LB_OFFSET != -1) weight += PART_LB_OFFSET;
+    
+    // Stranded or Leaf or Local Minimum
+    if constexpr(PART_LB_OFFSET != -1)
+      if(start == end || start + 1 == end || vc->ranks[u] < vc->ranks[csr.row_ptr[start]]){
+        weight = 1;
+      } 
+    
+    weights[u] = weight;
+    weight_sum += weight;
 
+  }
+
+
+  if (partitioner == "pulp") {
+
+    long* row_ptr_long = new long[csr.n+1];
+
+#pragma omp parallel for num_threads(NUM_THREADS)
+    for(size_t i=0; i<csr.n+1; i++){
+      row_ptr_long[i] = (long) csr.row_ptr[i];
     }
 
-    double *options = mtmetis_init_options();
-    options[MTMETIS_OPTION_NTHREADS] = (double)NUM_THREADS;
-    options[MTMETIS_OPTION_NRUNS] = (double)8;
-    options[MTMETIS_OPTION_RUNSTATS] = (double)1;
-    options[MTMETIS_OPTION_UBFACTOR] = (double) 1.03;
+    int* edge_weights = new int[csr.m];
+    fill(edge_weights, edge_weights + csr.m, 1); 
 
-    double part_time = omp_get_wtime();
-    MTMETIS_PartGraphKway(&nvtxs, &ncon, xadj, adj, vwgt, &vsize, adjwgt,
-                          &nparts, tpwgts, &ubvec, options, &r_edgecut, where);
-    cout << "Partition Time: " << omp_get_wtime() - part_time << " seconds"
-         << endl;
+    pulp_graph_t graph;
+    graph.n = csr.n;
+    graph.m = csr.m;
+    graph.out_array = csr.col;
+    graph.out_degree_list = row_ptr_long;
+    graph.vertex_weights = weights;
+    graph.edge_weights = edge_weights;
+    graph.vertex_weights_sum = (long) weight_sum;
 
-    delete[] vwgt;
+    pulp_part_control_t con;
+    con.vert_balance = 1.10;
+    con.edge_balance = 1.5;
+    con.pulp_seed = 42;
+    con.do_lp_init = false;
+    con.do_bfs_init = true;
+    con.do_repart = false;
+    con.do_edge_balance = false;
+    con.do_maxcut_balance = false;
 
-    vc->partition = (IDType *)where;
+    int *partition = new int[csr.n];
+    pulp_run(&graph, &con, partition, np);
 
+    vc->partition = partition;
+    vc->Init(csr, np);
+
+  } else if(partitioner == "metis"){
+    idx_t options[METIS_NOPTIONS];
+    options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_CUT;
+    options[METIS_OPTION_CTYPE] = METIS_CTYPE_RM;
+    options[METIS_OPTION_IPTYPE] = METIS_IPTYPE_GROW;
+    options[METIS_OPTION_RTYPE] = METIS_RTYPE_FM;
+    options[METIS_OPTION_NO2HOP] = 0;
+    options[METIS_OPTION_NCUTS] = 1;
+    options[METIS_OPTION_NITER] = 10;
+    options[METIS_OPTION_UFACTOR] = 30;
+    options[METIS_OPTION_MINCONN] = 0;
+    options[METIS_OPTION_CONTIG] = 0;
+    options[METIS_OPTION_SEED] = 42;
+    options[METIS_OPTION_NUMBERING] = 0;
+    options[METIS_OPTION_DBGLVL] = 0;
+
+    int *partition = new int[csr.n];
+
+    int nw = 1;
+    int objval;
+    METIS_PartGraphKway(&csr.n, &nw, (idx_t *)csr.row_ptr,
+                            (idx_t *)csr.col, weights, nullptr, nullptr,
+                            &np, nullptr, nullptr, options, &objval, partition);
+
+    vc->partition = partition;
     vc->Init(csr, np);
 
   } else {
-    cerr << "Currently only mtmetis partitioner is supported" << endl;
-    throw -1;
+    cerr << "Partitioner " << partitioner << " is not supported ! (please use metis or mtmetis)" << endl;
+    throw 1;
   }
 
   return vc;
