@@ -4,9 +4,10 @@
 #include <stdio.h>
 #include <cmath>
 
-// #include "mtmetis.h"
+#include "mtmetis.h"
 #include "metis.h"
 #include "pulp.h"
+#include "libmtkahypar.h"
 
 VertexCut::~VertexCut() {
   if (partition != nullptr) delete[] partition;
@@ -137,8 +138,104 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
     vc->partition = partition;
     vc->Init(csr, np);
 
+  } else if(partitioner == "mtkahypar"){
+
+#ifdef ENABLE_MT_KAHYPAR
+    mt_kahypar_initialize_thread_pool(NUM_THREADS, true);
+    mt_kahypar_context_t* context = mt_kahypar_context_new();
+    mt_kahypar_configure_context_from_file(context, "mtkahypar.ini");
+    mt_kahypar_hypernode_id_t num_vertices = csr.n;
+    mt_kahypar_hypernode_id_t num_hyperedges = csr.m;
+
+    std::unique_ptr<mt_kahypar_hyperedge_weight_t[]> hyperedge_weights =
+      std::make_unique<mt_kahypar_hyperedge_weight_t[]>(csr.m);
+    #pragma parallel for num_threads(NUM_THREADS)
+    for(size_t i=0; i<csr.m; i++){
+      hyperedge_weights[i] = 1;
+    }
+
+    std::unique_ptr<mt_kahypar_hypernode_weight_t[]> vertex_weights  =
+      std::make_unique<mt_kahypar_hypernode_weight_t[]>(csr.n);
+    #pragma parallel for num_threads(NUM_THREADS)
+    for(size_t i=0; i<csr.n; i++){
+      vertex_weights[i] = weights[i];
+    }
+
+    std::unique_ptr<size_t[]> hyperedge_indices = std::make_unique<size_t[]>(csr.m+1);
+    #pragma parallel for num_threads(NUM_THREADS)
+    for(IDType i=0; i<csr.m+1; i++){
+      hyperedge_indices[i] = 2*i;
+    }
+
+    std::unique_ptr<mt_kahypar_hyperedge_id_t[]> hyperedges = std::make_unique<mt_kahypar_hyperedge_id_t[]>(csr.m*2);
+    size_t index = 0;
+    for(IDType u=0; u<csr.n; u++){
+      IDType ngh_start = csr.row_ptr[u];
+      IDType ngh_end = csr.row_ptr[u+1];
+
+      for(IDType i=ngh_start; i<ngh_end; i++){
+        IDType v = csr.col[i];
+
+        hyperedges[index++] = u;
+        hyperedges[index++] = v;
+      }
+    }
+
+
+    const double imbalance = 0.03;
+    const mt_kahypar_partition_id_t k = np;
+
+    mt_kahypar_hyperedge_weight_t objective = 0;
+
+    std::vector<mt_kahypar_partition_id_t> partition(num_vertices, -1);
+
+    mt_kahypar_partition(num_vertices, num_hyperedges,
+                        imbalance, k, 42 ,
+                        vertex_weights.get() , hyperedge_weights.get(),
+                        hyperedge_indices.get(), hyperedges.get(),
+                        &objective, context, partition.data(),
+                        false);
+
+    vc->partition = new int[csr.n];
+    copy(partition.begin(), partition.end(), vc->partition);
+    vc->Init(csr, np);
+
+#else
+    cerr << "MTKahypar was not linked, please recompile with ENABLE_MT_KAHYPAR=true or try a different partitioner" << endl;
+    throw 1;
+#endif
+
+  } else if(partitioner == "mtmetis") {
+      const uint32_t nvtxs = csr.n;
+      const uint32_t ncon = csr.m;
+      uint32_t *xadj = (uint32_t *)csr.row_ptr;
+      uint32_t *adj = (uint32_t *)csr.col;
+      int32_t *vwgt = new int32_t[csr.n];
+      const uint32_t vsize = csr.n;  // Unused
+      int32_t *adjwgt = nullptr;
+      const uint32_t nparts = np;
+      float *tpwgts = nullptr;
+      const float ubvec = 1;
+      int32_t r_edgecut;
+      uint32_t *where = new uint32_t[csr.n];
+
+      double *options = mtmetis_init_options();
+      options[MTMETIS_OPTION_NTHREADS] = (double)NUM_THREADS;
+      options[MTMETIS_OPTION_NRUNS] = (double)8;
+      options[MTMETIS_OPTION_RUNSTATS] = (double)1;
+      options[MTMETIS_OPTION_UBFACTOR] = (double) 1.03;
+
+      double part_time = omp_get_wtime();
+      MTMETIS_PartGraphKway(&nvtxs, &ncon, xadj, adj, weights, &vsize, adjwgt,
+                          &nparts, tpwgts, &ubvec, options, &r_edgecut, where);
+      cout << "Partition Time: " << omp_get_wtime() - part_time << " seconds"
+         << endl;
+
+      vc->partition = (IDType *)where;
+
+      vc->Init(csr, np);
   } else {
-    cerr << "Partitioner " << partitioner << " is not supported ! (please use metis or mtmetis)" << endl;
+    cerr << "Partitioner " << partitioner << " is not supported ! (please see the readme file for the available ones)" << endl;
     throw 1;
   }
 

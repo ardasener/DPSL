@@ -25,12 +25,20 @@ For DPSL, we need several partitioning libraries.
 Currently these are:
 - [PULP](https://github.com/HPCGraphAnalysis/PuLP)
 - [METIS](http://glaros.dtc.umn.edu/gkhome/metis/metis/download)
+- [MTMETIS](http://glaros.dtc.umn.edu/gkhome/metis/metis/download)
+- [MTKAHYPAR](https://github.com/kahypar/mt-kahypar) (This is optional)
 
 On most Linux systems, you can use `scripts/get_deps.sh` script to obtain and build them automatically.
 
 > Please run the script on the project root. Like: `bash scripts/get_deps.sh`.
 
-Otherwise you will need to build them manually and place the `.a` and `.h` files in the `mtmetis` directory.
+Otherwise you will need to build them manually and place the `.a`, `.so` and `.h` files in the `libs` directory.
+
+> We suggest building both metis and mtmetis as shared librares, otherwise they may cause linker issues
+
+Mt-kahypar is implemented as an optional dependency as it requires Boost (Their minimal boost option did not work on our end).
+To enable support for it, pass `ENABLE_MT_KAHYPAR=true` to `make`.
+The aforementioned script can be used to automatically download and build mt-kahypar as well just pass the `--mtkahypar` option.
 
 ## Building
 

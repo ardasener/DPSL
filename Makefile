@@ -33,7 +33,8 @@ MAX_RANK_PRUNE=true
 PART_WEIGHTS=degree_log
 # An attempt at a fix for load balance issues in partitioning due to compression (Setting to -1 turns it off)
 PART_LB_OFFSET=5
-
+# Enables mt-kahypar support
+ENABLE_MT_KAHYPAR=false
 
 # Directory for the dependencies, should contain .a and .h files for pulp and metis
 # You can use the scripts/get_deps.sh script to get them automatically on most Linux systems
@@ -77,7 +78,7 @@ CXX_DEBUG_FLAGS= -O0 -DDEBUG -g
 CXX_PROFILE_FLAGS= -O1 -g -fno-inline -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address
 PSL_SOURCE_FILES=src/main_psl.cpp src/utils/*.cpp src/psl/*.cpp
 DPSL_SOURCE_FILES=src/main_dpsl.cpp src/utils/*.cpp src/psl/*.cpp src/dpsl/*.cpp
-DPSL_FLAGS= -DUSE_GLOBAL_BP=$(USE_BP) -DUSE_LOCAL_BP=false -DGLOBAL_COMPRESS=$(COMPRESS) -DLOCAL_COMPRESS=false -DBIN_DPSL -L $(LIBS_DIR) -I $(LIBS_DIR) -l:libmetis.a -l:libpulp.a
+DPSL_FLAGS= -DUSE_GLOBAL_BP=$(USE_BP) -DUSE_LOCAL_BP=false -DGLOBAL_COMPRESS=$(COMPRESS) -DLOCAL_COMPRESS=false -DBIN_DPSL -L $(LIBS_DIR) -I $(LIBS_DIR) -Wl,-rpath $(LIBS_DIR) -l:libmetis.so -l:libpulp.a -l:libmtmetis.so -l:libwildriver.so
 PSL_FLAGS= -DUSE_GLOBAL_BP=false -DUSE_LOCAL_BP=$(USE_BP) -DGLOBAL_COMPRESS=false -DLOCAL_COMPRESS=$(COMPRESS) -DBIN_PSL
 
 # CUDA flags
@@ -109,6 +110,10 @@ endif
 # Experimental 64-bit option
 ifeq ($(USE_64_BIT) , true)
 	CXX_FLAGS := $(CXX_FLAGS) -DUSE_64_BIT
+endif
+
+ifeq ($(ENABLE_MT_KAHYPAR) , true)
+	DPSL_FLAGS := $(DPSL_FLAGS) -l:libmtkahypargraph.so -DENABLE_MT_KAHYPAR
 endif
 
 # Targets

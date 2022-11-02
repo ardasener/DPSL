@@ -32,3 +32,4 @@ run.res
 mtmetis/*
 libs/*
 temp/*
+deps/*
