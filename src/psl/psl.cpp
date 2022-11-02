@@ -742,8 +742,8 @@ void PSL::Index() {
     }
   }
   end_time = omp_get_wtime();
-  cout << "Level 0 & 1 Time: " << end_time - start_time << " seconds" << endl;
-  cout << "Level 0 & 1 Count: " << l0_count << "," << l1_count << endl;
+  cout << "Level 0&1 Time: " << end_time - start_time << " seconds" << endl;
+  cout << "Level 0&1 Count: " << l0_count << "," << l1_count << endl;
 
   // long long cacheless_pull = 0;
   // long long cacheful_pull = 0;

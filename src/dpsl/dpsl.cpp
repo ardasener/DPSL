@@ -414,11 +414,10 @@ void DPSL::WriteLabelCounts(string filename) {
   }
 }
 
-bool DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
+size_t DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
   Barrier();
 
-  // Keeps track of whether or not new labels were added to the vertices
-  bool updated = false;
+  size_t labels_added = 0;
 
   // Outer Loop: Processes the data in rounds
   for (size_t round_start = 0; round_start < cut.size();
@@ -565,6 +564,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
 
     Barrier();
 
+
     // Broadcast and apply the labels
     for (int p = 0; p < np; p++) {
       IDType *recv_merge_indices;
@@ -577,14 +577,18 @@ bool DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
         BroadcastData(merge_labels, merge_indices[per_node_chunk_size]);
         recv_merge_indices = merge_indices;
         recv_merge_labels = merge_labels;
+        labels_added += merge_indices[per_node_chunk_size];
         // cout << "DONE Broadcasting P" << pid << endl;
       } else {
         // cout << "Recv. Broadcast P" << pid << endl;
         size_t s1 = RecvBroadcast(recv_merge_indices, p);
         size_t s2 = RecvBroadcast(recv_merge_labels, p);
+        labels_added += s2;
         // cout << "DONE Recv. Broadcast P" << pid << " with size=" << s1 << ",
         // " << s2 << endl;
       }
+
+
 
       // Apply the received data to PSL
       // cout << "Apply data P" << pid << endl;
@@ -602,7 +606,6 @@ bool DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
         size_t end = recv_merge_indices[i + 1];
 
         if (end - start > 0) {
-          updated = true;
           max_rank =
               *max_element(recv_merge_labels + start, recv_merge_labels + end);
           auto &labels_u = psl.labels[u].vertices;
@@ -626,7 +629,7 @@ bool DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
 
   }  // Outer loop
 
-  return updated;
+  return labels_added;
 }
 
 size_t DPSL::CompressCutLabels(IDType *&comp_indices, IDType *&comp_labels,
@@ -810,9 +813,16 @@ void DPSL::InitP0(string partition_str, string partition_params) {
 
   unordered_csr = new CSR(csr);
 
+  cout << "Pre-Compression" << endl;
+  csr.PrintMetadata();
+
   if (GLOBAL_COMPRESS) {
     csr.Compress();
   }
+
+
+  cout << "Post-Compression" << endl;
+  csr.PrintMetadata();
 
   if (partition_str == "")
     throw "Partition file or partitioner is required";
@@ -897,6 +907,11 @@ void DPSL::InitP0(string partition_str, string partition_params) {
              MPI_CUT_MERGE_ORDER, i);
     SendData(ranks.data(), ranks.size(), MPI_VERTEX_RANKS, i);
     SendData(order.data(), order.size(), MPI_VERTEX_ORDER, i);
+
+
+    cout << "Post-Partition P" << i << endl;
+    csrs[i]->PrintMetadata();
+
     delete csrs[i];
     csrs[i] = nullptr;
   }
@@ -1082,11 +1097,12 @@ void DPSL::Index() {
       new PSL(*part_csr, order_method, &cut, global_bp, ranks_ptr, order_ptr);
   PSL &psl = *psl_ptr;
 
+  size_t l0_labels = 0;
+
   start = omp_get_wtime();
   alg_start = omp_get_wtime();
   vector<vector<IDType> *> init_labels(csr.n, nullptr);
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
-    schedule(SCHEDULE)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : l0_labels)
   for (IDType u = 0; u < csr.n; u++) {
     bool should_init = true;
     if constexpr (USE_GLOBAL_BP) {
@@ -1102,16 +1118,21 @@ void DPSL::Index() {
     if (should_init) {
       psl.labels[u].vertices.push_back(u);
       init_labels[u] = psl.Init(u);
+      l0_labels++;
     }
   }
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
-    schedule(SCHEDULE)
+  size_t l1_labels = 0;
+
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : l1_labels)
   for (IDType u = 0; u < csr.n; u++) {
     if (!in_cut[u] && init_labels[u] != nullptr && !init_labels[u]->empty()) {
       auto &labels = psl.labels[u].vertices;
       labels.insert(labels.end(), init_labels[u]->begin(),
                     init_labels[u]->end());
+      l1_labels += init_labels[u]->size();
+      delete init_labels[u];
+      init_labels[u] = nullptr;
     }
   }
   end = omp_get_wtime();
@@ -1125,8 +1146,7 @@ void DPSL::Index() {
   total_merge_time += end - start;
   Log("Merging Initial Labels End");
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
-    schedule(SCHEDULE)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
   for (IDType u = 0; u < csr.n; u++) {
     auto &labels = psl.labels[u];
 
@@ -1165,7 +1185,8 @@ void DPSL::Index() {
     }
   }
 
-  Barrier();
+
+  cout << "P" << pid << ": " << "Level 0&1 Count: " << l0_labels << "," << l1_labels << endl; 
 
   IDType *nodes_to_process = new IDType[csr.n];
   IDType num_nodes = 0;
@@ -1191,15 +1212,16 @@ void DPSL::Index() {
   bool updated = true;
   last_dist = 1;
   for (int d = 2; d < MAX_DIST; d++) {
-    Barrier();
     vector<vector<IDType> *> new_labels(csr.n, nullptr);
+
+    size_t ln_labels = 0;
+    size_t ln_cut_labels = 0;
 
     start = omp_get_wtime();
     last_dist = d;
     updated = false;
     Log("Pulling...");
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
-    reduction(|| : updated) schedule(SCHEDULE)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) reduction(|| : updated) schedule(SCHEDULE)
     for (IDType i = 0; i < num_nodes; i++) {
       int tid = omp_get_thread_num();
 
@@ -1230,8 +1252,7 @@ void DPSL::Index() {
     end = omp_get_wtime();
     PrintTime("Level " + to_string(d), end - start);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
-    schedule(SCHEDULE)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : ln_labels)
     for (IDType i = 0; i < num_nodes; i++) {
       IDType u = nodes_to_process[i];
       if (!in_cut[u] && new_labels[u] != nullptr && !new_labels[u]->empty()) {
@@ -1239,24 +1260,26 @@ void DPSL::Index() {
         sort(new_labels[u]->begin(), new_labels[u]->end(), greater<IDType>());
         labels.insert(labels.end(), new_labels[u]->begin(),
                       new_labels[u]->end());
+        ln_labels += new_labels[u]->size();
       }
     }
 
-    Barrier();
-
     Log("Merging Labels for d=" + to_string(d));
     start = omp_get_wtime();
-    bool merge_res = MergeCut(new_labels, psl);
-    updated = updated || merge_res;
+    size_t merge_res = MergeCut(new_labels, psl);
+    ln_labels += merge_res;
+    ln_cut_labels = merge_res;
+    updated = updated || (merge_res != 0);
     end = omp_get_wtime();
     total_merge_time += end - start;
     PrintTime("Merge " + to_string(d), end - start);
     Log("Merging Labels for d=" + to_string(d) + " End");
 
+    cout << "P" << pid << ": " << "Level " << d << " Count: " << ln_labels << " (" << ln_cut_labels << ")" << endl; 
+    
     fill(should_run, should_run + csr.n, false);
 
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) \
-    schedule(SCHEDULE)
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE)
     for (IDType u = 0; u < csr.n; u++) {
       auto &labels_u = psl.labels[u];
       labels_u.dist_ptrs.push_back(labels_u.vertices.size());

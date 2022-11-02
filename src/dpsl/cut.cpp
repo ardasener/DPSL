@@ -100,9 +100,9 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
     con.pulp_seed = 42;
     con.do_lp_init = false;
     con.do_bfs_init = true;
-    con.do_repart = false;
-    con.do_edge_balance = false;
-    con.do_maxcut_balance = false;
+    con.do_repart = true;
+    con.do_edge_balance = true;
+    con.do_maxcut_balance = true;
 
     int *partition = new int[csr.n];
     pulp_run(&graph, &con, partition, np);

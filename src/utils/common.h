@@ -194,6 +194,7 @@ struct CSR {
   void InitIds();
   void Compress();
   void ComputeF1F2(vector<size_t> &f1, vector<size_t> &f2);
+  void PrintMetadata();
 };
 
 void WriteStats(const vector<Stats> &stats_vec, string filename);

@@ -61,7 +61,7 @@ class DPSL {
   size_t CompressCutLabels(IDType *&comp_indices, IDType *&comp_labels,
                            vector<vector<IDType> *> &new_labels,
                            size_t start_index, size_t end_index);
-  bool MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl);
+  size_t MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl);
 
   void Barrier();
   int pid, np;

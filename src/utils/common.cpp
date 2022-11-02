@@ -396,6 +396,7 @@ void CSR::Compress() {
     }
   }
 
+
   delete[] row_ptr;
   delete[] col;
 
@@ -410,4 +411,31 @@ void CSR::Compress() {
   m = new_col.size();
 
   Sort();
+}
+
+void CSR::PrintMetadata(){
+  cout << "---Graph Metadata---" << endl;
+  cout << "N: " << n << endl; 
+  cout << "M: " << m << endl;
+
+  size_t active_count = 0;
+  size_t leaf_count = 0;
+  size_t degree_sum = 0;
+  size_t max_degree = 0;
+  size_t min_degree = INT_MAX;
+  for(IDType i = 0; i < n; i++){
+    size_t degree = row_ptr[i+1] - row_ptr[i];
+    active_count += (int) (degree != 0);
+    leaf_count += (int) (degree == 1);
+    degree_sum += degree;
+    max_degree = max(max_degree, degree);
+    min_degree = min(min_degree, degree);
+  }
+
+  cout << "Active N: " << active_count << endl;
+  cout << "Leaf N: " << leaf_count << endl;
+  cout << "Avg. Degree: " << (double) degree_sum / n << endl;
+  cout << "Max Degree: " << max_degree << endl;
+  cout << "Min Degree: " << min_degree << endl;
+  cout << "--------------------" << endl;
 }
