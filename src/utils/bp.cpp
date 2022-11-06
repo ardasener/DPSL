@@ -285,4 +285,8 @@ BP::BP(CSR &csr, vector<IDType> &ranks, vector<IDType> &order,
   ofs.close();
 
 #endif
+
+  cout << "BP Struct Expected Size: " << 17*N_ROOTS << " bytes" << endl;
+  cout << "BP Struct Real (Padded) Size: " << sizeof(BPLabel) << " bytes" << endl;
+  cout << "BP Total Size: " << sizeof(BPLabel) * csr.n / (double) (1024*1024*1024) << " GB" << endl;
 }
