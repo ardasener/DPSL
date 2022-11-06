@@ -206,7 +206,7 @@ float pearson(float *x, float *y, T n) {
 }
 
 template <typename T>
-vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
+vector<T> gen_order(T *xadj, T *adj, T n, T m, string method, double shuffle) {
 
   cout << "Generating order..." << endl;
   // T max_deg = 0, min_deg = n, deg, degs[n];
@@ -478,6 +478,13 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method) {
   order.reserve(n);
   for (auto const &t : sort_vec) {
     order.push_back(get<2>(t));
+  }
+
+  if(shuffle > 0 && shuffle < 1){
+    size_t shuffle_size = order.size() * shuffle;
+    random_shuffle(order.end() - shuffle_size, order.end());
+  } else if(shuffle >= 1){
+    random_shuffle(order.begin(), order.end());
   }
 
   for (int i = 0; i < nthreads; i++) {

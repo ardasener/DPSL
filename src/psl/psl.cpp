@@ -63,7 +63,7 @@ PSL::PSL(CSR &csr_, string order_method, vector<IDType> *cut, BP *global_bp,
   }
 
   if (ranks_ptr == nullptr) {
-    order = gen_order<IDType>(csr.row_ptr, csr.col, csr.n, csr.m, order_method);
+    order = gen_order<IDType>(csr.row_ptr, csr.col, csr.n, csr.m, order_method, ORDER_SHUFFLE);
     ranks.resize(csr.n);
     for (IDType i = 0; i < csr.n; i++) {
       ranks[order[i]] = i;

@@ -117,6 +117,9 @@
 #define PART_LB_OFFSET 5
 #endif
 
+#ifndef ORDER_SHUFFLE
+#define ORDER_SHUFFLE 0
+#endif
 
 
 // Maximum message size for MPI sections

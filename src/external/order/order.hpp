@@ -27,7 +27,7 @@ template <typename T>
 // degree_c_cent
 // degree_eigen_cent
 // degree_rw_cent
-vector<T> gen_order(T *xadj, T *adj, T n, T m, string method); 
+vector<T> gen_order(T *xadj, T *adj, T n, T m, string method, double shuffle=0); 
 
 // Makes it header only
 #include "order.cpp"

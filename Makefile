@@ -35,6 +35,8 @@ PART_WEIGHTS=degree_log
 PART_LB_OFFSET=5
 # Enables mt-kahypar support
 ENABLE_MT_KAHYPAR=false
+# Shuffles upper percentage of the order (Used to demonstrate the importance of order)
+ORDER_SHUFFLE=0
 
 # Directory for the dependencies, should contain .a and .h files for pulp and metis
 # You can use the scripts/get_deps.sh script to get them automatically on most Linux systems
@@ -72,7 +74,7 @@ endif
 # C++ flags
 CXX_COMPILER=g++
 MPICXX_COMPILER=mpic++
-CXX_FLAGS= -fopenmp -std=c++17 -DNUM_THREADS=$(NUM_THREADS) -DORDER_METHOD=\"$(ORDER_METHOD)\" -DN_ROOTS=$(N_ROOTS) -DSCHEDULE=$(SCHEDULE) -DSMART_DIST_CACHE_CUTOFF=$(SMART_DIST_CACHE_CUTOFF) -DELIM_MIN=$(ELIM_MIN) -DELIM_LEAF=$(ELIM_LEAF) -DMAX_RANK_PRUNE=$(MAX_RANK_PRUNE) -DPART_WEIGHTS=\"$(PART_WEIGHTS)\" -DPART_LB_OFFSET=$(PART_LB_OFFSET)
+CXX_FLAGS= -fopenmp -std=c++17 -DNUM_THREADS=$(NUM_THREADS) -DORDER_METHOD=\"$(ORDER_METHOD)\" -DN_ROOTS=$(N_ROOTS) -DSCHEDULE=$(SCHEDULE) -DSMART_DIST_CACHE_CUTOFF=$(SMART_DIST_CACHE_CUTOFF) -DELIM_MIN=$(ELIM_MIN) -DELIM_LEAF=$(ELIM_LEAF) -DMAX_RANK_PRUNE=$(MAX_RANK_PRUNE) -DPART_WEIGHTS=\"$(PART_WEIGHTS)\" -DPART_LB_OFFSET=$(PART_LB_OFFSET) -DORDER_SHUFFLE=$(ORDER_SHUFFLE)
 CXX_RELEASE_FLAGS= -O3
 CXX_DEBUG_FLAGS= -O0 -DDEBUG -g
 CXX_PROFILE_FLAGS= -O1 -g -fno-inline -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address
