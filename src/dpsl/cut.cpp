@@ -23,6 +23,8 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
   cout << "Ranking..." << endl;
   vc->ranks.resize(csr.n);
 
+  double part_start = omp_get_wtime(); 
+
 #pragma omp parallel for num_threads(NUM_THREADS)
   for (IDType i = 0; i < csr.n; i++) {
     vc->ranks[vc->order[i]] = i;
@@ -238,6 +240,10 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
     cerr << "Partitioner " << partitioner << " is not supported ! (please see the readme file for the available ones)" << endl;
     throw 1;
   }
+
+  double part_end = omp_get_wtime(); 
+
+  cout << "Partition Time: " << part_end - part_start << endl;
 
   return vc;
 }
