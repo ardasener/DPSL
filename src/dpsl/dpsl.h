@@ -41,6 +41,8 @@ enum MPI_CONSTS {
   MPI_LABELS,
   MPI_VERTEX_RANKS,
   MPI_VERTEX_ORDER,
+  MPI_LEAF_ROOT,
+  MPI_LOCAL_MIN
 };
 
 class DPSL {
@@ -74,8 +76,11 @@ class DPSL {
   vector<IDType> cut;
   vector<IDType> cut_merge_order;
   vector<bool> in_cut;
+  vector<bool> local_min;
+  vector<IDType> leaf_root;
   vector<IDType> ranks;
   vector<IDType> order;
+  vector<vector<bool>> merge_seen;
   VertexCut *vc_ptr = nullptr;
   int last_dist;
   char **caches;

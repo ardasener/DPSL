@@ -84,59 +84,62 @@ PSL::PSL(CSR &csr_, string order_method, vector<IDType> *cut, BP *global_bp,
     csr.Reorder(order, nullptr, nullptr);
   }
 
-  size_t leaf_count = 0;
-  leaf_root.resize(csr.n, -1);
+  if(cut == nullptr){
 
-  if constexpr (ELIM_LEAF) {
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : leaf_count)
-    for (IDType u = 0; u < csr.n; u++) {
-      if (csr.row_ptr[u] + 1 == csr.row_ptr[u + 1]) {
-        IDType root = csr.col[csr.row_ptr[u]];
+    size_t leaf_count = 0;
+    leaf_root.resize(csr.n, -1);
 
-        if (csr.row_ptr[root] + 1 < csr.row_ptr[root + 1] && csr.type[u] == 0 &&
-            in_cut[u] == false) {
-          leaf_root[u] = root;
-          leaf_count++;
+    if constexpr (ELIM_LEAF) {
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : leaf_count)
+      for (IDType u = 0; u < csr.n; u++) {
+        if (csr.row_ptr[u] + 1 == csr.row_ptr[u + 1]) {
+          IDType root = csr.col[csr.row_ptr[u]];
+
+          if (csr.row_ptr[root] + 1 < csr.row_ptr[root + 1] && csr.type[u] == 0 &&
+              in_cut[u] == false) {
+            leaf_root[u] = root;
+            leaf_count++;
+          }
         }
       }
+      cout << "Found and eliminated " << leaf_count << " leaves" << endl;
     }
-    cout << "Found and eliminated " << leaf_count << " leaves" << endl;
-  }
 
-  local_min.resize(csr.n, false);
-  size_t local_min_count = 0;
+    local_min.resize(csr.n, false);
+    size_t local_min_count = 0;
 
-  if constexpr (ELIM_MIN) {
-#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : local_min_count)
-    for (IDType u = 0; u < csr.n; u++) {
-      if (in_cut[u]) continue;
-      if (leaf_root[u] != -1) continue;
+    if constexpr (ELIM_MIN) {
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : local_min_count)
+      for (IDType u = 0; u < csr.n; u++) {
+        if (in_cut[u]) continue;
+        if (leaf_root[u] != -1) continue;
 
-      IDType start = csr.row_ptr[u];
-      IDType end = csr.row_ptr[u + 1];
+        IDType start = csr.row_ptr[u];
+        IDType end = csr.row_ptr[u + 1];
 
-      if (end == start) {
-        local_min[u] = true;
-        local_min_count++;
-        continue;
-      }
-
-      for (IDType i = end - 1; i >= start; i--) {
-        IDType v = csr.col[i];
-
-        if (u >= v && leaf_root[v] == -1) {
-          break;
-        }
-
-        if (leaf_root[v] == -1) {
+        if (end == start) {
           local_min[u] = true;
           local_min_count++;
-          break;
+          continue;
+        }
+
+        for (IDType i = end - 1; i >= start; i--) {
+          IDType v = csr.col[i];
+
+          if (u >= v && leaf_root[v] == -1) {
+            break;
+          }
+
+          if (leaf_root[v] == -1) {
+            local_min[u] = true;
+            local_min_count++;
+            break;
+          }
         }
       }
+      cout << "Found and eliminated " << local_min_count << " local min vertices"
+          << endl;
     }
-    cout << "Found and eliminated " << local_min_count << " local min vertices"
-         << endl;
   }
 
   if constexpr (USE_LOCAL_BP) {

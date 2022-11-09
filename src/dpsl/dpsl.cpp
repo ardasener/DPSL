@@ -509,7 +509,6 @@ size_t DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
 
     // Merge Operation
     // cout << "Merging P" << pid << endl;
-    vector<vector<bool>> seen(NUM_THREADS, vector<bool>(global_n, false));
 #pragma omp parallel for num_threads(NUM_THREADS) schedule(SCHEDULE)
     for (size_t i = 0; i < per_node_chunk_size; i++) {
       int tid = omp_get_thread_num();
@@ -518,15 +517,15 @@ size_t DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
 
       for (size_t j = 0; j < all_comp[i].size(); j++) {
         IDType u = all_comp[i][j];
-        if (!seen[tid][u]) {
+        if (!merge_seen[tid][u]) {
           merged.push_back(u);
-          seen[tid][u] = true;
+          merge_seen[tid][u] = true;
         }
       }
 
       if (!merged.empty()) {
         for (IDType u : merged) {
-          seen[tid][u] = false;
+          merge_seen[tid][u] = false;
         }
 
         all_comp[i].clear();
@@ -855,6 +854,8 @@ void DPSL::InitP0(string partition_str, string partition_params) {
 
   for (int p = 0; p < np; p++) csrs[p]->Reorder(order, &cut, &in_cut);
 
+
+
   part_csr = csrs[0];
 
   ofstream cut_ofs("output_dpsl_cut.txt");
@@ -873,6 +874,70 @@ void DPSL::InitP0(string partition_str, string partition_params) {
   for (IDType u : cut) {
     in_cut[u] = true;
   }
+
+
+  bool* local_min_arr = new bool[csr.n];
+  fill(local_min_arr, local_min_arr + csr.n, false);
+  IDType* leaf_root_arr = new IDType[csr.n];
+  fill(leaf_root_arr, leaf_root_arr + csr.n, -1);
+
+  size_t leaf_count = 0;
+  size_t local_min_count = 0;
+
+  if constexpr (ELIM_LEAF) {
+#pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : leaf_count)
+    for (IDType u = 0; u < csr.n; u++) {
+      if (csr.row_ptr[u] + 1 == csr.row_ptr[u + 1]) {
+        IDType root = csr.col[csr.row_ptr[u]];
+
+        if (csr.row_ptr[root] + 1 < csr.row_ptr[root + 1] && csr.type[u] == 0) {
+          leaf_root_arr[u] = root;
+          leaf_count++;
+        }
+      }
+    }
+    cout << "Found and eliminated " << leaf_count << " leaves" << endl;
+  }
+
+
+  if constexpr (ELIM_MIN) {
+  #pragma omp parallel for default(shared) num_threads(NUM_THREADS) schedule(SCHEDULE) reduction(+ : local_min_count)
+      for (IDType u = 0; u < csr.n; u++) {
+        // if (in_cut[u]) continue;
+        if (leaf_root_arr[u] != -1) continue;
+
+        IDType start = csr.row_ptr[u];
+        IDType end = csr.row_ptr[u + 1];
+
+        if (end == start) {
+          local_min_arr[u] = true;
+          local_min_count++;
+          continue;
+        }
+
+        for (IDType i = end - 1; i >= start; i--) {
+          IDType v = csr.col[i];
+
+          if (u >= v && leaf_root_arr[v] == -1) {
+            break;
+          }
+
+          if (leaf_root_arr[v] == -1) {
+            local_min_arr[u] = true;
+            local_min_count++;
+            break;
+          }
+        }
+      }
+      cout << "Found and eliminated " << local_min_count << " local min vertices"
+          << endl;
+    }
+
+  local_min.resize(csr.n);
+  copy(local_min_arr, local_min_arr + csr.n, local_min.begin());
+  leaf_root.resize(csr.n);
+  copy(leaf_root_arr, leaf_root_arr + csr.n, leaf_root.begin());
+
 
   cut_merge_order = cut;
   random_shuffle(cut_merge_order.begin(), cut_merge_order.end());
@@ -907,7 +972,8 @@ void DPSL::InitP0(string partition_str, string partition_params) {
              MPI_CUT_MERGE_ORDER, i);
     SendData(ranks.data(), ranks.size(), MPI_VERTEX_RANKS, i);
     SendData(order.data(), order.size(), MPI_VERTEX_ORDER, i);
-
+    SendData(leaf_root_arr, csrs[i]->n, MPI_LEAF_ROOT, i);
+    SendData(local_min_arr, csrs[i]->n, MPI_LOCAL_MIN, i, MPI_CXX_BOOL);
 
     cout << "Post-Partition P" << i << endl;
     csrs[i]->PrintMetadata();
@@ -915,6 +981,9 @@ void DPSL::InitP0(string partition_str, string partition_params) {
     delete csrs[i];
     csrs[i] = nullptr;
   }
+
+  delete[] leaf_root_arr;
+  delete[] local_min_arr;
 
   Barrier();
   Log("Initial Barrier Region End");
@@ -962,6 +1031,8 @@ void DPSL::InitP0(string partition_str, string partition_params) {
   Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
   Log("Cut Size: " + to_string(cut.size()));
 
+  merge_seen.resize(NUM_THREADS, vector<bool>(csr.n, false));
+
   double init_end = omp_get_wtime();
   double comm_end = omp_get_wtime();
 
@@ -980,6 +1051,8 @@ void DPSL::Init() {
   IDType *cut_merge_order_ptr;
   IDType *ranks_ptr;
   IDType *order_ptr;
+  IDType *leaf_root_arr; 
+  bool *local_min_arr; 
 
   Log("Initial Barrier Region");
   Barrier();
@@ -1001,6 +1074,8 @@ void DPSL::Init() {
       RecvData(cut_merge_order_ptr, MPI_CUT_MERGE_ORDER, 0);
   IDType size_ranks = RecvData(ranks_ptr, MPI_VERTEX_RANKS, 0);
   IDType size_order = RecvData(order_ptr, MPI_VERTEX_ORDER, 0);
+  IDType size_leaf_root = RecvData(leaf_root_arr, MPI_LEAF_ROOT, 0);
+  IDType size_local_min = RecvData(local_min_arr, MPI_LOCAL_MIN, 0, MPI_CXX_BOOL);
   Barrier();
   Log("Initial Barrier Region End");
 
@@ -1008,6 +1083,11 @@ void DPSL::Init() {
   order.insert(order.end(), order_ptr, order_ptr + size_order);
   delete[] ranks_ptr;
   delete[] order_ptr;
+
+  local_min.resize(size_local_min);
+  copy(local_min_arr, local_min_arr + size_local_min, local_min.begin());
+  leaf_root.resize(size_leaf_root);
+  copy(leaf_root_arr, leaf_root_arr + size_leaf_root, leaf_root.begin());
 
   cut_merge_order.insert(cut_merge_order.end(), cut_merge_order_ptr,
                          cut_merge_order_ptr + size_cut);
@@ -1064,6 +1144,8 @@ void DPSL::Init() {
   part_csr = new CSR(row_ptr, col, ids, inv_ids, type, comp_ids,
                      size_row_ptr - 1, size_col);
   Log("CSR Dims: " + to_string(part_csr->n) + "," + to_string(part_csr->m));
+
+  merge_seen.resize(NUM_THREADS, vector<bool>(part_csr->n, false));
 }
 
 void DPSL::Index() {
@@ -1096,6 +1178,9 @@ void DPSL::Index() {
   psl_ptr =
       new PSL(*part_csr, order_method, &cut, global_bp, ranks_ptr, order_ptr);
   PSL &psl = *psl_ptr;
+
+  psl.leaf_root = leaf_root;
+  psl.local_min = local_min;
 
   size_t l0_labels = 0;
 
@@ -1138,6 +1223,7 @@ void DPSL::Index() {
   end = omp_get_wtime();
   PrintTime("Level 0&1", end - start);
 
+  Barrier();
   Log("Merging Initial Labels");
   start = omp_get_wtime();
   MergeCut(init_labels, psl);
@@ -1264,6 +1350,7 @@ void DPSL::Index() {
       }
     }
 
+    Barrier();
     Log("Merging Labels for d=" + to_string(d));
     start = omp_get_wtime();
     size_t merge_res = MergeCut(new_labels, psl);
