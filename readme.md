@@ -107,13 +107,14 @@ mpirun --bind-to none -n <node_count> ./dpsl <graph_file> <part_file>
 #### Usage 2
 
 ``` bash
-mpirun --bind-to none -n <node_count> ./dpsl <graph_file> <partitioner> <partitioner_params>
+mpirun --bind-to none -n <node_count> ./dpsl <graph_file> <partitioner> <partition_config>
 ```
 
 - `--bind-to none`: This part ensures that all the cores on the node are available to the program.
 - `-n <node_count>`: Node count is the number of nodes we want to run the program on. It should much the number of partitions on the `<part_file>`.
 - `<graph_file>`: Same as PSL.
-- `<partitioner>`: A partitioner name. Currently "pulp" and "metis" are supported.
+- `<partitioner>`: A partitioner name. Currently "pulp", "metis", "mtmetis" and "mtkahypar" are supported.
+- `<partition_config>` : Config file for mtkahypar, is not needed for the other partitioners. Note that certain options may be invalid.
 
 # Datasets
 

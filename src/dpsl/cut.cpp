@@ -145,7 +145,8 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
 #ifdef ENABLE_MT_KAHYPAR
     mt_kahypar_initialize_thread_pool(NUM_THREADS, true);
     mt_kahypar_context_t* context = mt_kahypar_context_new();
-    mt_kahypar_configure_context_from_file(context, "mtkahypar.ini");
+    params = (params.empty()) ? "mtkahypar_config/quality_preset.ini" : params;
+    mt_kahypar_configure_context_from_file(context, params.c_str());
     mt_kahypar_hypernode_id_t num_vertices = csr.n;
     mt_kahypar_hypernode_id_t num_hyperedges = csr.m;
 
@@ -192,7 +193,7 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
     std::vector<mt_kahypar_partition_id_t> partition(num_vertices, -1);
 
     mt_kahypar_partition(num_vertices, num_hyperedges,
-                        imbalance, k, 42 ,
+                        imbalance, k, 42,
                         vertex_weights.get() , hyperedge_weights.get(),
                         hyperedge_indices.get(), hyperedges.get(),
                         &objective, context, partition.data(),

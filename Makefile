@@ -32,7 +32,7 @@ MAX_RANK_PRUNE=true
 # Weights used for the partition support uniform, degree, degree_log
 PART_WEIGHTS=degree_log
 # An attempt at a fix for load balance issues in partitioning due to compression (Setting to -1 turns it off)
-PART_LB_OFFSET=5
+PART_LB_OFFSET=100
 # Enables mt-kahypar support
 ENABLE_MT_KAHYPAR=false
 # Shuffles upper percentage of the order (Used to demonstrate the importance of order)
@@ -115,7 +115,7 @@ ifeq ($(USE_64_BIT) , true)
 endif
 
 ifeq ($(ENABLE_MT_KAHYPAR) , true)
-	DPSL_FLAGS := $(DPSL_FLAGS) -l:libmtkahypargraph.so -DENABLE_MT_KAHYPAR
+	DPSL_FLAGS := $(DPSL_FLAGS) -l:libmtkahypargq.so -DENABLE_MT_KAHYPAR
 endif
 
 # Targets

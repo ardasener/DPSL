@@ -346,6 +346,7 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method, double shuffle) {
   float *probs = new float[xadj[n]];
   float *next_vals = new float[n];
 
+  fill(cent, cent + n, 0);
   fill(cent2, cent2 + n, 0);
 
   int noBFS = 256;
@@ -353,7 +354,7 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method, double shuffle) {
 
   double start, end;
 
-  if (method == "degree") {
+  if (method.find("degree") != string::npos) {
     cout << "starting degree computation\n";
     start = omp_get_wtime();
     for (T i = 0; i < vcount; i++) {
@@ -384,7 +385,7 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method, double shuffle) {
   // i < n; i++) thr_btwn[i] = pb_cent[0][i]; cout << "BC-3 is computed in " <<
   // end - start << " seconds\n";
 
-  else if (method == "b_cent" || method == "degree_b_cent") {
+  if (method == "b_cent" || method == "degree_b_cent") {
     cout << "starting BC-all computation\n";
     start = omp_get_wtime();
     computeBCandCC(lxadj, ladj, vcount, noBFS, pque, plevel, ppred, pendpred,
@@ -443,6 +444,7 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method, double shuffle) {
     }
   }
 
+
   cout << "Ordering based on " << method << "..." << endl;
   vector<tuple<double, double, T>> sort_vec;
   sort_vec.reserve(n);
@@ -451,7 +453,7 @@ vector<T> gen_order(T *xadj, T *adj, T n, T m, string method, double shuffle) {
     if(compid[i] == lcompid){
       sort_vec.emplace_back(cent[li], cent2[li], i);
       li++;
-    } else {
+    } else{
       sort_vec.emplace_back(-FLT_MAX, -FLT_MAX,i);
     }
   }
