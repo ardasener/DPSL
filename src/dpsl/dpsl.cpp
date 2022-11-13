@@ -523,14 +523,12 @@ size_t DPSL::MergeCut(vector<vector<IDType> *> &new_labels, PSL &psl) {
         }
       }
 
-      if (!merged.empty()) {
-        for (IDType u : merged) {
-          merge_seen[tid][u] = false;
-        }
-
-        all_comp[i].clear();
-        all_comp[i] = move(merged);
+      for (IDType u : merged) {
+        merge_seen[tid][u] = false;
       }
+
+      all_comp[i].clear();
+      all_comp[i] = move(merged);
     }
     // cout << "DONE Merging P" << pid << endl;
 

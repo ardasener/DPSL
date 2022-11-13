@@ -66,7 +66,7 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
     
     // Stranded or Leaf or Local Minimum
     if constexpr(PART_LB_OFFSET != -1)
-      if(start == end || start + 1 == end || vc->ranks[u] < vc->ranks[csr.row_ptr[start]]){
+      if(start == end || start + 1 == end || vc->ranks[u] < vc->ranks[csr.col[start]]){
         weight = 1;
       } 
     
