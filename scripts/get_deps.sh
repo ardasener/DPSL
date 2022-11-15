@@ -27,7 +27,7 @@ if [ "$1" == "--mtkahypar" ]; then
     mkdir build && cd build
     cmake .. -DCMAKE_BUILD_TYPE=RELEASE -DKAHYPAR_USE_COMPATIBLE_TBB_VERSION=ON
     echo "Next step might give an error, ignore it"
-    make mtkahypargraph -j $MAKE_J
+    make mtkahypargq -j $MAKE_J
     cd ../../..
     mv ./deps/mt-kahypar/build/lib/*.so libs/
     mv ./deps/mt-kahypar/include/*.h libs/

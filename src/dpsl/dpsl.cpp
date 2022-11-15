@@ -1435,10 +1435,20 @@ void DPSL::Index() {
   for (auto &l : psl_ptr->labels) {
     total_label_count += l.vertices.size();
   }
+
   size_t label_memory = total_label_count * sizeof(IDType);
   cout << "P" << pid << ":"
        << " Label Memory, " << label_memory / (double)(1024 * 1024 * 1024)
        << " GB" << endl;
+
+  if(pid == 0){
+    size_t cut_label_count = 0;
+    for(IDType u : cut){
+      cut_label_count += psl_ptr->labels[u].vertices.size();
+    }
+
+    cout << "Cut Memory: " << (cut_label_count * sizeof(IDType)) / (double) (1024*1024*1024) << " GB" << endl;
+  }
 
 #ifdef DEBUG
   Log("Prune by Rank: " + to_string(psl_ptr->prune_rank));
