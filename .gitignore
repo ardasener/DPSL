@@ -16,6 +16,7 @@ psl
 !src/*
 parts
 *.tar*
+*.zip*
 mtmetis
 *.swp
 .vscode
@@ -33,3 +34,4 @@ mtmetis/*
 libs/*
 temp/*
 deps/*
+*_lc*

@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
 
   cout << "PSL Indexing..." << endl;
   psl.Index();
-  // psl.WriteLabelCounts("output_psl_label_counts.txt");
+  //psl.WriteLabelCounts("output_psl_label_counts.txt");
   cout << "PSL Querying..." << endl;
   psl.QueryTest(5);
   // psl.Query(12, "output_psl_query.txt");

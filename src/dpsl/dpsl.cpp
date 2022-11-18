@@ -382,6 +382,7 @@ void DPSL::WriteLabelCounts(string filename) {
       }
     }
 
+#ifdef DEBUG
     ofstream ofs(filename);
     ofs << "Vertex\tLabelCount\tSource" << endl;
     long long total = 0;
@@ -394,10 +395,7 @@ void DPSL::WriteLabelCounts(string filename) {
     ofs << endl;
 
     ofs << "Total Label Count: " << total << endl;
-    cout << "Total Label Count: " << total << endl;
     ofs << "Avg. Label Count: " << total / (double)whole_csr->n << endl;
-    cout << "Avg. Label Count: " << total / (double)whole_csr->n << endl;
-
     for (int p = 0; p < np; p++) {
       ofs << "Total for P" << p << ": " << total_per_source[p] << endl;
       ofs << "Avg for P" << p << ": "
@@ -405,8 +403,14 @@ void DPSL::WriteLabelCounts(string filename) {
     }
 
     ofs << endl;
-
     ofs.close();
+
+    cout << "Total Label Count: " << total << endl;
+    cout << "Avg. Label Count: " << total / (double)whole_csr->n << endl;
+
+#endif
+    
+
 
     delete[] all_counts;
     delete[] source;
@@ -810,16 +814,16 @@ void DPSL::InitP0(string partition_str, string partition_params) {
 
   unordered_csr = new CSR(csr);
 
-  cout << "Pre-Compression" << endl;
-  csr.PrintMetadata();
+  // cout << "Pre-Compression" << endl;
+  // csr.PrintMetadata();
 
   if (GLOBAL_COMPRESS) {
     csr.Compress();
   }
 
 
-  cout << "Post-Compression" << endl;
-  csr.PrintMetadata();
+  // cout << "Post-Compression" << endl;
+  // csr.PrintMetadata();
 
   if (partition_str == "")
     throw "Partition file or partitioner is required";
@@ -856,11 +860,13 @@ void DPSL::InitP0(string partition_str, string partition_params) {
 
   part_csr = csrs[0];
 
+#ifdef DEBUG
   ofstream cut_ofs("output_dpsl_cut.txt");
   for (int i = 0; i < cut.size(); i++) {
     cut_ofs << cut[i] << endl;
   }
   cut_ofs.close();
+#endif
 
   // #pragma omp parallel default(shared) num_threads(NUM_THREADS)
   for (int i = 0; i < cut.size(); i++) {
@@ -973,8 +979,8 @@ void DPSL::InitP0(string partition_str, string partition_params) {
     SendData(leaf_root_arr, csrs[i]->n, MPI_LEAF_ROOT, i);
     SendData(local_min_arr, csrs[i]->n, MPI_LOCAL_MIN, i, MPI_CXX_BOOL);
 
-    cout << "Post-Partition P" << i << endl;
-    csrs[i]->PrintMetadata();
+    // cout << "Post-Partition P" << i << endl;
+    // csrs[i]->PrintMetadata();
 
     delete csrs[i];
     csrs[i] = nullptr;

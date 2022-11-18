@@ -95,8 +95,7 @@ PSL::PSL(CSR &csr_, string order_method, vector<IDType> *cut, BP *global_bp,
         if (csr.row_ptr[u] + 1 == csr.row_ptr[u + 1]) {
           IDType root = csr.col[csr.row_ptr[u]];
 
-          if (csr.row_ptr[root] + 1 < csr.row_ptr[root + 1] && csr.type[u] == 0 &&
-              in_cut[u] == false) {
+          if (csr.row_ptr[root] + 1 < csr.row_ptr[root + 1] && in_cut[u] == false) {
             leaf_root[u] = root;
             leaf_count++;
           }
@@ -167,7 +166,9 @@ void PSL::WriteLabelCounts(string filename) {
   long long total = 0;
   long long max_label_size = 0;
   for (IDType u = 0; u < csr.n; u++) {
-    ofs << u << ":\t";
+    int64_t degree = (!local_min[u] && leaf_root[u] == -1 && csr.type[csr.ids[u]] == 0) ? 
+      csr.row_ptr[u+1] - csr.row_ptr[u] : -1;
+    ofs << u << ":\t" << degree << ":\t";
     auto &labels_u = labels[u];
     total += labels_u.vertices.size();
 
@@ -196,7 +197,10 @@ void PSL::WriteLabelCounts(string filename) {
 #ifdef DEBUG
   ofstream ofs2("output_psl_cand_counts.txt");
   for (size_t i = 0; i < cand_counts.size(); i++) {
-    ofs2 << i << ": " << cand_counts[i] << endl;
+    IDType u = i;
+    int64_t degree = (!local_min[u] && leaf_root[u] == -1 && csr.type[csr.ids[u]] == 0) ? 
+      csr.row_ptr[u+1] - csr.row_ptr[u] : -1;
+    ofs2 << i << ":" << degree << ":" << cand_counts[i] << endl;
   }
   ofs2.close();
 #endif

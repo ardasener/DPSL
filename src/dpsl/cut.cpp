@@ -213,7 +213,6 @@ VertexCut *VertexCut::Partition(CSR &csr, string partitioner, string params,
       const uint32_t ncon = csr.m;
       uint32_t *xadj = (uint32_t *)csr.row_ptr;
       uint32_t *adj = (uint32_t *)csr.col;
-      int32_t *vwgt = new int32_t[csr.n];
       const uint32_t vsize = csr.n;  // Unused
       int32_t *adjwgt = nullptr;
       const uint32_t nparts = np;

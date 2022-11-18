@@ -33,8 +33,8 @@ MAX_RANK_PRUNE=true
 PART_WEIGHTS=degree_log
 # An attempt at a fix for load balance issues in partitioning due to compression (Setting to -1 turns it off)
 PART_LB_OFFSET=100
-# Enables mt-kahypar support
-ENABLE_MT_KAHYPAR=false
+# Enables mt-kahypar support (Set to "NONE" for off, "DEF" for default, "QUAL" for quality)
+MT_KAHYPAR=NONE
 # Shuffles upper percentage of the order (Used to demonstrate the importance of order)
 ORDER_SHUFFLE=0
 
@@ -69,6 +69,7 @@ endif
 # If BP roots are set to zero, they are turned off
 ifeq ($(N_ROOTS), 0)
 override USE_BP = false
+override N_ROOTS = 15
 endif
 
 # C++ flags
@@ -77,6 +78,7 @@ MPICXX_COMPILER=mpic++
 CXX_FLAGS= -fopenmp -std=c++17 -DNUM_THREADS=$(NUM_THREADS) -DORDER_METHOD=\"$(ORDER_METHOD)\" -DN_ROOTS=$(N_ROOTS) -DSCHEDULE=$(SCHEDULE) -DSMART_DIST_CACHE_CUTOFF=$(SMART_DIST_CACHE_CUTOFF) -DELIM_MIN=$(ELIM_MIN) -DELIM_LEAF=$(ELIM_LEAF) -DMAX_RANK_PRUNE=$(MAX_RANK_PRUNE) -DPART_WEIGHTS=\"$(PART_WEIGHTS)\" -DPART_LB_OFFSET=$(PART_LB_OFFSET) -DORDER_SHUFFLE=$(ORDER_SHUFFLE)
 CXX_RELEASE_FLAGS= -O3
 CXX_DEBUG_FLAGS= -O0 -DDEBUG -g
+CXX_FAST_DEBUG_FLAGS= -O3 -DDEBUG -g
 CXX_PROFILE_FLAGS= -O1 -g -fno-inline -fno-omit-frame-pointer -fno-optimize-sibling-calls -fsanitize=address
 PSL_SOURCE_FILES=src/main_psl.cpp src/utils/*.cpp src/psl/*.cpp
 DPSL_SOURCE_FILES=src/main_dpsl.cpp src/utils/*.cpp src/psl/*.cpp src/dpsl/*.cpp
@@ -89,6 +91,7 @@ CUDA_ARCH=sm_60
 CUDA_FLAGS= -std=c++14 -DKERNEL_MODE=$(KERNEL_MODE) -arch=$(CUDA_ARCH) -Xcompiler -fopenmp
 CUDA_RELEASE_FLAGS= -O3
 CUDA_DEBUG_FLAGS= -O0 -g --generate-line-info
+CUDA_FAST_DEBUG_FLAGS= -O3 -DDEBUG -g
 CUDA_SOURCE_FILES=src/gpsl.cu
 CUDA_LIB_PATH=$(CUDA_HOME)/lib64
 GPSL_FLAGS= -DBIN_GPSL
@@ -99,6 +102,10 @@ ifeq ($(MODE_LOWER) , debug)
 $(info Building in Debug mode...)
 CXX_MODE_FLAGS = $(CXX_DEBUG_FLAGS)
 CUDA_MODE_FLAGS = $(CUDA_DEBUG_FLAGS)
+else ifeq ($(MODE_LOWER), fast_debug)
+$(info Building in Fast-Debug mode...)
+CXX_MODE_FLAGS = $(CXX_FAST_DEBUG_FLAGS)
+CUDA_MODE_FLAGS = $(CUDA_FAST_DEBUG_FLAGS)
 else ifeq ($(MODE_LOWER) , profile)
 $(info Building in Profile mode...)
 CXX_MODE_FLAGS = $(CXX_PROFILE_FLAGS)
@@ -111,11 +118,16 @@ endif
 
 # Experimental 64-bit option
 ifeq ($(USE_64_BIT) , true)
-	CXX_FLAGS := $(CXX_FLAGS) -DUSE_64_BIT
+$(info Enabling 64-bit support...)
+CXX_FLAGS := $(CXX_FLAGS) -DUSE_64_BIT
 endif
 
-ifeq ($(ENABLE_MT_KAHYPAR) , true)
-	DPSL_FLAGS := $(DPSL_FLAGS) -l:libmtkahypargq.so -DENABLE_MT_KAHYPAR
+ifeq ($(MT_KAHYPAR) , QUAL)
+$(info Enabling MT-Kahypar Quality...)
+DPSL_FLAGS := $(DPSL_FLAGS) -l:libmtkahypargq.so -DENABLE_MT_KAHYPAR
+else ifeq ($(MT_KAHYPAR), DEF)
+$(info Enabling MT-Kahypar Default...)
+DPSL_FLAGS := $(DPSL_FLAGS) -l:libmtkahypargraph.so -DENABLE_MT_KAHYPAR
 endif
 
 # Targets

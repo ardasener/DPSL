@@ -37,8 +37,11 @@ Otherwise you will need to build them manually and place the `.a`, `.so` and `.h
 > We suggest building both metis and mtmetis as shared librares, otherwise they may cause linker issues
 
 Mt-kahypar is implemented as an optional dependency as it requires Boost (Their minimal boost option did not work on our end).
-To enable support for it, pass `ENABLE_MT_KAHYPAR=true` to `make`.
+To enable support for it, pass `MT_KAHYPAR=DEF` or `MT_KAHYPAR=QUAL` to `make` depending on which preset you want.
 The aforementioned script can be used to automatically download and build mt-kahypar as well just pass the `--mtkahypar` option.
+
+> Note that the mt-kahypar repo is actively updated sometimes with breaking changes.
+> I suggest using the following commit for this program: f21a4195f66f1a63b252482cdf819ae0e8acdcd0.
 
 ## Building
 
