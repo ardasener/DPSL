@@ -69,6 +69,8 @@ vector<int> *BFSQuery(CSR &csr, IDType u) {
       d = -1;
     }
   }
+  
+  dist[u] = 0;
 
   return dists;
 }
@@ -369,7 +371,7 @@ void CSR::Compress() {
 
   IDType curr_row_ptr = 0;
   for (IDType u = 0; u < n; u++) {
-    if (f1[u] == u && f2[u] == u) {
+    if ((f1[u] == u && f2[u] == u) || row_ptr[u+1] == row_ptr[u]) {
       comp_ids[u] = u;
       type[u] = 0;
 

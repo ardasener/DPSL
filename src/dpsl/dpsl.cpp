@@ -12,32 +12,53 @@ void DPSL::PrintTime(string tag, double time) {
 
 void DPSL::QueryTest(int query_count) {
   IDType *sources;
-  if (pid == 0) {
-    sources = new IDType[query_count];
 
-    size_t cut_select = random_range(0, cut.size());
-    sources[0] = cut[cut_select];
-    for (int i = 1; i < query_count; i++) {
-      sources[i] = random_range(0, whole_csr->n);
+  bool verbose = true;
+
+  if (pid == 0) {
+    if(query_count != -1){
+      sources = new IDType[query_count];
+      size_t cut_select = random_range(0, cut.size());
+      sources[0] = cut[cut_select];
+      for (int i = 1; i < query_count; i++) {
+        sources[i] = random_range(0, whole_csr->n);
+      }
+    }
+    else{
+      query_count = whole_csr->n;
+      verbose = false;
+      sources = new IDType[whole_csr->n];
+      iota(sources, sources + whole_csr->n, 0);
     }
 
     BroadcastData(sources, query_count);
   } else {
-    RecvBroadcast(sources, 0);
+    query_count = RecvBroadcast(sources, 0);
   }
+
+  bool all_res = true;
 
   for (int i = 0; i < query_count; i++) {
     Barrier();
     IDType u = sources[i];
-    if (pid == 0)
-      cout << "Query From: " << u << "(" << partition[u] << ")" << endl;
-    Query(u, "output_dpsl_query_" + to_string(i) + ".txt");
+    if (pid == 0){
+      if(verbose) 
+        cout << "Query From: " << u << "(" << partition[u] << ")" << endl;
+      else if((i+1) % (query_count/10) == 0)
+        cout << "Progress: " << i << "/" << query_count << " (" << all_res << ")" << endl;
+    }
+    bool res = Query(u, "output_dpsl_query_" + to_string(i) + ".txt", verbose);
+    all_res = all_res && res;
+  }
+
+  if(pid == 0){
+    cout << "All Correctness: " << all_res << endl;
   }
 
   delete[] sources;
 }
 
-void DPSL::Query(IDType u, string filename) {
+bool DPSL::Query(IDType u, string filename, bool verbose) {
   Log("Starting Query");
   Log("Global N: " + to_string(global_n));
   Barrier();
@@ -273,6 +294,8 @@ void DPSL::Query(IDType u, string filename) {
       delete[] dists;
     }
 
+    all_dists[u] = 0;
+
     end_time = omp_get_wtime();
 
     // cout << "Avg. Query Time: " << (end_time-start_time) / whole_csr->n << "
@@ -301,6 +324,7 @@ void DPSL::Query(IDType u, string filename) {
       string correctness = (bfs_res == psl_res) ? "correct" : "wrong";
 
       if (bfs_res != psl_res) {
+        cout << "Mistake at: " << u << "," << i << "," << bfs_res << "," << psl_res << endl;
         all_correct = false;
       }
 
@@ -318,11 +342,16 @@ void DPSL::Query(IDType u, string filename) {
     ofs.close();
 #endif
 
-    cout << "Correctness of Query: " << all_correct << endl;
+    if(verbose)
+      cout << "Correctness of Query: " << all_correct << endl;
+
+    return all_correct;
 
   } else {
     SendData(local_dist.data(), local_dist.size(), 0, 0, MPI_INT32_T);
   }
+
+  return false;
 }
 
 void DPSL::WriteLabelCounts(string filename) {
@@ -382,7 +411,7 @@ void DPSL::WriteLabelCounts(string filename) {
       }
     }
 
-#ifdef DEBUG
+//#ifdef DEBUG
     ofstream ofs(filename);
     ofs << "Vertex\tLabelCount\tSource" << endl;
     long long total = 0;
@@ -405,12 +434,10 @@ void DPSL::WriteLabelCounts(string filename) {
     ofs << endl;
     ofs.close();
 
+//#endif
+    
     cout << "Total Label Count: " << total << endl;
     cout << "Avg. Label Count: " << total / (double)whole_csr->n << endl;
-
-#endif
-    
-
 
     delete[] all_counts;
     delete[] source;
@@ -848,7 +875,7 @@ void DPSL::InitP0(string partition_str, string partition_params) {
 
   Log("Ordering Cut By Rank");
   sort(cut.begin(), cut.end(),
-       [this](IDType u, IDType v) { return ranks[u] < ranks[v]; });
+       [this](IDType u, IDType v) { return this->ranks[u] < this->ranks[v]; });
 
   auto &csrs = vc.csrs;
 
@@ -894,7 +921,7 @@ void DPSL::InitP0(string partition_str, string partition_params) {
       if (csr.row_ptr[u] + 1 == csr.row_ptr[u + 1]) {
         IDType root = csr.col[csr.row_ptr[u]];
 
-        if (csr.row_ptr[root] + 1 < csr.row_ptr[root + 1] && csr.type[u] == 0) {
+        if (csr.row_ptr[root] + 1 < csr.row_ptr[root + 1]) {
           leaf_root_arr[u] = root;
           leaf_count++;
         }
@@ -1171,7 +1198,7 @@ void DPSL::Index() {
     used[i].resize(csr.n, false);
   }
 
-  bool should_run[csr.n];
+  bool* should_run = new bool[csr.n];
   fill(should_run, should_run + csr.n, true);
 
   string order_method = ORDER_METHOD;
@@ -1438,8 +1465,11 @@ void DPSL::Index() {
   PrintTime("Total Index Time", alg_end - alg_start - total_merge_time);
 
   size_t total_label_count = 0;
-  for (auto &l : psl_ptr->labels) {
-    total_label_count += l.vertices.size();
+  size_t non_cut_label_count = 0;
+  for (IDType u = 0; u < csr.n; u++) {
+    size_t label_count_u = psl_ptr->labels[u].vertices.size();
+    total_label_count += label_count_u;
+    if(!in_cut[u]) non_cut_label_count += label_count_u;
   }
 
   size_t label_memory = total_label_count * sizeof(IDType);
@@ -1447,9 +1477,16 @@ void DPSL::Index() {
        << " Label Memory, " << label_memory / (double)(1024 * 1024 * 1024)
        << " GB" << endl;
 
+  size_t non_cut_label_memory = non_cut_label_count * sizeof(IDType);
+  cout << "P" << pid << ":"
+       << " Label Memory (Non-Cut), " << non_cut_label_memory / (double)(1024 * 1024 * 1024)
+       << " GB" << endl;
+
+
+
   if(pid == 0){
     size_t cut_label_count = 0;
-    for(IDType u : cut){
+    for(IDType u : cut_merge_order){
       cut_label_count += psl_ptr->labels[u].vertices.size();
     }
 
@@ -1463,6 +1500,8 @@ void DPSL::Index() {
   Log("Prune by Labels: " + to_string(psl_ptr->prune_labels));
   WriteStats(psl.stats_vec, "stats_p" + to_string(pid) + ".txt");
 #endif
+
+  delete[] should_run;
 }
 
 DPSL::DPSL(int pid, CSR *csr, int np, string partition_str,

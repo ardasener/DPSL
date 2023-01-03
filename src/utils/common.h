@@ -114,7 +114,7 @@
 #endif
 
 #ifndef PART_LB_OFFSET
-#define PART_LB_OFFSET 5
+#define PART_LB_OFFSET 100
 #endif
 
 #ifndef ORDER_SHUFFLE

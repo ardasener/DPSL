@@ -208,13 +208,28 @@ void PSL::WriteLabelCounts(string filename) {
 
 void PSL::QueryTest(int query_count) {
   vector<IDType> sources;
-  sources.reserve(query_count);
-  for (int i = 0; i < query_count; i++) {
-    sources.push_back((IDType)random_range(0, csr.n));
+
+  if(query_count != -1){
+    sources.reserve(query_count);
+    for (int i = 0; i < query_count; i++) {
+      sources.push_back((IDType)random_range(0, csr.n));
+    }
+  } else {
+    sources.resize(unordered_csr->n, 0);
+    iota(sources.begin(), sources.end(), 0);
   }
 
+  bool all_correct = true;
+  size_t count = 0;
   for (IDType u : sources) {
-    cout << "Query From: " << u << endl;
+
+    count++; 
+    
+    if(query_count != -1) 
+      cout << "Query From: " << u << endl;
+    else if(count % (unordered_csr->n / 10) == 0)
+      cout << "Progress: " << count << "/" << unordered_csr->n << endl;
+
     double start_time = omp_get_wtime();
     auto results = Query(u);
     double end_time = omp_get_wtime();
@@ -229,22 +244,25 @@ void PSL::QueryTest(int query_count) {
     // cout << "Avg. BFS Time: " << (end_time-start_time) / csr.n << " seconds"
     // << endl;
 
-    bool all_correct = true;
+    bool correct = true;
     for (IDType i = 0; i < csr.n; i++) {
       int psl_res = results->at(i);
       int bfs_res = bfs_results->at(i);
       string correctness = (bfs_res == psl_res) ? "correct" : "wrong";
 
       if (bfs_res != psl_res) {
-        all_correct = false;
+        correct = false;
       }
     }
 
-    cout << "Correctness: " << all_correct << endl;
+    if(query_count != -1) cout << "Correctness: " << correct << endl;
+    all_correct = all_correct && correct;
 
     delete results;
     delete bfs_results;
   }
+
+  cout << "All Correctness: " << all_correct << endl;
 }
 
 void PSL::Query(IDType u, string filename) {
@@ -683,7 +701,7 @@ void PSL::Index() {
     used[i].resize(csr.n, false);
   }
 
-  bool should_run[csr.n];
+  bool* should_run = new bool[csr.n];
   fill(should_run, should_run + csr.n, true);
 
   // Adds the first two level of vertices

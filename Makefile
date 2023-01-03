@@ -37,6 +37,8 @@ PART_LB_OFFSET=100
 MT_KAHYPAR=NONE
 # Shuffles upper percentage of the order (Used to demonstrate the importance of order)
 ORDER_SHUFFLE=0
+# If set to true will call the compiler with ccache
+CCACHE=false
 
 # Directory for the dependencies, should contain .a and .h files for pulp and metis
 # You can use the scripts/get_deps.sh script to get them automatically on most Linux systems
@@ -71,6 +73,7 @@ ifeq ($(N_ROOTS), 0)
 override USE_BP = false
 override N_ROOTS = 15
 endif
+
 
 # C++ flags
 CXX_COMPILER=g++
@@ -130,11 +133,18 @@ $(info Enabling MT-Kahypar Default...)
 DPSL_FLAGS := $(DPSL_FLAGS) -l:libmtkahypargraph.so -DENABLE_MT_KAHYPAR
 endif
 
+MPICXX_COMPILER_FINAL=$(MPICXX_COMPILER)
+CXX_COMPILER_FINAL=$(CXX_COMPILER)
+ifeq ($(CCACHE), true)
+MPICXX_COMPILER_FINAL=ccache $(MPICXX_COMPILER)
+CXX_COMPILER_FINAL=ccache $(CXX_COMPILER)
+endif
+
 # Targets
 dpsl:
-	$(MPICXX_COMPILER) $(DPSL_SOURCE_FILES) $(CXX_FLAGS) $(CXX_MODE_FLAGS) $(DPSL_FLAGS) -o $(DPSL_BIN_FILE)
+	$(MPICXX_COMPILER_FINAL) $(DPSL_SOURCE_FILES) $(CXX_FLAGS) $(CXX_MODE_FLAGS) $(DPSL_FLAGS) -o $(DPSL_BIN_FILE)
 psl:
-	$(CXX_COMPILER) $(PSL_SOURCE_FILES) $(CXX_FLAGS) $(CXX_MODE_FLAGS) $(PSL_FLAGS) -o $(PSL_BIN_FILE)
+	$(CXX_COMPILER_FINAL) $(PSL_SOURCE_FILES) $(CXX_FLAGS) $(CXX_MODE_FLAGS) $(PSL_FLAGS) -o $(PSL_BIN_FILE)
 gpsl:
 	$(CUDA_COMPILER) -c $(CUDA_SOURCE_FILES) $(CUDA_FLAGS) $(CUDA_MODE_FLAGS) $(GPSL_FLAGS) -o gpsl.o
 	$(MPICXX_COMPILER) -c $(CXX_SOURCE_FILES) $(CXX_FLAGS) $(CXX_MODE_FLAGS) $(GPSL_FLAGS)

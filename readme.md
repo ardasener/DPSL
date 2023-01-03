@@ -2,11 +2,15 @@
 
 DPSL is a distributed partitioning based implementation of the Parallel Shortest-distance Labelling (PSL) algorithm. DPSL can run on multiple nodes distributing the graph and labels among the nodes. This results in both faster indexing times by allowing the use of more computation resources and less storage requirements for each node since the resulting labels will be distributed among them with minimal duplication.
 
-> Disclamer: This work is designed specifically for social networks, web graphs and other low diameter graphs.
+> Disclaimer 1: This work is designed specifically for social networks, web graphs and other low diameter graphs.
 > It will not work well on road networks. 
 > And in fact with certain features turned on, it might give incorrect results due to overflows on high diameter graphs.
 > On such graphs, we suggest using "ORDER_METHOD=b_cent COMP_LVL=1 USE_BP=false".
 > Note that there is a limit on the maximum distance.
+
+> Disclaimer 2: This work is designed to work with connected graphs. 
+> For heavily disconnected graphs it may work but it is not recommended. Especially when using the compression & elimination methods.
+> In such cases the graph can be split into multiple components and processed separately.
 
 # Building & Running
 
@@ -118,6 +122,10 @@ mpirun --bind-to none -n <node_count> ./dpsl <graph_file> <partitioner> <partiti
 - `<graph_file>`: Same as PSL.
 - `<partitioner>`: A partitioner name. Currently "pulp", "metis", "mtmetis" and "mtkahypar" are supported.
 - `<partition_config>` : Config file for mtkahypar, is not needed for the other partitioners. Note that certain options may be invalid.
+
+> We had some trouble with pulp and metis on some runs.
+> The problem is likely to be with the code handling their integration
+> As a result, we suggest using mtmetis and mykahypar whenever possible.
 
 # Datasets
 

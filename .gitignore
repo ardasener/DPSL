@@ -35,3 +35,4 @@ libs/*
 temp/*
 deps/*
 *_lc*
+perf_output/*

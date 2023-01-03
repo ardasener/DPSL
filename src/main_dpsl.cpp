@@ -41,14 +41,14 @@ int main(int argc, char *argv[]) {
     cout << "Number of Processes:" << np << endl;
     DPSL dpsl(pid, &csr, np, partition, partition_params);
     dpsl.Index();
-    // dpsl.WriteLabelCounts("output_dpsl_label_counts.txt");
+    //dpsl.WriteLabelCounts("output_dpsl_label_counts.txt");
     dpsl.QueryTest(5);
     // dpsl.Query(12, "output_dpsl_query.txt");
 
   } else {
     DPSL dpsl(pid, nullptr, np, "", "");
     dpsl.Index();
-    // dpsl.WriteLabelCounts("");
+    //dpsl.WriteLabelCounts("");
     dpsl.QueryTest(5);
     // dpsl.Query(12, "");
   }

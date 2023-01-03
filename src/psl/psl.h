@@ -23,9 +23,10 @@ using namespace std;
 
 // Stores the labels for each vertex
 struct LabelSet {
-  vector<IDType> vertices;   // global vertex ids in order of distances - log(n)
-  vector<IDType> dist_ptrs;  // indices for the vertices vector denoting
-                             // distance starts - max_dist
+  // IDs of the vertices in order of distances
+  vector<IDType> vertices; 
+  // Indices for the start and end of distances for the vertices vector
+  vector<IDType> dist_ptrs; 
 };
 
 enum PruneIDs {
